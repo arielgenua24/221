@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>221 — Estudio de contenido</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">221</span><span>Estudio de contenido</span></div>
+    <div class="meta">
+      <span id="mode" class="pill"></span>
+      <span id="usage" class="muted"></span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel input-panel">
+      <h2>Tu negocio</h2>
+      <p class="muted small">Subí fotos de tu producto o de tu trabajo y contá qué hacés. El equipo de IA decide qué contenido crear.</p>
+
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="file" accept="image/*" multiple hidden>
+        <span class="drop-icon" aria-hidden="true">＋</span>
+        <span><strong>Subir fotos</strong><br><span class="muted small">o arrastralas acá (máx. 8)</span></span>
+      </label>
+      <div id="thumbs" class="thumbs"></div>
+
+      <label class="field-label" for="text">¿Qué hacés y qué querés lograr?</label>
+      <textarea id="text" rows="7" placeholder="Ej.: Vendo jeans de tiro alto hechos en Buenos Aires. Mis clientas son mujeres de 25 a 40. Quiero contenido con humor, que no parezca publicidad."></textarea>
+
+      <button id="run" class="primary">Crear ideas de contenido</button>
+      <button id="stop" class="ghost" hidden>Detener</button>
+      <p id="error" class="error" hidden></p>
+
+      <details class="team">
+        <summary>El equipo</summary>
+        <ul id="team" class="small"></ul>
+      </details>
+    </aside>
+
+    <section class="panel work-panel">
+      <div id="empty" class="empty">
+        <div class="empty-art" aria-hidden="true">
+          <span>Orquestador</span><span>Investigadores</span><span>Crítico</span>
+        </div>
+        <h2>Acá vas a ver al equipo trabajando</h2>
+        <p class="muted">Primero arman un brief de tu negocio, después investigan en paralelo, generan 8 conceptos, un crítico los evalúa y el orquestador elige las 4 mejores ideas.</p>
+      </div>
+      <div id="timeline" class="timeline"></div>
+      <section id="results" class="results" hidden>
+        <div class="results-head">
+          <h2>4 ideas de contenido</h2>
+          <p id="note" class="muted small"></p>
+        </div>
+        <div id="ideas" class="ideas"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

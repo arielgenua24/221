@@ -1,0 +1,13 @@
+{
+  "name": "221-content-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Arnés de subagentes para crear ideas de contenido para pymes",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "demo": "MOCK=1 node src/server.js",
+    "test": "node --test test/*.test.js"
+  }
+}
