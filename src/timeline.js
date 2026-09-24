@@ -1,4 +1,4 @@
-// Convierte lo que propone el editor en una línea de tiempo válida y enganchada al ritmo:
+// Convierte lo que propone el Director en una línea de tiempo válida y enganchada al ritmo:
 // cubre la canción de 0 al final sin huecos, cada corte cae en el golpe más cercano,
 // y cada toma de video usa un fragmento que existe.
 
@@ -49,7 +49,7 @@ export function normalizeTimeline(raw, { analysis, media, extraAnchors = [] }) {
     .sort((a, b) => a.inicio - b.inicio);
 
   if (!segs.length) {
-    warnings.push('El editor no devolvió segmentos utilizables; armé un montaje automático sobre la grilla.');
+    warnings.push('El Director no devolvió segmentos utilizables; armé un montaje automático sobre la grilla.');
     segs = autoTimeline({ analysis, media }).segmentos;
   }
 

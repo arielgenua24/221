@@ -85,7 +85,7 @@ test('normalizeTimeline cubre todo el tema, engancha cortes y valida el material
   assert.ok(warnings.some((w) => /congela/.test(w)), 'avisa si el video es más corto que el segmento');
 });
 
-test('normalizeTimeline arma un montaje automático si el editor no devuelve nada útil', () => {
+test('normalizeTimeline arma un montaje automático si el Director no devuelve nada útil', () => {
   const { segmentos, warnings } = normalizeTimeline({ segmentos: [] }, { analysis, media });
   assert.ok(segmentos.length >= 2);
   assert.equal(segmentos[0].inicio, 0);
@@ -111,38 +111,54 @@ test('parseEditBody valida audio y material', () => {
   assert.deepEqual(out.media.map((m) => [m.id, m.frames.length]), [['V1', 2], ['F1', 1]]);
 });
 
-test('el flujo de edición completo: audio al Oído, decisión humana y montaje enganchado', async () => {
+test('el flujo de edición completo: el Director orquesta, el Oído escucha, el humano corrige', async () => {
   const { samples, sr } = clicks({ bpm: 120, seconds: 20 });
   const img = 'data:image/jpeg;base64,AAAA';
   const events = [];
-  const prompts = {};
-  const llm = (opts) => { prompts[opts.step] = opts.messages; return mockLLM(opts); };
+  const calls = {};
+  const order = [];
+  const llm = (opts) => { calls[opts.step] = opts; order.push(opts.step); return mockLLM(opts); };
   const ask = async (d) => {
     assert.equal(d.kind, 'map');
     assert.ok(d.map.secciones.length >= 1);
+    assert.ok(d.plan.historia, 'la decisión incluye el plan del Director');
     return { respuestas: [{ pregunta: '¿Qué transmite?', respuesta: 'Nostalgia' }], comentario: 'El drop está en el segundo 10' };
   };
   const log = await runEditPipeline({
     text: 'Un video de mi viaje', audio: { name: 'tema.wav', wav: toWav(samples, sr) },
     media: [{ id: 'V1', kind: 'video', duration: 6, frames: [{ t: 1, url: img }] }, { id: 'F1', kind: 'photo', frames: [{ t: 0, url: img }] }],
     emit: (e) => events.push(e), llm, ask,
-    config: { earModel: 'oido', editorModel: 'editor' },
+    config: { earModel: 'oido', directorModel: 'director' },
   });
+  assert.deepEqual(order, ['plan', 'ear', 'montage']);
 
-  // El Oído recibe el audio; el Editor recibe las imágenes rotuladas y la respuesta del humano.
-  const earContent = prompts.ear[1].content;
+  // 1. El Director ve las imágenes rotuladas (no el audio).
+  const planContent = calls.plan.messages[1].content;
+  assert.equal(calls.plan.model, 'director');
+  assert.equal(planContent.filter((p) => p.type === 'image_url').length, 2);
+  assert.ok(!planContent.some((p) => p.type === 'input_audio'));
+  // 2. El Oído recibe el audio y el encargo del Director.
+  const earContent = calls.ear.messages[1].content;
+  assert.equal(calls.ear.model, 'oido');
   assert.equal(earContent[0].type, 'input_audio');
   assert.equal(earContent[0].input_audio.format, 'wav');
-  const editorContent = prompts.editor[1].content;
-  assert.equal(editorContent.filter((p) => p.type === 'image_url').length, 2);
-  assert.match(editorContent[0].text, /Nostalgia/);
-  assert.match(editorContent[0].text, /drop está en el segundo 10/);
+  assert.match(earContent[1].text, /ENCARGO DEL DIRECTOR/);
+  assert.match(earContent[1].text, /momento más intenso/);
+  // 3. El Director monta continuando su conversación: ve de nuevo su plan y las imágenes, más el mapa y la corrección humana.
+  const msgs = calls.montage.messages;
+  assert.deepEqual(msgs.map((m) => m.role), ['system', 'user', 'assistant', 'user']);
+  assert.equal(msgs[1].content.filter((p) => p.type === 'image_url').length, 2);
+  assert.match(msgs[2].content, /encargo_para_el_oido/);
+  assert.match(msgs[3].content, /MAPA MUSICAL/);
+  assert.match(msgs[3].content, /Nostalgia/);
+  assert.match(msgs[3].content, /drop está en el segundo 10/);
 
   const segs = log.result.segmentos;
   assert.equal(segs[0].inicio, 0);
   assert.equal(segs.at(-1).fin, log.result.duracion);
   for (let i = 1; i < segs.length; i++) assert.equal(segs[i].inicio, segs[i - 1].fin, 'sin huecos');
   const types = new Set(events.map((e) => e.type));
-  for (const t of ['analysis', 'map', 'timeline']) assert.ok(types.has(t), t);
+  for (const t of ['analysis', 'plan', 'map', 'timeline']) assert.ok(types.has(t), t);
   assert.equal(log.decisions.map.comentario, 'El drop está en el segundo 10');
+  assert.ok(!JSON.stringify(log).includes('base64,AAAA'), 'el registro no guarda imágenes');
 });

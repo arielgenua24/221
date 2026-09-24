@@ -29,7 +29,7 @@ const config = {
 };
 const editConfig = {
   earModel: process.env.EAR_MODEL || 'google/gemini-3.8-flash',
-  editorModel: process.env.EDITOR_MODEL || config.orchestratorModel,
+  directorModel: process.env.DIRECTOR_MODEL || config.orchestratorModel,
 };
 
 const llm = mock ? mockLLM : (opts) => streamChat({ apiKey, ...opts });
@@ -136,9 +136,9 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ mock, ...config, ...editConfig, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES }));
   }
   if (req.method !== 'GET') { res.writeHead(405); return res.end(); }
+  if (url.pathname === '/edicion') { res.writeHead(302, { Location: '/?modo=edicion' }); return res.end(); }
 
-  const page = url.pathname === '/' ? 'index.html' : url.pathname === '/edicion' ? 'edicion.html' : url.pathname;
-  const file = path.normalize(path.join(PUBLIC, page));
+  const file = path.normalize(path.join(PUBLIC, url.pathname === '/' ? 'index.html' : url.pathname));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   try {
     const content = await readFile(file);
@@ -154,5 +154,5 @@ server.listen(PORT, HOST, () => {
   console.log(mock
     ? 'MODO DEMO: sin OPENROUTER_API_KEY (o MOCK=1). Las respuestas son simuladas.'
     : `Orquestador: ${config.orchestratorModel} · Investigador: ${config.researcherModel} · Crítico: ${config.criticModel} · Web: ${config.researchWeb ? 'sí' : 'no'}`);
-  console.log(`Edición musical en http://${HOST}:${PORT}/edicion · Oído: ${editConfig.earModel} · Editor: ${editConfig.editorModel}`);
+  console.log(`Edición con música (mismo chat, modo 🎬) · Oído: ${editConfig.earModel} · Director: ${editConfig.directorModel}`);
 });

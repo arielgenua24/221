@@ -1,3 +1,5 @@
+import { el, fmt } from './shared.js';
+
 // Reproductor del montaje: dibuja en un canvas la toma que corresponde a cada instante de la música,
 // con efectos y transiciones, y exporta el resultado (canvas + audio) con MediaRecorder.
 
@@ -6,14 +8,7 @@ const FADE = 0.35;
 const FLASH = 0.18;
 const BLACK = 0.3;
 
-const el = (tag, cls, text) => {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (text !== undefined && text !== null) n.textContent = text;
-  return n;
-};
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
-export const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
 function lastBefore(sorted, t) {
   let lo = 0; let hi = sorted.length - 1; let ans = -1;

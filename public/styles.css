@@ -166,27 +166,35 @@ button, textarea, input { font: inherit; color: inherit; }
   .feed { padding-top: 24px; }
 }
 
-/* ---------- Navegación entre flujos ---------- */
-.nav-link { color: var(--accent); text-decoration: none; font-weight: 600; }
-.nav-link:hover { text-decoration: underline; }
-@media (max-width: 420px) { .meta #usage { display: none; } }
+/* ---------- Caja única: modos, aviso y soltar archivos ---------- */
+.modes { display: flex; gap: 6px; margin-bottom: 8px; }
+.mode { border: 1.5px solid var(--border); background: var(--surface); border-radius: 99px; padding: 5px 12px; font-size: 13px; cursor: pointer; }
+.mode[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.hint { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+.drop { position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 80%, transparent); backdrop-filter: blur(3px); display: grid; place-items: center; padding: 24px; pointer-events: none; }
+.drop-box { border: 3px dashed var(--accent); border-radius: 24px; padding: 48px 32px; text-align: center; display: grid; gap: 6px; background: var(--surface); max-width: 420px; width: 100%; }
+.drop-box strong { font-size: 24px; }
+.modes-explained { display: grid; gap: 8px; max-width: 460px; margin: 0 auto 20px; text-align: left; }
+.modes-explained div { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; display: grid; gap: 2px; font-size: 15px; }
+.modes-explained span { font-size: 14px; }
+.thumb .use-sound { position: absolute; top: 2px; left: 2px; border: 0; border-radius: 99px; width: 22px; height: 22px; background: var(--accent); color: #fff; cursor: pointer; line-height: 1; padding: 0; font-size: 13px; }
+.thumb-kind { display: grid; place-items: center; height: 100%; font-size: 22px; }
+.audio-chip.loading { animation: pulse 1s ease-in-out infinite alternate; }
 
 /* ---------- Edición musical ---------- */
 :root { --oido: #7b3fe4; --edi: #0b7285; --ana: #5c5f66; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --oido: #b197fc; --edi: #66d9e8; --ana: #adb5bd; } }
 :root[data-theme="dark"] { --oido: #b197fc; --edi: #66d9e8; --ana: #adb5bd; }
 .dot.Oído { background: var(--oido); }
-.dot.Editor { background: var(--edi); }
+.dot.Director { background: var(--orq); }
 .dot.Análisis { background: var(--ana); }
 
-.steps-hint { list-style: none; padding: 0; margin: 0 auto; display: grid; gap: 6px; max-width: 320px; text-align: left; font-size: 15px; }
-.steps-hint li { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; }
 
 .audio-chip { display: flex; align-items: center; gap: 8px; flex-shrink: 0; height: 56px; padding: 0 6px 0 12px; border-radius: 12px; background: var(--accent-soft); border: 1px solid var(--accent); font-size: 13px; max-width: 240px; }
 .audio-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-weight: 600; }
 .audio-chip button { border: 0; border-radius: 99px; width: 22px; height: 22px; background: rgba(0,0,0,.65); color: #fff; cursor: pointer; line-height: 1; padding: 0; flex-shrink: 0; }
 .thumb .badge { position: absolute; left: 3px; bottom: 3px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,.65); color: #fff; border-radius: 6px; padding: 0 4px; }
-.thumb.loading { display: grid; place-items: center; color: var(--muted); animation: pulse 1s ease-in-out infinite alternate; }
+.thumb.loading { color: var(--muted); animation: pulse 1s ease-in-out infinite alternate; }
 @keyframes pulse { to { opacity: .4; } }
 
 .map-sections { display: grid; gap: 6px; }

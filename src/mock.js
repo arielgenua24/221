@@ -80,7 +80,13 @@ const SCRIPTS = {
   critique: () => out(['C2 tiene el hook más fuerte, pero riesgo de estereotipos: cuidar el tono.', 'C6 es genérico: cualquier marca podría publicarlo.', 'C8 sirve solo si la escasez es real.'], CRITIQUE),
   final: () => out(['Elijo C1, C2, C3 y C7 por puntaje y diversidad.', 'Aplico la mejora de la crítica a C2 para evitar estereotipos.', 'Descarto C6 por genérico.'], FINAL),
   ear: (_, meta) => out(['(demo) No escucho de verdad: armo el mapa con el análisis automático.', `Tempo ~${meta.analysis.bpm} BPM.`, 'Secciones cortadas donde más cambia la energía.'], mockMap(meta.analysis)),
-  editor: (_, meta) => out(['(demo) Roto el material sobre la grilla: una toma por compás en lo tranquilo, cada 2 beats en lo intenso.', 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: 'Montaje de demostración sobre la grilla del tema', ...autoTimeline(meta), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Editor mire tu material.' }),
+  plan: (_, meta) => out(['(demo) No miro de verdad las imágenes: catalogo el material por orden.', 'Historia simple: arrancar fuerte, crecer y cerrar con calma.', 'Le pido al Oído que encuentre el momento más intenso.'], {
+    intencion: '(demo) Un video con ritmo a partir del material',
+    historia: 'Abrir con la mejor toma, crecer con la música y cerrar con una toma larga.',
+    material: meta.media.map((m, i) => ({ id: m.id, que_se_ve: '(demo)', calidad: 'media', mejores_momentos: m.kind === 'video' ? [{ t: Math.min(1, m.duration / 3), que_pasa: '(demo)' }] : [], rol: i === 0 ? 'apertura' : 'desarrollo' })),
+    encargo_para_el_oido: { foco: 'Dónde sube la energía para el clímax', preguntas: ['¿Dónde está el momento más intenso?'] },
+  }),
+  montage: (_, meta) => out(['(demo) Roto el material sobre la grilla: una toma por compás en lo tranquilo, cada 2 beats en lo intenso.', 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: 'Montaje de demostración sobre la grilla del tema', ...autoTimeline(meta), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
 };
 
 function mockMap(a) {
@@ -100,6 +106,7 @@ function mockMap(a) {
     secciones,
     momentos_clave: a.energyChanges.filter((c) => c.delta > 0).map((c) => ({ t: c.t, tipo: 'subida', intensidad: 4, que_pasa: 'Sube la energía', sugerencia_visual: 'Toma más fuerte + flash' })),
     puntos_de_corte_libres: [],
+    respuestas_al_director: [{ pregunta: '¿Dónde está el momento más intenso?', respuesta: `(demo) Donde más sube la energía${a.energyChanges[0] ? `, cerca de ${a.energyChanges[0].t} s` : ''}.` }],
     arco: 'Arrancar con una imagen fuerte, subir el ritmo en la parte más intensa y cerrar con una toma larga.',
     preguntas_al_humano: [{ id: 'q1', pregunta: '¿Qué querés que transmita el video?', opciones: ['Energía', 'Nostalgia', 'Mostrar un lugar', 'Contar un día'] }],
   };
@@ -109,7 +116,7 @@ export async function mockLLM({ step, onDelta, onReasoning, signal, meta }) {
   const [kind, id] = step.split('-');
   const text = (SCRIPTS[kind] || SCRIPTS.final)(id, meta);
   onReasoning?.('(demo) pensando…');
-  const chunk = kind === 'editor' || kind === 'ear' ? 90 : 18; // los JSON de edición son largos
+  const chunk = ['plan', 'ear', 'montage'].includes(kind) ? 90 : 18; // los JSON de edición son largos
   for (let i = 0; i < text.length; i += chunk) {
     await sleep(step === 'brief' ? 18 : 10, signal);
     onDelta?.(text.slice(i, i + chunk));

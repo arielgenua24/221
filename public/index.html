@@ -13,7 +13,6 @@
     <header class="topbar">
       <div class="brand"><span class="logo">221</span><span>Estudio de contenido</span></div>
       <div class="meta">
-        <a class="nav-link" href="/edicion">🎵 Edición musical</a>
         <span id="usage" class="muted"></span>
         <span id="mode" class="pill"></span>
       </div>
@@ -21,8 +20,12 @@
 
     <main id="feed" class="feed" aria-live="polite">
       <section id="welcome" class="welcome">
-        <h1>¿Qué contenido creamos hoy?</h1>
-        <p class="muted">Subí fotos de tu producto o de tu trabajo y contá qué hacés. Un equipo de IA investiga, propone y te consulta en cada decisión importante.</p>
+        <h1>¿Qué creamos hoy?</h1>
+        <p class="muted">Soltá acá lo que tengas —videos, audios, fotos— y contá qué querés. Un equipo de IA trabaja y te consulta en cada decisión importante.</p>
+        <div class="modes-explained">
+          <div><strong>💡 Ideas de contenido</strong><span class="muted">Fotos de tu producto o trabajo + qué hacés → 4 ideas para redes.</span></div>
+          <div><strong>🎬 Edición con música</strong><span class="muted">Tu música (una grabación, un MP3…) + videos y fotos → el video cortado sobre el ritmo.</span></div>
+        </div>
         <div class="examples">
           <button class="example" data-text="Vendo jeans de tiro alto hechos en Buenos Aires. Mis clientas son mujeres de 25 a 40. Quiero contenido con humor que no parezca publicidad.">👖 Jeans</button>
           <button class="example" data-text="Soy fotógrafa profesional de eventos (casamientos, 15, cumpleaños). Quiero conseguir más reservas para esta temporada.">📸 Fotografía de eventos</button>
@@ -32,13 +35,18 @@
     </main>
 
     <footer class="composer">
+      <div class="modes" role="radiogroup" aria-label="Qué querés hacer">
+        <button type="button" class="mode" role="radio" data-mode="ideas" aria-checked="true">💡 Ideas</button>
+        <button type="button" class="mode" role="radio" data-mode="edicion" aria-checked="false">🎬 Edición con música</button>
+      </div>
       <div id="thumbs" class="thumbs"></div>
+      <p id="hint" class="hint" hidden></p>
       <p id="error" class="error" hidden></p>
       <form id="form" class="composer-row">
-        <label class="icon-btn" title="Adjuntar fotos">
-          <input type="file" id="file" accept="image/*" multiple hidden>
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="15" cy="8.5" r="1.5" fill="currentColor"/></svg>
-          <span class="sr-only">Adjuntar fotos</span>
+        <label class="icon-btn" title="Agregar videos, audios o fotos">
+          <input type="file" id="file" accept="image/*,video/*,audio/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.flac,.amr" multiple hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/></svg>
+          <span class="sr-only">Agregar videos, audios o fotos</span>
         </label>
         <textarea id="text" rows="1" placeholder="Contá qué hacés…" aria-label="Mensaje"></textarea>
         <button id="send" class="send" type="submit" title="Enviar" aria-label="Enviar">
@@ -47,6 +55,12 @@
         </button>
       </form>
     </footer>
+  </div>
+  <div id="drop" class="drop" hidden>
+    <div class="drop-box">
+      <strong>Soltá acá</strong>
+      <span>videos, audios, fotos o texto</span>
+    </div>
   </div>
   <script src="/app.js" type="module"></script>
 </body>

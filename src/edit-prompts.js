@@ -43,35 +43,81 @@ FORMATO DE RESPUESTA (obligatorio):
 2. Después, un único bloque que empiece con \`\`\`json y termine con \`\`\`, con EXACTAMENTE el esquema pedido. Sin comentarios dentro del JSON. Los tiempos van en segundos con decimales (ej. 12.48).`;
 
 export const EAR_SYSTEM = `Sos "el Oído" del equipo: productor/a musical y editor/a de videoclips con años cortando videos sobre la música (estilo de los mejores editores de reels, videoclips y trailers).
-Tu único trabajo es ESCUCHAR la música y decirle al editor dónde y cómo se puede cortar. No elegís imágenes.
+Tu único trabajo es ESCUCHAR la música y explicar cómo fluye: dónde y a qué ritmo se puede cortar, dónde sube y baja la energía, qué momentos piden algo especial. No elegís imágenes: eso lo hace el Director, que te pasa un encargo con la historia que quiere contar.
 Escuchás con atención de principio a fin: estructura, instrumentos, voz, dinámica, acentos, silencios. Recibís además un análisis automático (tempo, beats, compases, golpes, energía): usalo como regla para ser preciso con los segundos, pero confiá en tu oído cuando no coincida (por ejemplo, el análisis automático puede duplicar o dividir el tempo, o marcar ruido como golpe). Si algo no lo escuchás con seguridad, decilo.
 
 ${EDIT_PLAYBOOK}
 ${OUTPUT_PROTOCOL}`;
 
-export const EDITOR_SYSTEM = `Sos "el Editor" del equipo: montajista de videos guiados por la música. Recibís el mapa musical que hizo el Oído (que escuchó el tema) y el material del humano (videos y fotos, que ves como cuadros). Tu trabajo: decidir qué se ve en cada segundo.
-Sos el ÚNICO que escribe el montaje. Respetás el mapa del Oído para el ritmo (dónde cortar y a qué velocidad), y ponés tu criterio visual para el orden, la variedad y la historia.
+export const DIRECTOR_SYSTEM = `Sos "el Director" del equipo: el orquestador de una edición de video guiada por la música. Trabajás con "el Oído", un especialista que escucha el audio (vos no lo escuchás).
+Tu trabajo tiene tres momentos:
+1. PLANIFICAR: mirar todo el material del humano (videos como cuadros con su segundo, fotos), entender qué quiere transmitir, catalogar las tomas y decidir la historia. Le das al Oído un encargo preciso: qué tiene que escuchar y resolver para esta historia.
+2. (El Oído escucha y te devuelve el mapa musical; el humano lo confirma o corrige.)
+3. MONTAR: decidir qué se ve en cada segundo. Sos el ÚNICO que escribe el montaje. Respetás el mapa del Oído para el ritmo (dónde cortar y a qué velocidad) y ponés tu criterio visual para el orden, la variedad y la historia.
 Sos específico: cada decisión se apoya en lo que se ve en los cuadros (qué pasa en la toma, en qué segundo) y en lo que suena en ese momento.
 
 ${EDIT_PLAYBOOK}
 ${OUTPUT_PROTOCOL}`;
 
-// ---------- Etapa 1: escuchar ----------
-export function earPrompt({ text, audioName, analysis }) {
+const describeCatalog = (catalog) => catalog.map((m) => `- ${m.id}: ${m.kind === 'video' ? `video de ${m.duration.toFixed(1)} s, cuadros en ${m.frames.map((f) => `${f.t.toFixed(1)} s`).join(', ')}` : 'foto'}${m.name ? ` ("${m.name}")` : ''}`).join('\n');
+
+// ---------- Etapa 1: el Director planifica ----------
+export function planPrompt({ text, audioName, analysis, catalog }) {
+  return `El humano escribió:
+"""
+${text || '(sin indicaciones: inferí la mejor historia a partir del material)'}
+"""
+
+MÚSICA: "${audioName || 'audio'}", ${analysis.duracion_s} s. Todavía no la escuchó nadie; el análisis automático dice: tempo ~${analysis.bpm_estimado} BPM, pulso ${analysis.lectura_confianza}, cambios fuertes de energía en ${JSON.stringify(analysis.cambios_de_energia)}.
+
+MATERIAL (abajo, cada imagen está rotulada con su id):
+${describeCatalog(catalog)}
+
+Tu tarea ahora: PLANIFICAR (todavía no montes).
+- Inferí la intención del humano y proponé la historia/arco del video.
+- Catalogá cada toma: qué se ve, calidad, sus mejores momentos (segundo exacto según los cuadros) y qué rol cumple (apertura, desarrollo, clímax, cierre, relleno o descartar).
+- Escribí el encargo para el Oído: en qué tiene que fijarse de la música para que ESTA historia funcione, y hasta 3 preguntas concretas (ej. "¿dónde está el momento más intenso para el clímax?", "¿la voz tiene frases largas que convenga respetar?").
+
+Esquema JSON:
+{
+  "intencion": "string (qué video quiere el humano, en una frase)",
+  "historia": "string (arco propuesto: cómo empieza, crece y termina)",
+  "material": [
+    { "id": "V1", "que_se_ve": "string", "calidad": "alta | media | baja", "mejores_momentos": [ { "t": 2.5, "que_pasa": "string" } ], "rol": "apertura | desarrollo | climax | cierre | relleno | descartar" }
+  ],
+  "encargo_para_el_oido": { "foco": "string", "preguntas": ["string"] }
+}
+"mejores_momentos" es solo para videos (en fotos dejalo vacío).`;
+}
+
+// ---------- Etapa 2: el Oído escucha ----------
+export function earPrompt({ text, audioName, analysis, plan }) {
+  const brief = plan
+    ? `ENCARGO DEL DIRECTOR (ya vio el material, no escuchó la música):
+- Intención: ${plan.intencion || '(sin datos)'}
+- Historia que quiere contar: ${plan.historia || '(sin datos)'}
+- Foco: ${plan.encargo_para_el_oido?.foco || '(sin datos)'}
+- Preguntas:
+${(plan.encargo_para_el_oido?.preguntas || []).map((q) => `  - ${q}`).join('\n') || '  (ninguna)'}`
+    : 'No hay encargo del Director: hacé un mapa general.';
   return `El humano subió la música "${audioName || 'audio'}" (arriba) y escribió:
 """
 ${text || '(sin indicaciones)'}
 """
 
+${brief}
+
 ANÁLISIS AUTOMÁTICO (tiempos en segundos):
 ${JSON.stringify(analysis)}
 
-Tu tarea: escuchar el tema completo y construir el MAPA MUSICAL que usará el editor.
+Tu tarea: escuchar el tema completo y construir el MAPA MUSICAL que usará el Director.
 - Dividí el tema en secciones contiguas que cubran de 0 a ${analysis.duracion_s} s.
 - Para cada sección decí su energía (1-5), qué pasa y a qué ritmo conviene cortar.
 - Marcá los momentos clave (hit points) con su segundo exacto: usá la grilla del análisis para ajustar.
+- Describí cómo fluye el tema de principio a fin y cómo debería acompañarlo el video.
+- Respondé cada pregunta del Director.
 - Si la grilla automática no refleja lo que escuchás (tempo doble/mitad, pulso libre), explicalo en "grilla" y proponé los puntos de corte vos.
-- Formulá entre 0 y 2 "preguntas_al_humano" SOLO si la respuesta cambia de verdad la edición (ej. qué historia quiere contar, si la voz manda). Cada una con 2 a 4 opciones cortas.
+- Formulá entre 0 y 2 "preguntas_al_humano" SOLO si la respuesta cambia de verdad la edición. Cada una con 2 a 4 opciones cortas.
 
 Esquema JSON:
 {
@@ -84,36 +130,29 @@ Esquema JSON:
     { "t": 12.5, "tipo": "drop | entrada_voz | golpe | silencio | subida | cambio | final", "intensidad": 1, "que_pasa": "string", "sugerencia_visual": "string" }
   ],
   "puntos_de_corte_libres": [ { "t": 3.2, "motivo": "string" } ],
-  "arco": "string (cómo debería evolucionar el video de principio a fin)",
+  "arco": "string (cómo fluye el tema y cómo debería acompañarlo el video)",
+  "respuestas_al_director": [ { "pregunta": "string", "respuesta": "string" } ],
   "preguntas_al_humano": [ { "id": "q1", "pregunta": "string", "opciones": ["string", "string"] } ]
 }
 "puntos_de_corte_libres" es solo para partes sin pulso claro (dejalo vacío si la grilla sirve).`;
 }
 
-// ---------- Etapa 2: montar ----------
-export function editorPrompt({ text, map, analysis, catalog, answer }) {
+// ---------- Etapa 3: el Director monta (continúa su conversación de la etapa 1) ----------
+export function montagePrompt({ map, analysis, answer }) {
   const human = answer
-    ? `\nRESPUESTAS DEL HUMANO al mapa musical (mandan sobre tu criterio):\n${JSON.stringify(answer)}\n`
-    : '';
-  return `El humano escribió:
-"""
-${text || '(sin indicaciones: decidí vos la mejor historia con el material)'}
-"""
-${human}
-MAPA MUSICAL DEL OÍDO:
+    ? `\nEL HUMANO REVISÓ EL MAPA (manda sobre el Oído y sobre tu criterio):\n${JSON.stringify(answer)}\n`
+    : '\nEl humano aprobó el mapa sin cambios.\n';
+  return `El Oído escuchó la música. Este es su MAPA MUSICAL:
 ${JSON.stringify(stripQuestions(map), null, 2)}
-
+${human}
 GRILLA AUTOMÁTICA (segundos):
 ${JSON.stringify({ duracion_s: analysis.duracion_s, bpm: analysis.bpm_estimado, confianza: analysis.lectura_confianza, compases_inicio_s: analysis.compases_inicio_s, beats_s: analysis.beats_s })}
 
-MATERIAL DISPONIBLE (abajo, cada imagen está rotulada con su id):
-${catalog.map((m) => `- ${m.id}: ${m.kind === 'video' ? `video de ${m.duration.toFixed(1)} s, cuadros en ${m.frames.map((f) => `${f.t.toFixed(1)} s`).join(', ')}` : 'foto'}${m.name ? ` ("${m.name}")` : ''}`).join('\n')}
-
-Tu tarea: escribir el MONTAJE completo, de 0 a ${analysis.duracion_s} s.
+Tu tarea ahora: MONTAR el video completo, de 0 a ${analysis.duracion_s} s, usando tu plan y el material que ya viste.
 - Una lista de segmentos ordenados; cada uno dura hasta que empieza el siguiente (el último, hasta el final).
 - Cada "inicio" debe caer en un beat, compás, momento clave o punto de corte del mapa (el sistema lo ajusta al golpe más cercano dentro de 0,15 s).
 - Respetá el ritmo de corte de cada sección; guardá el mejor material para los momentos de mayor energía.
-- Para videos, "desde" es el segundo del video original donde empieza la toma (mirá los cuadros para elegir la acción). Para fotos, omitilo.
+- Para videos, "desde" es el segundo del video original donde empieza la toma (usá los mejores momentos que catalogaste). Para fotos, omitilo.
 - Usá todo el material que sea bueno; podés repetir tomas si hace falta, nunca dos veces seguidas.
 - "motivo": máximo 10 palabras.
 

@@ -37,12 +37,13 @@ export function createAgentRunner({ emit, llm, signal, log }) {
     emit({ type: 'usage', ...totals });
   }
 
+  // `history`: turnos previos del mismo agente (así conserva su contexto entre etapas).
   // `meta` no llega al modelo: solo lo usan los modelos simulados del modo demo.
-  async function agent({ step, role, title, model, system, content, maxTokens = 6000, temperature, plugins, meta }) {
+  async function agent({ step, role, title, model, system, content, history = [], maxTokens = 6000, temperature, plugins, meta }) {
     emit({ type: 'step_start', step, role, title, model });
     const splitter = new NotesSplitter((t) => emit({ type: 'delta', step, text: t }));
     let chars = 0;
-    const messages = [{ role: 'system', content: system }, { role: 'user', content }];
+    const messages = [{ role: 'system', content: system }, ...history, { role: 'user', content }];
     const call = (msgs, plg) => llm({
       step, model, messages: msgs, maxTokens, temperature, plugins: plg, signal, meta,
       onDelta: (t) => {

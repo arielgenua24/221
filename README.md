@@ -1,9 +1,9 @@
 # 221 — Arnés de creación de contenido
 
-Dos flujos de subagentes de IA:
+Una sola caja de chat donde **soltás (drag & drop), pegás o elegís videos, audios, fotos y texto**, y dos modos que se eligen con un toque arriba de la caja (o solos: si soltás un audio o escribís "edición", pasa a Edición):
 
-1. **Ideas de contenido** (`/`): a partir de **fotos y una descripción del negocio**, decide qué contenido crear para Instagram/TikTok (orgánico). Entrega **4 ideas de contenido** (título + subtítulo, con hook, desarrollo, caption y cómo producirla sin filmar).
-2. **Edición musical** (`/edicion`): subís una **música** (grabación de voz, MP3, M4A, video con audio…) y tus **videos y fotos**. Un modelo que escucha audio marca dónde cortar y otro decide qué toma va en cada segundo. Resultado: el video montado sobre la música, para ver y exportar.
+1. **💡 Ideas de contenido**: a partir de **fotos y una descripción del negocio**, decide qué contenido crear para Instagram/TikTok (orgánico). Entrega **4 ideas de contenido** (título + subtítulo, con hook, desarrollo, caption y cómo producirla sin filmar).
+2. **🎬 Edición con música**: una **música** (grabación de voz, MP3, M4A, o el sonido de uno de tus videos) + tus **videos y fotos**. El **Director** (Opus) orquesta todo y el **Oído** (Gemini) entiende el sonido y cómo fluye. Resultado: el video montado sobre la música, para ver y exportar.
 
 ## Cómo correrlo
 
@@ -18,25 +18,29 @@ npm test
 
 Sin `OPENROUTER_API_KEY`, la app arranca en **modo demo** automáticamente.
 
-## Edición musical (`/edicion`)
+## Edición con música (modo 🎬)
 
 ```
-Música + videos/fotos + (opcional) qué querés transmitir
+Soltás música + videos/fotos + (opcional) qué querés transmitir
   │                         (el navegador decodifica el audio y extrae cuadros de cada video)
   ▼
 [0] Análisis automático (código) → tempo, beats, compases, golpes, curva de energía
   ▼
-[1] Oído (Gemini 3.8 Flash, escucha el audio) → mapa musical: secciones, energía, hit points, ritmo de corte
+[1] Director (Opus 5.5, ve cuadros y fotos) → intención, historia, catálogo de tomas y ENCARGO para el Oído
+  ▼
+[2] Oído (Gemini 3.8 Flash, escucha el audio) → mapa musical: secciones, energía, hit points, ritmo de corte,
+    cómo fluye el tema y respuestas al Director
   ▼
  ✋ VOS: confirmás o corregís el mapa ("el estribillo arranca en 0:45")
   ▼
-[2] Editor (Opus 5.5, ve los cuadros y fotos) → qué toma va en cada segundo, con efecto y transición
+[3] Director (sigue su misma conversación) → qué toma va en cada segundo, con efecto y transición
   ▼
-[3] Código → engancha cada corte al golpe más cercano y valida el montaje
+[4] Código → engancha cada corte al golpe más cercano y valida el montaje
   ▼
 Reproductor: ves el video sobre la música, elegís 9:16 / 1:1 / 16:9 y lo exportás (MP4 o WebM)
 ```
 
+- Si no tenés un audio aparte, tocá ♪ en un video para usar su sonido como música.
 - Los videos no se suben al servidor: solo viajan el audio (WAV mono 16 kHz) y algunos cuadros. El render y la exportación se hacen en el navegador (en tiempo real: dejá la pestaña visible).
 - Criterio de edición y por qué esta arquitectura: [investigacion/03-edicion-guiada-por-musica.md](investigacion/03-edicion-guiada-por-musica.md).
 
@@ -79,11 +83,11 @@ Fotos + texto
 | `src/mock.js` | Modelos simulados para el modo demo |
 | `src/agent.js` | Ejecuta un agente: streaming de notas, extracción/reparación de JSON, costos (compartido por ambos flujos) |
 | `src/audio.js` | Análisis de audio sin dependencias: tempo, beats, compases, golpes, energía |
-| `src/edit-prompts.js` | Manual de edición guiada por la música + prompts del Oído y del Editor |
+| `src/edit-prompts.js` | Manual de edición guiada por la música + prompts del Director y del Oído |
 | `src/edit-pipeline.js` | Flujo de edición musical |
 | `src/timeline.js` | Valida el montaje y engancha los cortes al ritmo |
 | `src/server.js` | Servidor HTTP + streaming de eventos (NDJSON) a la UI; `POST /api/run`, `POST /api/edit`, `POST /api/decide` reanuda el flujo pausado |
-| `public/` | Interfaz (`edicion.js` + `player.js` para la edición musical) |
+| `public/` | Interfaz: `app.js` (caja única, soltar archivos, modos), `shared.js`, `media.js` (audio/cuadros), `ideas.js`, `edit.js`, `player.js` (reproductor y exportación) |
 
 ## Configuración (`.env`)
 
@@ -95,4 +99,4 @@ Fotos + texto
 | `RESEARCH_WEB` | `1` | Plugin web de OpenRouter; si falla, sigue sin web |
 | `RESEARCHER_VISION` | `0` | Por defecto las fotos solo las ve el orquestador |
 | `EAR_MODEL` | `google/gemini-3.8-flash` | Edición musical: el modelo que escucha. Tiene que aceptar audio. |
-| `EDITOR_MODEL` | = orquestador | Edición musical: el que monta. Tiene que aceptar imágenes. |
+| `DIRECTOR_MODEL` | = orquestador | Edición musical: el que orquesta y monta. Tiene que aceptar imágenes. |
