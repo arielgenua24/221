@@ -17,6 +17,10 @@ const BRIEF = {
   diferenciales_posibles: ['Cintura que no se abre', 'Guía de talles por medidas reales'],
   restricciones: ['No inventar reseñas', 'No alterar la prenda'],
   supuestos: ['Venta por Instagram con envíos a todo el país'],
+  preguntas_al_humano: [
+    { id: 'q1', pregunta: '¿Cuál es el objetivo principal este mes?', opciones: ['Vender más', 'Conseguir seguidores', 'Que conozcan la marca'] },
+    { id: 'q2', pregunta: '¿Cuánto humor se banca la marca?', opciones: ['Mucho', 'Un poco', 'Nada, tono serio'] },
+  ],
   plan_investigacion: [
     { id: 'A', titulo: 'Público y sus frustraciones', objetivo: 'Mapear deseos, dolores y lenguaje', preguntas: ['¿Qué frustra al comprar jeans online?'], limites: 'Sin ideas de contenido' },
     { id: 'B', titulo: 'Ángulos del rubro', objetivo: 'Qué funciona y qué está saturado en cuentas de jeans', preguntas: ['¿Qué ángulos están trillados?'], limites: 'Sin análisis de público' },

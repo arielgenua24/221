@@ -40,6 +40,8 @@ Tu tarea: construir el BRIEF (el registro compartido que leerá todo el equipo) 
 - B: rubro — qué ángulos y formatos funcionan y qué está saturado.
 - C: hooks, tendencias y recursos virales aplicables a este negocio.
 
+Además, formulá entre 0 y 3 "preguntas_al_humano": solo las dudas cuya respuesta cambiaría de verdad el contenido (público, objetivo, tono, límites). Cada una con 2 a 4 opciones cortas para tocar desde el celular. No preguntes lo que ya se ve en las fotos o en el texto.
+
 Describí las fotos con precisión (qué se ve, calidad, luz, colores, qué se puede aprovechar para producir con IA sin alterar el producto).
 
 Esquema JSON:
@@ -54,6 +56,9 @@ Esquema JSON:
   "diferenciales_posibles": ["string"],
   "restricciones": ["string"],
   "supuestos": ["string"],
+  "preguntas_al_humano": [
+    { "id": "q1", "pregunta": "string", "opciones": ["string", "string", "string"] }
+  ],
   "plan_investigacion": [
     { "id": "A", "titulo": "string corto", "objetivo": "string", "preguntas": ["string"], "limites": "qué NO debe cubrir" }
   ]
@@ -152,8 +157,16 @@ Esquema JSON:
 }
 
 // ---------- Etapa 5: selección final ----------
-export function finalPrompt(brief, concepts, critique) {
-  return `BRIEF:
+export function finalPrompt(brief, concepts, critique, pick) {
+  const human = pick?.ids?.length
+    ? `DECISIÓN DEL HUMANO (manda sobre tu criterio): eligió ${pick.ids.join(', ')}.
+- Si eligió 4 o menos, TODAS deben estar entre las 4 finales; completá el resto con las mejores de los demás conceptos, buscando diversidad.
+- Si eligió más de 4, elegí las 4 mejores SOLO entre las suyas.`
+    : 'El humano delegó la elección en vos.';
+  const comment = pick?.comment ? `\nComentario del humano: "${pick.comment}" (aplicalo).` : '';
+  return `${human}${comment}
+
+BRIEF:
 ${JSON.stringify(stripPlan(brief), null, 2)}
 
 CONCEPTOS:
@@ -190,6 +203,6 @@ Esquema JSON:
 }
 
 function stripPlan(brief) {
-  const { plan_investigacion, ...rest } = brief || {};
+  const { plan_investigacion, preguntas_al_humano, ...rest } = brief || {};
   return rest;
 }

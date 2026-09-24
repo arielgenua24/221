@@ -22,6 +22,8 @@ Fotos + texto
   │
   ▼
 [1] Orquestador (Opus 5.5, ve las fotos) → brief compartido + plan de 3 investigaciones
+  ▼
+ ✋ VOS: confirmás el brief y respondés sus preguntas (opciones para tocar)
   ├─► [2a] Investigador (Muse Spark) ┐
   ├─► [2b] Investigador (Muse Spark) ├─ en paralelo, con búsqueda web
   └─► [2c] Investigador (Muse Spark) ┘
@@ -30,9 +32,12 @@ Fotos + texto
   ▼
 [4] Crítico (otro modelo) → rúbrica de 7 criterios
   ▼
-[5] Orquestador → elige y mejora las 4 mejores
+ ✋ VOS: marcás los conceptos que te gustan (o "que decida el equipo")
+  ▼
+[5] Orquestador → termina las 4 finales respetando tu elección
 ```
 
+- Interfaz tipo chat, pensada primero para el celular: mandás un mensaje con fotos y en el centro aparecen los agentes trabajando y las decisiones que te tocan.
 - La interfaz muestra en vivo las **notas de trabajo** de cada agente (y su razonamiento, si el modelo lo expone).
 - Cada ejecución completa (entradas, salida cruda de cada agente, costos) se guarda en `runs/` para evaluar y mejorar.
 - Por qué esta arquitectura: [investigacion/02-orquestacion-de-agentes.md](investigacion/02-orquestacion-de-agentes.md).
@@ -47,7 +52,7 @@ Fotos + texto
 | `src/pipeline.js` | Orquestación: etapas, paralelismo, extracción/reparación de JSON |
 | `src/openrouter.js` | Cliente de streaming de OpenRouter |
 | `src/mock.js` | Modelos simulados para el modo demo |
-| `src/server.js` | Servidor HTTP + streaming de eventos (NDJSON) a la UI |
+| `src/server.js` | Servidor HTTP + streaming de eventos (NDJSON) a la UI; `POST /api/decide` reanuda el flujo pausado |
 | `public/` | Interfaz |
 
 ## Configuración (`.env`)

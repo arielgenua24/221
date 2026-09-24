@@ -2,63 +2,51 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141311" media="(prefers-color-scheme: dark)">
   <title>221 — Estudio de contenido</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand"><span class="logo">221</span><span>Estudio de contenido</span></div>
-    <div class="meta">
-      <span id="mode" class="pill"></span>
-      <span id="usage" class="muted"></span>
-    </div>
-  </header>
-
-  <main class="layout">
-    <aside class="panel input-panel">
-      <h2>Tu negocio</h2>
-      <p class="muted small">Subí fotos de tu producto o de tu trabajo y contá qué hacés. El equipo de IA decide qué contenido crear.</p>
-
-      <label class="dropzone" id="dropzone">
-        <input type="file" id="file" accept="image/*" multiple hidden>
-        <span class="drop-icon" aria-hidden="true">＋</span>
-        <span><strong>Subir fotos</strong><br><span class="muted small">o arrastralas acá (máx. 8)</span></span>
-      </label>
-      <div id="thumbs" class="thumbs"></div>
-
-      <label class="field-label" for="text">¿Qué hacés y qué querés lograr?</label>
-      <textarea id="text" rows="7" placeholder="Ej.: Vendo jeans de tiro alto hechos en Buenos Aires. Mis clientas son mujeres de 25 a 40. Quiero contenido con humor, que no parezca publicidad."></textarea>
-
-      <button id="run" class="primary">Crear ideas de contenido</button>
-      <button id="stop" class="ghost" hidden>Detener</button>
-      <p id="error" class="error" hidden></p>
-
-      <details class="team">
-        <summary>El equipo</summary>
-        <ul id="team" class="small"></ul>
-      </details>
-    </aside>
-
-    <section class="panel work-panel">
-      <div id="empty" class="empty">
-        <div class="empty-art" aria-hidden="true">
-          <span>Orquestador</span><span>Investigadores</span><span>Crítico</span>
-        </div>
-        <h2>Acá vas a ver al equipo trabajando</h2>
-        <p class="muted">Primero arman un brief de tu negocio, después investigan en paralelo, generan 8 conceptos, un crítico los evalúa y el orquestador elige las 4 mejores ideas.</p>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="logo">221</span><span>Estudio de contenido</span></div>
+      <div class="meta">
+        <span id="usage" class="muted"></span>
+        <span id="mode" class="pill"></span>
       </div>
-      <div id="timeline" class="timeline"></div>
-      <section id="results" class="results" hidden>
-        <div class="results-head">
-          <h2>4 ideas de contenido</h2>
-          <p id="note" class="muted small"></p>
-        </div>
-        <div id="ideas" class="ideas"></div>
-      </section>
-    </section>
-  </main>
+    </header>
 
+    <main id="feed" class="feed" aria-live="polite">
+      <section id="welcome" class="welcome">
+        <h1>¿Qué contenido creamos hoy?</h1>
+        <p class="muted">Subí fotos de tu producto o de tu trabajo y contá qué hacés. Un equipo de IA investiga, propone y te consulta en cada decisión importante.</p>
+        <div class="examples">
+          <button class="example" data-text="Vendo jeans de tiro alto hechos en Buenos Aires. Mis clientas son mujeres de 25 a 40. Quiero contenido con humor que no parezca publicidad.">👖 Jeans</button>
+          <button class="example" data-text="Soy fotógrafa profesional de eventos (casamientos, 15, cumpleaños). Quiero conseguir más reservas para esta temporada.">📸 Fotografía de eventos</button>
+          <button class="example" data-text="Hago fletes y mudanzas pequeñas en la ciudad. Quiero que la gente me elija por confianza y puntualidad.">🚚 Fletes</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="composer">
+      <div id="thumbs" class="thumbs"></div>
+      <p id="error" class="error" hidden></p>
+      <form id="form" class="composer-row">
+        <label class="icon-btn" title="Adjuntar fotos">
+          <input type="file" id="file" accept="image/*" multiple hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.5-4.5a2 2 0 0 1 2.8 0L16 16m-2-2 1.5-1.5a2 2 0 0 1 2.8 0L20 14M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="15" cy="8.5" r="1.5" fill="currentColor"/></svg>
+          <span class="sr-only">Adjuntar fotos</span>
+        </label>
+        <textarea id="text" rows="1" placeholder="Contá qué hacés…" aria-label="Mensaje"></textarea>
+        <button id="send" class="send" type="submit" title="Enviar" aria-label="Enviar">
+          <svg id="send-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg>
+          <svg id="stop-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" hidden><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+        </button>
+      </form>
+    </footer>
+  </div>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

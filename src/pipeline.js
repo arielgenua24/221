@@ -34,8 +34,9 @@ export function extractJson(text) {
   return JSON.parse(candidate);
 }
 
-export async function runPipeline({ text, photos, emit, llm, config, signal }) {
-  const log = { startedAt: new Date().toISOString(), config, input: { text, photoCount: photos.length }, steps: {} };
+// `ask` pausa el flujo hasta que el humano decide. Devuelve null si el humano delega la decisión.
+export async function runPipeline({ text, photos, emit, llm, config, signal, ask = async () => null }) {
+  const log = { startedAt: new Date().toISOString(), config, input: { text, photoCount: photos.length }, steps: {}, decisions: {} };
   const totals = { cost: 0, tokens: 0 };
 
   // Ejecuta un agente: streaming de notas, extracción de JSON y una reparación si el JSON falla.
@@ -100,6 +101,14 @@ export async function runPipeline({ text, photos, emit, llm, config, signal }) {
   });
   emit({ type: 'brief', data: brief });
 
+  // Decisión humana 1: confirmar el brief y responder las dudas del orquestador.
+  const questions = (Array.isArray(brief.preguntas_al_humano) ? brief.preguntas_al_humano : []).slice(0, 3);
+  const briefAnswer = await ask({ kind: 'brief', title: '¿Entendí bien tu negocio?', brief, questions });
+  if (briefAnswer) {
+    brief.respuestas_del_humano = briefAnswer;
+    log.decisions.brief = briefAnswer;
+  }
+
   // 2. Investigación en paralelo (investigador)
   let tasks = Array.isArray(brief.plan_investigacion) ? brief.plan_investigacion.slice(0, 3) : [];
   if (!tasks.length) tasks = DEFAULT_TASKS;
@@ -134,11 +143,19 @@ export async function runPipeline({ text, photos, emit, llm, config, signal }) {
   });
   emit({ type: 'critique', data: critique });
 
+  // Decisión humana 2: elegir los conceptos que le gustan.
+  const ranked = rankConcepts(concepts, critique);
+  const pick = await ask({
+    kind: 'pick', title: '¿Qué conceptos te gustan?', concepts: ranked,
+    suggested: ranked.slice(0, 4).map((c) => c.id),
+  });
+  if (pick) log.decisions.pick = pick;
+
   // 5. Selección y mejora final (orquestador = único escritor)
   const final = await agent({
     step: 'final', role: 'Orquestador', title: 'Eligiendo y puliendo las 4 mejores', model: orchestratorModel,
     system: ORCHESTRATOR_SYSTEM, temperature: 0.5, maxTokens: 10000,
-    content: finalPrompt(brief, concepts, critique),
+    content: finalPrompt(brief, concepts, critique, pick),
   });
   const ideas = (final.ideas || []).slice(0, 4);
   emit({ type: 'ideas', ideas, note: final.nota_para_el_humano });
@@ -147,4 +164,16 @@ export async function runPipeline({ text, photos, emit, llm, config, signal }) {
   log.totals = totals;
   log.result = { ideas, note: final.nota_para_el_humano };
   return log;
+}
+
+// Une cada concepto con su evaluación y los ordena por puntaje total.
+export function rankConcepts(concepts, critique) {
+  const evals = new Map((critique?.evaluaciones || []).map((e) => [e.id, e]));
+  return concepts
+    .map((c) => {
+      const e = evals.get(c.id) || {};
+      const total = Object.values(e.puntajes || {}).reduce((a, n) => a + (Number(n) || 0), 0);
+      return { ...c, total, max: Object.keys(e.puntajes || {}).length * 5, veredicto: e.veredicto, mejora: e.mejora };
+    })
+    .sort((a, b) => b.total - a.total);
 }

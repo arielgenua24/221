@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPipeline } from './pipeline.js';
@@ -26,6 +27,9 @@ const config = {
 };
 
 const llm = mock ? mockLLM : (opts) => streamChat({ apiKey, ...opts });
+
+// Decisiones esperando respuesta del humano: id -> resolve.
+const pending = new Map();
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
 
@@ -62,22 +66,49 @@ async function handleRun(req, res) {
   res.on('close', () => { if (!res.writableFinished) controller.abort(); });
   const emit = (event) => { if (!res.writableEnded) res.write(JSON.stringify(event) + '\n'); };
 
+  // El pipeline se pausa acá hasta que llega POST /api/decide con este id.
+  const ask = (decision) => new Promise((resolve, reject) => {
+    const id = randomUUID();
+    pending.set(id, (answer) => { emit({ type: 'decision_done', id, answer }); resolve(answer); });
+    controller.signal.addEventListener('abort', () => { pending.delete(id); reject(new Error('cancelado')); }, { once: true });
+    emit({ type: 'decision', id, ...decision });
+  });
+  // Señal periódica para que redes móviles y proxies no corten la conexión mientras el humano piensa.
+  const ping = setInterval(() => emit({ type: 'ping' }), 15000);
+
   emit({ type: 'run', mock, config });
   try {
-    const log = await runPipeline({ text, photos, emit, llm, config, signal: controller.signal });
+    const log = await runPipeline({ text, photos, emit, llm, config, signal: controller.signal, ask });
     await mkdir(RUNS, { recursive: true });
     const file = path.join(RUNS, `${log.startedAt.replace(/[:.]/g, '-')}.json`);
     await writeFile(file, JSON.stringify({ ...log, mock }, null, 2));
     emit({ type: 'done', totals: log.totals, saved: path.relative(ROOT, file) });
   } catch (err) {
     if (!controller.signal.aborted) emit({ type: 'error', text: err.message });
+  } finally {
+    clearInterval(ping);
   }
   res.end();
+}
+
+async function handleDecide(req, res) {
+  let body;
+  try { body = await readBody(req); } catch { body = {}; }
+  const resolve = pending.get(body.id);
+  if (!resolve) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Esa decisión ya no está pendiente.' }));
+  }
+  pending.delete(body.id);
+  resolve(body.answer ?? null);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end('{"ok":true}');
 }
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'POST' && url.pathname === '/api/run') return handleRun(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/decide') return handleDecide(req, res);
   if (req.method === 'GET' && url.pathname === '/api/config') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ mock, ...config, maxPhotos: MAX_PHOTOS }));

@@ -38,3 +38,27 @@ test('repara un JSON mal formado con una segunda llamada', async () => {
   const log = await runPipeline({ text: 'Fotografía de eventos', photos: [], emit: () => {}, llm, config });
   assert.equal(log.result.ideas.length, 4);
 });
+
+test('se pausa en 2 decisiones y las respuestas llegan a los agentes', async () => {
+  const asked = [];
+  const prompts = {};
+  const llm = (opts) => { prompts[opts.step] = JSON.stringify(opts.messages); return mockLLM(opts); };
+  const ask = async (d) => {
+    asked.push(d.kind);
+    if (d.kind === 'brief') {
+      assert.ok(d.questions.length > 0);
+      return { respuestas: [{ pregunta: d.questions[0].pregunta, respuesta: 'Vender más' }], comentario: 'Somos de Rosario' };
+    }
+    assert.equal(d.suggested.length, 4);
+    assert.ok(d.concepts[0].total >= d.concepts.at(-1).total, 'conceptos ordenados por puntaje');
+    return { ids: ['C5', 'C8'], comment: 'más humor' };
+  };
+  const log = await runPipeline({ text: 'Jeans', photos: [], emit: () => {}, llm, config, ask });
+  assert.deepEqual(asked, ['brief', 'pick']);
+  assert.match(prompts['research-A'], /Somos de Rosario/);
+  assert.match(prompts.ideation, /Vender más/);
+  assert.match(prompts.final, /eligió C5, C8/);
+  assert.match(prompts.final, /más humor/);
+  assert.doesNotMatch(prompts.ideation, /preguntas_al_humano/);
+  assert.deepEqual(log.decisions.pick.ids, ['C5', 'C8']);
+});
