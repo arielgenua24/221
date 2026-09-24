@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141311" media="(prefers-color-scheme: dark)">
+  <title>221 — Edición musical</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="logo">221</span><span>Edición musical</span></div>
+      <div class="meta">
+        <a class="nav-link" href="/">Ideas de contenido</a>
+        <span id="usage" class="muted"></span>
+        <span id="mode" class="pill"></span>
+      </div>
+    </header>
+
+    <main id="feed" class="feed" aria-live="polite">
+      <section id="welcome" class="welcome">
+        <h1>Tu música manda el corte</h1>
+        <p class="muted">Subí una música (una grabación de voz, un MP3, un video con audio) y tus videos y fotos. Un modelo escucha el tema y marca dónde cortar; otro elige qué toma va en cada segundo.</p>
+        <ol class="steps-hint">
+          <li><strong>1.</strong> Tocá 🎵 y elegí la música</li>
+          <li><strong>2.</strong> Tocá 🎞️ y elegí videos y fotos</li>
+          <li><strong>3.</strong> Contá qué querés transmitir (opcional)</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="composer">
+      <div id="thumbs" class="thumbs"></div>
+      <p id="error" class="error" hidden></p>
+      <form id="form" class="composer-row">
+        <label class="icon-btn" title="Elegir música">
+          <input type="file" id="audio-file" accept="audio/*,video/mp4,video/quicktime,.m4a,.mp3,.wav,.aac,.ogg,.opus,.flac,.webm" hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm11-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>
+          <span class="sr-only">Elegir música</span>
+        </label>
+        <label class="icon-btn" title="Agregar videos y fotos">
+          <input type="file" id="media-file" accept="video/*,image/*" multiple hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm12 4 4-3v10l-4-3"/></svg>
+          <span class="sr-only">Agregar videos y fotos</span>
+        </label>
+        <textarea id="text" rows="1" placeholder="¿Qué querés transmitir?" aria-label="Mensaje"></textarea>
+        <button id="send" class="send" type="submit" title="Editar" aria-label="Editar">
+          <svg id="send-icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg>
+          <svg id="stop-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" hidden><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>
+        </button>
+      </form>
+    </footer>
+  </div>
+  <script src="/edicion.js" type="module"></script>
+</body>
+</html>
