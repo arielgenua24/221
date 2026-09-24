@@ -3,7 +3,7 @@
 Una sola caja de chat donde **soltás (drag & drop), pegás o elegís videos, audios, fotos y texto**, y dos modos que se eligen con un toque arriba de la caja (o solos: si soltás un audio o escribís "edición", pasa a Edición):
 
 1. **💡 Ideas de contenido**: a partir de **fotos y una descripción del negocio**, decide qué contenido crear para Instagram/TikTok (orgánico). Entrega **4 ideas de contenido** (título + subtítulo, con hook, desarrollo, caption y cómo producirla sin filmar).
-2. **🎬 Edición con música**: una **música** (grabación de voz, MP3, M4A, o el sonido de uno de tus videos) + tus **videos y fotos**. El **Director** (Opus) orquesta todo y el **Oído** (Gemini) entiende el sonido y cómo fluye. Resultado: el video montado sobre la música, para ver y exportar.
+2. **🎬 Edición con música**: una **música** (grabación de voz, MP3, M4A, o el sonido de uno de tus videos) + tus **videos y fotos**. El **Director** (Opus) orquesta todo y el **Oído** (Gemini) entiende el sonido y cómo fluye. El Oído escucha **una vez**, vos le corregís lo que haga falta, y el Director monta **3 videos distintos** (una llamada por versión), para ver y exportar.
 
 ## Cómo correrlo
 
@@ -26,18 +26,20 @@ Soltás música + videos/fotos + (opcional) qué querés transmitir
   ▼
 [0] Análisis automático (código) → tempo, beats, compases, golpes, curva de energía
   ▼
-[1] Director (Opus 5.5, ve cuadros y fotos) → intención, historia, catálogo de tomas y ENCARGO para el Oído
+[1] Director (Opus 5.5, ve cuadros y fotos) → intención, historia, catálogo de tomas,
+    3 VERSIONES distintas (A, B, C) y ENCARGO para el Oído
   ▼
-[2] Oído (Gemini 3.8 Flash, escucha el audio) → mapa musical: secciones, energía, hit points, ritmo de corte,
-    cómo fluye el tema y respuestas al Director
+[2] Oído (Gemini 3.8 Flash, escucha el audio UNA vez) → mapa musical: secciones, energía, hit points,
+    ritmo de corte, cómo fluye el tema y respuestas al Director
   ▼
- ✋ VOS: confirmás o corregís el mapa ("el estribillo arranca en 0:45")
+ ✋ VOS: le decís al Oído si escuchó bien o lo corregís ("el estribillo arranca en 0:45")
   ▼
-[3] Director (sigue su misma conversación) → qué toma va en cada segundo, con efecto y transición
+[3] Director × 3 llamadas en paralelo (cada una sigue su conversación de [1], con otra versión
+    y otra temperatura) → qué toma va en cada segundo, con efecto y transición
   ▼
-[4] Código → engancha cada corte al golpe más cercano y valida el montaje
+[4] Código → engancha cada corte al golpe más cercano y valida cada montaje
   ▼
-Reproductor: ves el video sobre la música, elegís 9:16 / 1:1 / 16:9 y lo exportás (MP4 o WebM)
+3 reproductores: ves cada video sobre la música, elegís 9:16 / 1:1 / 16:9 y exportás el que quieras (MP4 o WebM)
 ```
 
 - Si no tenés un audio aparte, tocá ♪ en un video para usar su sonido como música.

@@ -10,6 +10,9 @@ const BLACK = 0.3;
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
+// Varios reproductores en la página (una versión por video): suena uno a la vez.
+const players = new Set();
+
 function lastBefore(sorted, t) {
   let lo = 0; let hi = sorted.length - 1; let ans = -1;
   while (lo <= hi) { const mid = (lo + hi) >> 1; if (sorted[mid] <= t) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
@@ -30,6 +33,8 @@ export function createPlayer({ timeline, analysis, audioUrl, media, audioName })
   const audio = el('audio');
   audio.src = audioUrl;
   audio.preload = 'auto';
+  players.add(audio);
+  audio.addEventListener('play', () => players.forEach((a) => { if (a !== audio && !a.paused) a.pause(); }));
 
   // Dos elementos por video (A/B): mientras uno se ve, el otro ya se posiciona en la próxima toma.
   const images = new Map();
@@ -40,7 +45,7 @@ export function createPlayer({ timeline, analysis, audioUrl, media, audioName })
     } else {
       pools.set(id, [0, 1].map(() => {
         const v = document.createElement('video');
-        v.src = m.url; v.muted = true; v.playsInline = true; v.preload = 'auto';
+        v.src = m.url; v.muted = true; v.playsInline = true; v.preload = 'metadata';
         return v;
       }));
     }
@@ -283,7 +288,7 @@ export function createPlayer({ timeline, analysis, audioUrl, media, audioName })
       const ext = type.includes('mp4') ? 'mp4' : 'webm';
       const a = el('a', 'download', `Descargar video (${ext.toUpperCase()}, ${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
       a.href = URL.createObjectURL(blob);
-      a.download = `${(audioName || 'edicion').replace(/\.[^.]+$/, '')}-221.${ext}`;
+      a.download = `${(audioName || 'edicion').replace(/\.[^.]+$/, '')}-221${timeline.version?.id ? `-${timeline.version.id}` : ''}.${ext}`;
       exportNote.hidden = false;
       exportNote.replaceChildren(a);
       a.click();
@@ -304,10 +309,11 @@ export function createPlayer({ timeline, analysis, audioUrl, media, audioName })
     const clean = { ...timeline, segmentos: segs.map(({ el: _el, ...s }) => s) };
     const a = el('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(clean, null, 2)], { type: 'application/json' }));
-    a.download = 'montaje-221.json';
+    a.download = `montaje-221${timeline.version?.id ? `-${timeline.version.id}` : ''}.json`;
     a.click();
   };
 
   setAspect('9:16');
+  loop(); // posiciona la primera toma para que se vea algo antes de dar play
   return root;
 }

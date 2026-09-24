@@ -93,7 +93,8 @@ export function normalizeTimeline(raw, { analysis, media, extraAnchors = [] }) {
 
 // Montaje de respaldo (y del modo demo): cambia de toma cada compás en partes tranquilas
 // y cada 2 beats en partes con más energía, rotando el material.
-export function autoTimeline({ analysis, media }) {
+// `pace` multiplica la duración de las tomas y `shift` rota el orden (para armar versiones distintas).
+export function autoTimeline({ analysis, media, pace = 1, shift = 0 }) {
   const beats = analysis.beats?.length ? analysis.beats : Array.from({ length: Math.floor(analysis.duration / 0.5) }, (_, i) => i * 0.5);
   const energyAt = (t) => analysis.energy?.[Math.min(analysis.energy.length - 1, Math.floor(t / 0.5))]?.e ?? 0.5;
   const segmentos = [];
@@ -102,7 +103,7 @@ export function autoTimeline({ analysis, media }) {
   while (i < beats.length) {
     const t = segmentos.length ? beats[i] : 0;
     const high = energyAt(t) > 0.6;
-    const m = media[k % media.length];
+    const m = media[(k + shift) % media.length];
     segmentos.push({
       inicio: t,
       media: m.id,
@@ -112,7 +113,7 @@ export function autoTimeline({ analysis, media }) {
       motivo: high ? 'Energía alta: corte cada 2 beats' : 'Parte tranquila: una toma por compás',
     });
     k++;
-    i += high ? 2 : 4;
+    i += Math.max(1, Math.round((high ? 2 : 4) * pace));
   }
   return { segmentos };
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseWav, analyzeAudio } from '../src/audio.js';
 import { normalizeTimeline, snap, buildAnchors } from '../src/timeline.js';
-import { runEditPipeline, parseEditBody } from '../src/edit-pipeline.js';
+import { runEditPipeline, parseEditBody, pickVersions } from '../src/edit-pipeline.js';
 import { mockLLM } from '../src/mock.js';
 
 // Música sintética: golpes a `bpm`, con el "1" de cada compás más fuerte y más energía desde la mitad.
@@ -111,17 +111,28 @@ test('parseEditBody valida audio y material', () => {
   assert.deepEqual(out.media.map((m) => [m.id, m.frames.length]), [['V1', 2], ['F1', 1]]);
 });
 
-test('el flujo de edición completo: el Director orquesta, el Oído escucha, el humano corrige', async () => {
+test('pickVersions completa hasta 3 versiones A/B/C', () => {
+  const v = pickVersions([{ nombre: 'Mía', enfoque: 'x', id: 'Z' }, { nombre: 3 }]);
+  assert.deepEqual(v.map((x) => x.id), ['A', 'B', 'C']);
+  assert.equal(v[0].nombre, 'Mía');
+  assert.equal(v[1].nombre, 'Cinematográfica', 'la inválida se reemplaza por la de respaldo');
+  assert.equal(pickVersions(null).length, 3);
+});
+
+test('el flujo de edición completo: un Oído, una corrección humana y tres montajes del Director', async () => {
   const { samples, sr } = clicks({ bpm: 120, seconds: 20 });
   const img = 'data:image/jpeg;base64,AAAA';
   const events = [];
   const calls = {};
   const order = [];
   const llm = (opts) => { calls[opts.step] = opts; order.push(opts.step); return mockLLM(opts); };
+  const asked = [];
   const ask = async (d) => {
+    asked.push(d.kind);
     assert.equal(d.kind, 'map');
     assert.ok(d.map.secciones.length >= 1);
     assert.ok(d.plan.historia, 'la decisión incluye el plan del Director');
+    assert.deepEqual(d.versions.map((v) => v.id), ['A', 'B', 'C']);
     return { respuestas: [{ pregunta: '¿Qué transmite?', respuesta: 'Nostalgia' }], comentario: 'El drop está en el segundo 10' };
   };
   const log = await runEditPipeline({
@@ -130,35 +141,60 @@ test('el flujo de edición completo: el Director orquesta, el Oído escucha, el 
     emit: (e) => events.push(e), llm, ask,
     config: { earModel: 'oido', directorModel: 'director' },
   });
-  assert.deepEqual(order, ['plan', 'ear', 'montage']);
+  assert.deepEqual(order, ['plan', 'ear', 'montage-A', 'montage-B', 'montage-C'], 'el Oído escucha una sola vez; el Director monta 3 veces');
+  assert.deepEqual(asked, ['map'], 'una sola decisión humana');
 
-  // 1. El Director ve las imágenes rotuladas (no el audio).
+  // 1. El Director ve las imágenes rotuladas (no el audio) y propone 3 versiones.
   const planContent = calls.plan.messages[1].content;
   assert.equal(calls.plan.model, 'director');
   assert.equal(planContent.filter((p) => p.type === 'image_url').length, 2);
   assert.ok(!planContent.some((p) => p.type === 'input_audio'));
-  // 2. El Oído recibe el audio y el encargo del Director.
+  assert.match(planContent[0].text, /TRES VERSIONES/);
+  // 2. El Oído recibe el audio y el encargo del Director (que menciona las 3 versiones).
   const earContent = calls.ear.messages[1].content;
   assert.equal(calls.ear.model, 'oido');
   assert.equal(earContent[0].type, 'input_audio');
   assert.equal(earContent[0].input_audio.format, 'wav');
   assert.match(earContent[1].text, /ENCARGO DEL DIRECTOR/);
-  assert.match(earContent[1].text, /momento más intenso/);
-  // 3. El Director monta continuando su conversación: ve de nuevo su plan y las imágenes, más el mapa y la corrección humana.
-  const msgs = calls.montage.messages;
-  assert.deepEqual(msgs.map((m) => m.role), ['system', 'user', 'assistant', 'user']);
-  assert.equal(msgs[1].content.filter((p) => p.type === 'image_url').length, 2);
-  assert.match(msgs[2].content, /encargo_para_el_oido/);
-  assert.match(msgs[3].content, /MAPA MUSICAL/);
-  assert.match(msgs[3].content, /Nostalgia/);
-  assert.match(msgs[3].content, /drop está en el segundo 10/);
+  assert.match(earContent[1].text, /3 versiones/);
+  // 3. Cada llamada al Director continúa su conversación y monta SOLO su versión, con otra temperatura.
+  for (const id of ['A', 'B', 'C']) {
+    const c = calls[`montage-${id}`];
+    assert.equal(c.model, 'director');
+    assert.deepEqual(c.messages.map((m) => m.role), ['system', 'user', 'assistant', 'user']);
+    assert.equal(c.messages[1].content.filter((p) => p.type === 'image_url').length, 2);
+    assert.match(c.messages[2].content, /encargo_para_el_oido/);
+    assert.match(c.messages[3].content, new RegExp(`MONTÁS LA VERSIÓN ${id}`));
+    assert.match(c.messages[3].content, /Nostalgia/);
+    assert.match(c.messages[3].content, /drop está en el segundo 10/);
+  }
+  assert.equal(new Set(['A', 'B', 'C'].map((id) => calls[`montage-${id}`].temperature)).size, 3);
 
-  const segs = log.result.segmentos;
-  assert.equal(segs[0].inicio, 0);
-  assert.equal(segs.at(-1).fin, log.result.duracion);
-  for (let i = 1; i < segs.length; i++) assert.equal(segs[i].inicio, segs[i - 1].fin, 'sin huecos');
-  const types = new Set(events.map((e) => e.type));
-  for (const t of ['analysis', 'plan', 'map', 'timeline']) assert.ok(types.has(t), t);
+  // Tres videos, cada uno cubre el tema sin huecos, y son distintos entre sí.
+  const videos = log.result.videos;
+  assert.deepEqual(videos.map((v) => v.version.id), ['A', 'B', 'C']);
+  for (const v of videos) {
+    const segs = v.segmentos;
+    assert.equal(segs[0].inicio, 0);
+    assert.equal(segs.at(-1).fin, v.duracion);
+    for (let i = 1; i < segs.length; i++) assert.equal(segs[i].inicio, segs[i - 1].fin, 'sin huecos');
+  }
+  assert.equal(new Set(videos.map((v) => JSON.stringify(v.segmentos.map((s) => [s.inicio, s.media])))).size, 3, 'tres montajes distintos');
+  assert.equal(events.filter((e) => e.type === 'timeline').length, 3);
+  for (const t of ['analysis', 'plan', 'map']) assert.ok(events.some((e) => e.type === t), t);
   assert.equal(log.decisions.map.comentario, 'El drop está en el segundo 10');
   assert.ok(!JSON.stringify(log).includes('base64,AAAA'), 'el registro no guarda imágenes');
+});
+
+test('si falla una versión, entrega las otras dos', async () => {
+  const { samples, sr } = clicks({ seconds: 10 });
+  const events = [];
+  const llm = (opts) => (opts.step === 'montage-B' ? Promise.reject(new Error('se cayó')) : mockLLM(opts));
+  const log = await runEditPipeline({
+    text: '', audio: { name: 't.wav', wav: toWav(samples, sr) },
+    media: [{ id: 'F1', kind: 'photo', frames: [{ t: 0, url: 'data:image/jpeg;base64,AAAA' }] }],
+    emit: (e) => events.push(e), llm, config: { earModel: 'o', directorModel: 'd' },
+  });
+  assert.deepEqual(log.result.videos.map((v) => v.version.id), ['A', 'C']);
+  assert.ok(events.some((e) => e.type === 'step_error' && e.step === 'montage-B'));
 });

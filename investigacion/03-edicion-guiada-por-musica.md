@@ -31,6 +31,8 @@ Principios repetidos en la práctica de videoclips, trailers y reels (y que cond
 
 El humano interviene una vez: después de que el Oído escucha, confirma o corrige el mapa ("el estribillo arranca en 0:45") antes de que se monte.
 
+**Tres versiones por pedido.** El Director decide en la planificación tres enfoques claramente distintos (ritmo, historia, material protagonista, tratamiento) y se lo llama tres veces en paralelo, una por versión, con temperaturas distintas (0,5 / 0,7 / 0,9). Las tres comparten el mismo mapa musical (el Oído escucha una sola vez, lo que ahorra costo y asegura que la corrección del humano llegue a todas) y cada una sabe cuáles son las otras dos para diferenciarse. Si el plan no trae tres versiones válidas, se completan con enfoques de respaldo ("Al golpe", "Cinematográfica", "Contraste"). Si falla una versión, se entregan las otras.
+
 ## 3. Decisiones técnicas
 
 - **El audio se decodifica en el navegador** (Web Audio) y se envía como WAV mono de 16 kHz. Así se acepta cualquier formato que el navegador entienda (MP3, M4A de grabadoras, MP4 con audio, WAV, OGG) sin instalar nada en el servidor. 16 kHz alcanza para el análisis de ritmo y es la resolución a la que los modelos de audio procesan el sonido.

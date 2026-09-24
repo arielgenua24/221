@@ -36,6 +36,16 @@ function renderMapDecision(ev) {
   add('Tempo', map.grilla ? `${map.grilla.bpm} BPM · ${map.grilla.confiable ? 'pulso claro' : 'pulso libre'}${map.grilla.nota ? ` · ${map.grilla.nota}` : ''}` : null);
   add('Cómo fluye', map.arco);
   card.append(facts);
+  if ((ev.versions || []).length) {
+    const vs = el('div', 'versions');
+    vs.append(el('strong', 'versions-title', 'Con esto el Director va a montar 3 videos:'));
+    ev.versions.forEach((v) => {
+      const row = el('div', 'version');
+      row.append(el('span', 'version-id', v.id), el('span', 'version-name', v.nombre), el('span', 'version-what muted', v.enfoque));
+      vs.append(row);
+    });
+    card.append(vs);
+  }
 
   const secs = el('div', 'map-sections');
   (map.secciones || []).forEach((s) => {
@@ -62,16 +72,26 @@ function renderMapDecision(ev) {
   const answers = renderQuestions(card, ev.questions);
   answerActions(card, ev, answers, {
     placeholder: '¿Algo mal? Ej.: "el estribillo arranca en 0:45", "que la última parte sea lenta" (opcional)',
-    label: 'Montar el video',
+    label: 'Montar los 3 videos',
     okEcho: 'Escuchaste bien, seguí.',
   });
   append(card);
 }
 
+// Los 3 videos terminan en cualquier orden; se muestran siempre A, B, C.
 function renderResult(timeline, ctx) {
-  const wrap = append(el('section', 'msg result'));
-  wrap.append(el('h2', 'results-title', timeline.concepto || 'Tu video, cortado sobre la música'));
-  wrap.append(el('p', 'muted small', `${timeline.segmentos.length} cortes en ${fmt(timeline.duracion)} · tocá ▶ para verlo con la música`));
+  const v = timeline.version || {};
+  if (!ctx.results) {
+    ctx.results = append(el('div', 'results msg'));
+    ctx.results.append(el('h2', 'results-title', 'Tus videos'));
+  }
+  const wrap = el('section', 'result');
+  wrap.dataset.version = v.id || '';
+  const after = [...ctx.results.querySelectorAll('.result')].find((r) => r.dataset.version > wrap.dataset.version);
+  ctx.results.insertBefore(wrap, after || null);
+  if (v.id) wrap.append(el('span', 'idea-num', `Video ${v.id} · ${v.nombre}`));
+  wrap.append(el('h3', 'result-title', timeline.concepto || 'Tu video, cortado sobre la música'));
+  wrap.append(el('p', 'muted small', `${timeline.segmentos.length} cortes en ${fmt(timeline.duracion)}${v.enfoque ? ` · ${v.enfoque}` : ''}`));
   wrap.append(createPlayer({ timeline, analysis: ctx.analysis, audioUrl: ctx.audio.url, audioName: ctx.audio.name, media: ctx.media }));
-  if (timeline.nota) append(el('div', 'msg note', timeline.nota));
+  if (timeline.nota) wrap.append(el('div', 'note', timeline.nota));
 }

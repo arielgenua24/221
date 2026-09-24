@@ -20,9 +20,15 @@ export function showError(msg) { const e = $('error'); e.textContent = msg || ''
 // ---------- Tarjetas de agentes ----------
 const INITIAL = { Orquestador: 'O', Investigador: 'I', Crítico: 'C', Director: 'D', 'Oído': '♪', 'Análisis': '∿' };
 
+// Pasos que corren en paralelo: van juntos en un grupo.
+const GROUPS = [
+  { prefix: 'research-', role: 'Investigador', title: 'Investigadores trabajando en paralelo' },
+  { prefix: 'montage-', role: 'Director', title: 'El Director monta 3 versiones en paralelo' },
+];
+
 export function createSteps() {
   const steps = new Map();
-  let group = null;
+  const groups = new Map();
   return {
     get: (step) => steps.get(step),
     all: () => [...steps.values()],
@@ -38,15 +44,16 @@ export function createSteps() {
       const body = el('div', 'agent-body');
       const live = el('div', 'live');
       node.append(summary, body, live);
-      // Los investigadores trabajan en paralelo: van juntos en un grupo.
-      if (step.startsWith('research-')) {
-        if (!group) {
-          group = append(el('div', 'group msg'));
+      const g = GROUPS.find((x) => step.startsWith(x.prefix));
+      if (g) {
+        if (!groups.has(g.prefix)) {
+          const box = append(el('div', 'group msg'));
           const head = el('div', 'group-head');
-          head.append(el('span', 'dot Investigador', 'I'), el('div', 'agent-title', 'Investigadores trabajando en paralelo'));
-          group.append(head);
+          head.append(el('span', `dot ${g.role}`, INITIAL[g.role]), el('div', 'agent-title', g.title));
+          box.append(head);
+          groups.set(g.prefix, box);
         }
-        group.append(node);
+        groups.get(g.prefix).append(node);
         follow();
       } else {
         append(node);

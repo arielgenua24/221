@@ -84,9 +84,14 @@ const SCRIPTS = {
     intencion: '(demo) Un video con ritmo a partir del material',
     historia: 'Abrir con la mejor toma, crecer con la música y cerrar con una toma larga.',
     material: meta.media.map((m, i) => ({ id: m.id, que_se_ve: '(demo)', calidad: 'media', mejores_momentos: m.kind === 'video' ? [{ t: Math.min(1, m.duration / 3), que_pasa: '(demo)' }] : [], rol: i === 0 ? 'apertura' : 'desarrollo' })),
+    versiones: [
+      { id: 'A', nombre: 'Al golpe', enfoque: '(demo) Pegada al ritmo', ritmo: 'Cada 2 beats en lo intenso', apertura: 'La toma más fuerte' },
+      { id: 'B', nombre: 'Tomas largas', enfoque: '(demo) Respira: el doble de largo por toma', ritmo: 'Cada 2 compases', apertura: 'Un plano general' },
+      { id: 'C', nombre: 'Ráfagas', enfoque: '(demo) Cortes en cada beat, orden rotado', ritmo: 'Cada beat', apertura: 'Un detalle' },
+    ],
     encargo_para_el_oido: { foco: 'Dónde sube la energía para el clímax', preguntas: ['¿Dónde está el momento más intenso?'] },
   }),
-  montage: (_, meta) => out(['(demo) Roto el material sobre la grilla: una toma por compás en lo tranquilo, cada 2 beats en lo intenso.', 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: 'Montaje de demostración sobre la grilla del tema', ...autoTimeline(meta), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
+  montage: (id, meta) => out([`(demo) Versión ${id}: roto el material sobre la grilla con otro ritmo y otro orden.`, 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: `Versión ${id} de demostración: ${meta.version?.nombre || ''}`, ...autoTimeline({ ...meta, ...{ A: { pace: 1, shift: 0 }, B: { pace: 2, shift: 1 }, C: { pace: 0.5, shift: 2 } }[id] }), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
 };
 
 function mockMap(a) {

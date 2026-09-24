@@ -1,6 +1,6 @@
 import { createAgentRunner } from './agent.js';
 import { parseWav, analyzeAudio, analysisForPrompt } from './audio.js';
-import { EAR_SYSTEM, DIRECTOR_SYSTEM, planPrompt, earPrompt, montagePrompt } from './edit-prompts.js';
+import { EAR_SYSTEM, DIRECTOR_SYSTEM, DEFAULT_VERSIONS, planPrompt, earPrompt, montagePrompt } from './edit-prompts.js';
 import { normalizeTimeline } from './timeline.js';
 
 export const MAX_MEDIA = 24;
@@ -31,11 +31,11 @@ export function parseEditBody(body) {
 
 // Edición guiada por la música:
 //   [0] análisis automático del audio (tempo, beats, golpes, energía)
-//   [1] el Director (orquestador, ve el material) → intención, historia, catálogo de tomas y encargo para el Oído
-//   [2] el Oído (escucha el audio) → mapa musical: secciones, energía, hit points, ritmo de corte, respuestas al Director
-//   ✋ el humano confirma o corrige el mapa
-//   [3] el Director (misma conversación que en [1]) → qué toma va en cada segundo
-//   [4] el código engancha cada corte al golpe más cercano y valida el montaje
+//   [1] el Director (orquestador, ve el material) → intención, historia, catálogo, 3 versiones y encargo para el Oído
+//   [2] el Oído (escucha el audio UNA vez) → mapa musical: secciones, energía, hit points, ritmo de corte, respuestas
+//   ✋ el humano confirma o corrige lo que escuchó el Oído
+//   [3] el Director, 3 llamadas en paralelo (cada una continúa la conversación de [1]) → un montaje por versión
+//   [4] el código engancha cada corte al golpe más cercano y valida cada montaje
 //
 // audio: { name, wav: Buffer (WAV mono) }
 // media: [{ id, kind: 'video' | 'photo', name, duration, frames: [{ t, url }] }]
@@ -95,41 +95,62 @@ export async function runEditPipeline({ text, audio, media, emit, llm, config, s
   });
   emit({ type: 'map', data: map });
 
-  // Decisión humana: confirmar o corregir el mapa musical.
+  // Decisión humana: confirmar o corregir lo que escuchó el Oído.
+  const versions = pickVersions(plan.versiones);
   const questions = (Array.isArray(map.preguntas_al_humano) ? map.preguntas_al_humano : []).slice(0, 2);
-  const answer = await ask({ kind: 'map', title: '¿Escuché bien tu música?', map, plan, questions });
+  const answer = await ask({ kind: 'map', title: '¿Escuché bien tu música?', map, plan, versions, questions });
   if (answer) log.decisions.map = answer;
 
-  // 3. El Director monta, continuando su propia conversación (conserva lo que vio y planificó)
-  const edit = await agent({
-    step: 'montage', role: 'Director', title: 'Montando cada segundo sobre la música', model: config.directorModel,
-    system: DIRECTOR_SYSTEM, temperature: 0.5, maxTokens: 20000,
-    history: [{ role: 'user', content: planContent }, { role: 'assistant', content: log.steps.plan.raw }],
-    content: montagePrompt({ map, analysis: forPrompt, answer }),
-    meta: { analysis, media: catalog },
-  });
-
-  // 4. Enganchar al ritmo y validar
+  // 3. El Director monta cada versión en una llamada distinta (en paralelo), sobre el mismo mapa.
   const extraAnchors = [
     ...(map.momentos_clave || []).map((m) => Number(m.t)),
     ...(map.puntos_de_corte_libres || []).map((p) => Number(p.t)),
-    ...(map.secciones || []).map((s) => Number(s.inicio)),
+    ...(map.secciones || []).map((sec) => Number(sec.inicio)),
   ].filter(Number.isFinite);
-  const { segmentos, warnings } = normalizeTimeline(edit, { analysis, media: catalog, extraAnchors });
-  warnings.forEach((w) => emit({ type: 'notice', step: 'montage', text: w }));
+  const history = [{ role: 'user', content: planContent }, { role: 'assistant', content: log.steps.plan.raw }];
+  const temperatures = { A: 0.5, B: 0.7, C: 0.9 };
 
-  const result = {
-    concepto: edit.concepto,
-    nota: edit.nota_para_el_humano,
-    duracion: analysis.duration,
-    secciones: map.secciones || [],
-    momentos: map.momentos_clave || [],
-    segmentos,
-  };
-  emit({ type: 'timeline', data: result });
+  const settled = await Promise.allSettled(versions.map(async (version) => {
+    const step = `montage-${version.id}`;
+    const edit = await agent({
+      step, role: 'Director', title: `Versión ${version.id} · ${version.nombre}`, model: config.directorModel,
+      system: DIRECTOR_SYSTEM, temperature: temperatures[version.id] ?? 0.7, maxTokens: 20000,
+      history,
+      content: montagePrompt({ map, analysis: forPrompt, answer, version, versions }),
+      meta: { analysis, media: catalog, version },
+    });
+    // 4. Enganchar al ritmo y validar
+    const { segmentos, warnings } = normalizeTimeline(edit, { analysis, media: catalog, extraAnchors });
+    warnings.forEach((w) => emit({ type: 'notice', step, text: w }));
+    const video = {
+      version,
+      concepto: edit.concepto,
+      nota: edit.nota_para_el_humano,
+      duracion: analysis.duration,
+      secciones: map.secciones || [],
+      momentos: map.momentos_clave || [],
+      segmentos,
+    };
+    emit({ type: 'timeline', data: video });
+    return { ...video, warnings };
+  }));
+  settled.forEach((r, i) => {
+    if (r.status === 'rejected') emit({ type: 'step_error', step: `montage-${versions[i].id}`, text: r.reason.message });
+  });
+  const videos = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  if (!videos.length) throw new Error('Fallaron las tres versiones: ' + settled.map((r) => r.reason?.message).join(' | '));
 
   log.finishedAt = new Date().toISOString();
   log.totals = totals;
-  log.result = { ...result, warnings };
+  log.result = { videos };
   return log;
+}
+
+// Tres versiones con id A, B y C: las del Director si son válidas, completadas con las de respaldo.
+export function pickVersions(proposed) {
+  const valid = (Array.isArray(proposed) ? proposed : []).filter((v) => v && typeof v.nombre === 'string' && typeof v.enfoque === 'string');
+  return DEFAULT_VERSIONS.map((fallback, i) => {
+    const v = valid[i];
+    return v ? { id: fallback.id, nombre: v.nombre.slice(0, 60), enfoque: v.enfoque.slice(0, 400), ritmo: String(v.ritmo || '').slice(0, 300), apertura: String(v.apertura || '').slice(0, 300) } : fallback;
+  });
 }

@@ -51,9 +51,9 @@ ${OUTPUT_PROTOCOL}`;
 
 export const DIRECTOR_SYSTEM = `Sos "el Director" del equipo: el orquestador de una edición de video guiada por la música. Trabajás con "el Oído", un especialista que escucha el audio (vos no lo escuchás).
 Tu trabajo tiene tres momentos:
-1. PLANIFICAR: mirar todo el material del humano (videos como cuadros con su segundo, fotos), entender qué quiere transmitir, catalogar las tomas y decidir la historia. Le das al Oído un encargo preciso: qué tiene que escuchar y resolver para esta historia.
-2. (El Oído escucha y te devuelve el mapa musical; el humano lo confirma o corrige.)
-3. MONTAR: decidir qué se ve en cada segundo. Sos el ÚNICO que escribe el montaje. Respetás el mapa del Oído para el ritmo (dónde cortar y a qué velocidad) y ponés tu criterio visual para el orden, la variedad y la historia.
+1. PLANIFICAR: mirar todo el material del humano (videos como cuadros con su segundo, fotos), entender qué quiere transmitir, catalogar las tomas y decidir TRES VERSIONES distintas del video (tres enfoques, no tres variaciones mínimas). Le das al Oído un encargo preciso: qué tiene que escuchar y resolver para que las tres versiones funcionen.
+2. (El Oído escucha una sola vez y te devuelve el mapa musical; el humano lo confirma o corrige.)
+3. MONTAR: se te llama una vez por versión. Cada vez montás SOLO la versión que se te indica, decidiendo qué se ve en cada segundo. Sos el ÚNICO que escribe el montaje. Respetás el mapa del Oído para dónde caen los cortes y ponés tu criterio visual para el orden, la variedad y la historia, con el comportamiento propio de esa versión.
 Sos específico: cada decisión se apoya en lo que se ve en los cuadros (qué pasa en la toma, en qué segundo) y en lo que suena en ese momento.
 
 ${EDIT_PLAYBOOK}
@@ -76,7 +76,8 @@ ${describeCatalog(catalog)}
 Tu tarea ahora: PLANIFICAR (todavía no montes).
 - Inferí la intención del humano y proponé la historia/arco del video.
 - Catalogá cada toma: qué se ve, calidad, sus mejores momentos (segundo exacto según los cuadros) y qué rol cumple (apertura, desarrollo, clímax, cierre, relleno o descartar).
-- Escribí el encargo para el Oído: en qué tiene que fijarse de la música para que ESTA historia funcione, y hasta 3 preguntas concretas (ej. "¿dónde está el momento más intenso para el clímax?", "¿la voz tiene frases largas que convenga respetar?").
+- Decidí TRES VERSIONES del video, claramente distintas entre sí y todas fieles a lo que pidió el humano. Pueden diferir en ritmo de corte (pegado a cada golpe vs. tomas largas), en historia (orden cronológico, de lo general al detalle, circular…), en qué material protagoniza, en el tratamiento (enérgico, cinematográfico, íntimo, de contraste…). Nombralas con algo corto y claro.
+- Escribí el encargo para el Oído: en qué tiene que fijarse de la música para que las tres versiones funcionen, y hasta 3 preguntas concretas (ej. "¿dónde está el momento más intenso para el clímax?", "¿la voz tiene frases largas que convenga respetar?"). El Oído escucha una sola vez: pedile todo lo que vas a necesitar.
 
 Esquema JSON:
 {
@@ -85,9 +86,12 @@ Esquema JSON:
   "material": [
     { "id": "V1", "que_se_ve": "string", "calidad": "alta | media | baja", "mejores_momentos": [ { "t": 2.5, "que_pasa": "string" } ], "rol": "apertura | desarrollo | climax | cierre | relleno | descartar" }
   ],
+  "versiones": [
+    { "id": "A", "nombre": "string (2-4 palabras)", "enfoque": "string (qué la hace distinta: ritmo, historia, material protagonista, tratamiento)", "ritmo": "string (cómo corta respecto de la música)", "apertura": "string (con qué toma arranca y por qué)" }
+  ],
   "encargo_para_el_oido": { "foco": "string", "preguntas": ["string"] }
 }
-"mejores_momentos" es solo para videos (en fotos dejalo vacío).`;
+"versiones" tiene EXACTAMENTE 3 elementos con id "A", "B" y "C". "mejores_momentos" es solo para videos (en fotos dejalo vacío).`;
 }
 
 // ---------- Etapa 2: el Oído escucha ----------
@@ -96,6 +100,7 @@ export function earPrompt({ text, audioName, analysis, plan }) {
     ? `ENCARGO DEL DIRECTOR (ya vio el material, no escuchó la música):
 - Intención: ${plan.intencion || '(sin datos)'}
 - Historia que quiere contar: ${plan.historia || '(sin datos)'}
+- Va a montar 3 versiones con tu mapa: ${(plan.versiones || []).map((v) => `${v.id} "${v.nombre}" (${v.enfoque})`).join('; ') || '(sin datos)'}
 - Foco: ${plan.encargo_para_el_oido?.foco || '(sin datos)'}
 - Preguntas:
 ${(plan.encargo_para_el_oido?.preguntas || []).map((q) => `  - ${q}`).join('\n') || '  (ninguna)'}`
@@ -110,7 +115,7 @@ ${brief}
 ANÁLISIS AUTOMÁTICO (tiempos en segundos):
 ${JSON.stringify(analysis)}
 
-Tu tarea: escuchar el tema completo y construir el MAPA MUSICAL que usará el Director.
+Tu tarea: escuchar el tema completo y construir el MAPA MUSICAL que usará el Director para las tres versiones.
 - Dividí el tema en secciones contiguas que cubran de 0 a ${analysis.duracion_s} s.
 - Para cada sección decí su energía (1-5), qué pasa y a qué ritmo conviene cortar.
 - Marcá los momentos clave (hit points) con su segundo exacto: usá la grilla del análisis para ajustar.
@@ -138,7 +143,14 @@ Esquema JSON:
 }
 
 // ---------- Etapa 3: el Director monta (continúa su conversación de la etapa 1) ----------
-export function montagePrompt({ map, analysis, answer }) {
+// Si el plan no trae tres versiones válidas, se completan con estos enfoques.
+export const DEFAULT_VERSIONS = [
+  { id: 'A', nombre: 'Al golpe', enfoque: 'Enérgica: pegada al ritmo, mucho corte en las partes intensas, hit points marcados con flash o pulso.', ritmo: 'Cortes cada 1-2 beats en lo intenso, cada compás en lo tranquilo.', apertura: 'La toma más impactante.' },
+  { id: 'B', nombre: 'Cinematográfica', enfoque: 'Narrativa: tomas largas que respiran, orden que cuenta una historia de principio a fin, fundidos en las partes lentas.', ritmo: 'Cortes en inicios de frase y compases fuertes; pocas tomas por sección.', apertura: 'Un plano general que presenta el lugar o el tema.' },
+  { id: 'C', nombre: 'Contraste', enfoque: 'Juega con el contraste: partes muy lentas contra ráfagas muy rápidas, sorpresas en los momentos clave, material inesperado en primer plano.', ritmo: 'Extremos: tomas muy largas y ráfagas de medio beat en los hit points.', apertura: 'Un detalle que intriga.' },
+];
+
+export function montagePrompt({ map, analysis, answer, version, versions }) {
   const human = answer
     ? `\nEL HUMANO REVISÓ EL MAPA (manda sobre el Oído y sobre tu criterio):\n${JSON.stringify(answer)}\n`
     : '\nEl humano aprobó el mapa sin cambios.\n';
@@ -148,7 +160,13 @@ ${human}
 GRILLA AUTOMÁTICA (segundos):
 ${JSON.stringify({ duracion_s: analysis.duracion_s, bpm: analysis.bpm_estimado, confianza: analysis.lectura_confianza, compases_inicio_s: analysis.compases_inicio_s, beats_s: analysis.beats_s })}
 
-Tu tarea ahora: MONTAR el video completo, de 0 a ${analysis.duracion_s} s, usando tu plan y el material que ya viste.
+ESTA VEZ MONTÁS LA VERSIÓN ${version.id}: "${version.nombre}".
+- Enfoque: ${version.enfoque}
+- Ritmo: ${version.ritmo || '(a tu criterio)'}
+- Apertura: ${version.apertura || '(a tu criterio)'}
+Las otras versiones (las montan otras llamadas; la tuya tiene que ser claramente distinta): ${versions.filter((v) => v.id !== version.id).map((v) => `${v.id} "${v.nombre}": ${v.enfoque}`).join(' | ')}
+
+Tu tarea ahora: MONTAR la versión ${version.id} completa, de 0 a ${analysis.duracion_s} s, usando tu plan y el material que ya viste.
 - Una lista de segmentos ordenados; cada uno dura hasta que empieza el siguiente (el último, hasta el final).
 - Cada "inicio" debe caer en un beat, compás, momento clave o punto de corte del mapa (el sistema lo ajusta al golpe más cercano dentro de 0,15 s).
 - Respetá el ritmo de corte de cada sección; guardá el mejor material para los momentos de mayor energía.
@@ -158,7 +176,7 @@ Tu tarea ahora: MONTAR el video completo, de 0 a ${analysis.duracion_s} s, usand
 
 Esquema JSON:
 {
-  "concepto": "string (la idea del video en una frase)",
+  "concepto": "string (la idea de ESTA versión en una frase)",
   "segmentos": [
     { "inicio": 0, "media": "V1", "desde": 2.5, "efecto": "${EFFECTS.join(' | ')}", "transicion": "${TRANSITIONS.join(' | ')}", "seccion": "S1", "motivo": "string" }
   ],
