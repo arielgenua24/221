@@ -93,6 +93,8 @@ export function modelList(model) {
     .filter(Boolean);
 }
 
+const jsonFix = (message, cortado) => `Tu bloque JSON no es válido (${message}). Devolvé SOLO el bloque \`\`\`json corregido y completo, sin notas${cortado ? ', y acortá los textos para que entre entero' : ''}.`;
+
 // Devuelve `agent(opts)`, que ejecuta un agente y registra su salida en `log.steps`.
 export function createAgentRunner({ emit, llm, signal, log }) {
   const totals = { cost: 0, tokens: 0 };
@@ -106,7 +108,8 @@ export function createAgentRunner({ emit, llm, signal, log }) {
 
   // `history`: turnos previos del mismo agente (así conserva su contexto entre etapas).
   // `meta` no llega al modelo: solo lo usan los modelos simulados del modo demo.
-  async function agent({ step, role, title, model, system, content, history = [], maxTokens = 8000, temperature, plugins, meta }) {
+  // `parse` lee la respuesta (por defecto, su bloque JSON); `fix` arma el pedido de corrección si no se pudo leer.
+  async function agent({ step, role, title, model, system, content, history = [], maxTokens = 8000, temperature, plugins, meta, parse = extractJson, fix = jsonFix }) {
     const candidates = modelList(model);
     if (!candidates.length) throw new Error(`«${title}» no tiene modelo configurado.`);
     emit({ type: 'step_start', step, role, title, model: candidates[0] });
@@ -158,21 +161,21 @@ export function createAgentRunner({ emit, llm, signal, log }) {
     let last = result;
     for (let intento = 0; ; intento++) {
       try {
-        data = extractJson(last.text);
+        data = parse(last.text);
         break;
       } catch (err) {
         if (intento >= 2 || signal?.aborted) {
-          throw new Error(`«${title}» no devolvió un JSON usable: ${err.message}`);
+          throw new Error(`«${title}» no devolvió ${parse === extractJson ? 'un JSON' : 'una respuesta'} usable: ${err.message}`);
         }
         const cortado = last.finishReason === 'length' || /cortado|no devolvió texto/.test(err.message);
         emit({
           type: 'notice', step,
           text: cortado
             ? 'La respuesta se cortó por largo; la pido de nuevo, más corta.'
-            : 'El JSON vino mal formado; pido una corrección.',
+            : `La respuesta vino mal formada (${err.message.slice(0, 140)}); pido una corrección.`,
         });
         const previo = last.text?.trim()
-          ? [{ role: 'assistant', content: last.text }, { role: 'user', content: `Tu bloque JSON no es válido (${err.message}). Devolvé SOLO el bloque \`\`\`json corregido y completo, sin notas${cortado ? ', y acortá los textos para que entre entero' : ''}.` }]
+          ? [{ role: 'assistant', content: last.text }, { role: 'user', content: fix(err.message, cortado) }]
           : [{ role: 'user', content: 'No llegó ninguna respuesta. Devolvé SOLO el bloque ```json pedido, sin notas ni razonamiento extenso.' }];
         last = await llm({
           step, model: used, signal, meta, temperature,

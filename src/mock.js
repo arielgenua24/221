@@ -91,8 +91,132 @@ const SCRIPTS = {
     ],
     encargo_para_el_oido: { foco: 'Dónde sube la energía para el clímax', preguntas: ['¿Dónde está el momento más intenso?'] },
   }),
+  direction: (_, meta) => out(['(demo) No miro de verdad los cuadros.', 'Sistema editorial: Space Grotesk + mono, un solo acento.', 'Ventanas lejos de las zonas de botones.'], mockDirection(meta)),
+  revise: (id, meta) => SCRIPTS.motion(id, meta),
+  motion: (id, meta) => codeOut([`(demo) ${id}: título que se revela desde una máscara.`, 'Entrada outExpo, salida inQuart, todo termina antes del final.'], mockMotion(meta)),
   montage: (id, meta) => out([`(demo) Versión ${id}: roto el material sobre la grilla con otro ritmo y otro orden.`, 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: `Versión ${id} de demostración: ${meta.version?.nombre || ''}`, ...autoTimeline({ ...meta, ...{ A: { pace: 1, shift: 0 }, B: { pace: 2, shift: 1 }, C: { pace: 0.5, shift: 2 } }[id] }), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
 };
+
+// ---------- Intuition (motion design) ----------
+const MOCK_PALETTE = [{ hex: '#F4F1EA', rol: 'texto principal' }, { hex: '#FF5A1F', rol: 'acento: una sola cosa por clip' }, { hex: '#111111', rol: 'velo / sombras' }];
+
+function mockDirection({ clips, text }) {
+  const roles = clips.length === 1 ? ['remata'] : clips.length === 2 ? ['presenta', 'remata'] : ['presenta', 'desarrolla', 'remata'];
+  return {
+    lectura: '(demo) No miro de verdad los cuadros: armo un sistema editorial neutro que funciona sobre casi cualquier video.',
+    concepto: text ? `(demo) ${text.slice(0, 120)}` : '(demo) Títulos editoriales que se revelan desde una línea',
+    arco: 'Presentar con calma, acelerar en el medio y rematar con el texto más grande.',
+    sistema: {
+      paleta: MOCK_PALETTE,
+      tipografias: { display: 'Space Grotesk', texto: 'JetBrains Mono', tratamiento: 'Titulares en 700 con tracking apretado; índices en mono 400, mayúsculas chicas.' },
+      movimiento: 'Todo entra revelándose desde una máscara (0,8 s, outExpo) y sale hacia arriba (0,45 s, inQuart). En el sostén, deriva mínima.',
+      easing: 'ease.outExpo para entrar, ease.inQuart para salir; nada rebota.',
+      motivo: 'Una línea fina del color de acento que se dibuja arriba a la izquierda, con el índice 01 / 02 / 03.',
+      composicion: 'Alineado a la izquierda, márgenes de 6u.',
+      textura: 'Ninguna.',
+      reglas: ['Máximo 8 palabras por clip', 'El acento solo en la línea del motivo'],
+      evitar: ['Glow', 'Rebotes', 'Tapar caras'],
+    },
+    clips: clips.map((c, i) => ({
+      id: c.id,
+      idea: c.prompt ? `(demo) ${c.prompt.slice(0, 80)}` : '(demo) Un título que se revela línea por línea',
+      rol: roles[i] || 'desarrolla',
+      textos: [demoText(c)],
+      sincronia: [{ t: 0.4, evento: '(demo) entra el título' }],
+      ventana: { x: 0.07, y: i % 2 ? 0.16 : 0.5, w: 0.86, h: 0.3 },
+      por_que_ahi: '(demo) Lejos de la zona de botones y de la descripción.',
+    })),
+    nota_para_el_humano: 'MODO DEMO: el sistema visual es fijo. Configurá OPENROUTER_API_KEY para que Opus mire tu video.',
+  };
+}
+
+// Texto corto para el título de demostración: lo que pidió el humano, o uno de ejemplo.
+const demoText = (clip) => (clip.prompt || 'Hecho con intuición').replace(/\s+/g, ' ').split(' ').slice(0, 7).join(' ');
+
+// Un motion de verdad (escrito a mano), para que el modo demo muestre el reproductor funcionando.
+export function mockMotionCode({ text, index = 0, total = 1, accentLine = true }) {
+  return `const TEXT = ${JSON.stringify(text)};
+const INDEX = ${JSON.stringify(`${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`)};
+
+function setup(env, ctx) {
+  const { w, h, u, fonts } = env;
+  const m = 6 * u;
+  const maxW = w - 2 * m;
+  // El título más grande que entre en la ventana, en hasta 3 líneas.
+  let size = Math.min(16 * u, h * 0.42);
+  let lines = [];
+  for (; size > 3.5 * u; size *= 0.92) {
+    ctx.font = font(700, size, fonts.display);
+    lines = wrap(ctx, TEXT, maxW);
+    const fitsW = lines.every((l) => ctx.measureText(l).width <= maxW);
+    if (fitsW && lines.length <= 3 && lines.length * size * 1.02 <= h - 2 * m - 6 * u) break;
+  }
+  return { m, size, lines, lh: size * 1.02 };
+}
+
+function draw(ctx, t, env) {
+  const { w, h, u, dur, fonts, palette, state } = env;
+  const ink = palette[0]?.hex || '#F4F1EA';
+  const accent = palette[1]?.hex || '#FF5A1F';
+  const { m, size, lines, lh } = state;
+
+  // Línea de tiempo del clip (segundos)
+  const T_LINE = 0.1, T_TITLE = 0.35, OUT_START = dur - 0.6, OUT_END = dur - 0.12;
+  const out = ease.inQuart(seg(t, OUT_START, OUT_END));
+
+  // Velo suave detrás del título para asegurar la lectura (se desvanece antes de los bordes: no se ve como caja)
+  const k = 0.32 * ease.outCubic(seg(t, 0, 0.7)) * (1 - out);
+  const veil = ctx.createLinearGradient(0, h * 0.25, 0, h);
+  veil.addColorStop(0, rgba('#111111', 0));
+  veil.addColorStop(0.7, rgba('#111111', k));
+  veil.addColorStop(1, rgba('#111111', 0));
+  ctx.fillStyle = veil;
+  ctx.fillRect(0, 0, w, h);
+
+  // Motivo: línea que se dibuja + índice
+  const pLine = ease.outExpo(seg(t, T_LINE, T_LINE + 1));
+  ctx.strokeStyle = ${accentLine ? 'accent' : 'ink'};
+  ctx.lineWidth = Math.max(1, 0.45 * u);
+  ctx.beginPath();
+  ctx.moveTo(m, m);
+  ctx.lineTo(m + (w - 2 * m) * 0.38 * pLine * (1 - out), m);
+  ctx.stroke();
+  ctx.font = font(400, 3.4 * u, fonts.text);
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = rgba(ink, ease.outCubic(seg(t, T_LINE + 0.25, T_LINE + 0.7)) * (1 - out));
+  ctx.fillText(INDEX, m, m + 2.2 * u);
+
+  // Título: cada línea sube desde su máscara, en cascada; al salir, se va hacia arriba.
+  ctx.font = font(700, size, fonts.display);
+  ctx.fillStyle = ink;
+  const top = h - m - lines.length * lh;
+  lines.forEach((line, i) => {
+    const pIn = ease.outExpo(stagger(t, i, lines.length, { start: T_TITLE, each: 0.9, total: 1.15 }));
+    const pOut = ease.inQuart(stagger(t, lines.length - 1 - i, lines.length, { start: OUT_START, each: 0.4, total: OUT_END - OUT_START }));
+    const drift = 0.6 * u * seg(t, T_TITLE + 0.9, OUT_START); // el sostén nunca queda congelado
+    const y = top + i * lh;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(m - u, y - 0.08 * lh, w - 2 * m + 2 * u, lh * 1.12);
+    ctx.clip();
+    ctx.fillText(line, m, y + (1 - pIn) * lh * 1.1 - pOut * lh * 1.1 - drift);
+    ctx.restore();
+  });
+}
+`;
+}
+
+function mockMotion({ clip, direction, index, total, revision, feedback }) {
+  const plan = direction.clips.find((c) => c.id === clip.id) || {};
+  return {
+    idea: plan.idea || '(demo) Título revelado',
+    linea_de_tiempo: [{ t: 0.1, que_pasa: 'Se dibuja la línea del motivo' }, { t: 0.35, que_pasa: 'Sube el título línea por línea' }, { t: clip.end - clip.start - 0.6, que_pasa: 'Sale hacia arriba' }],
+    nota_para_el_humano: revision ? `(demo) Apliqué: "${feedback || 'arreglo'}" (en demo solo cambia el color de la línea).` : 'MODO DEMO: es un motion de ejemplo. Mové y redimensioná la ventana para ver cómo se adapta.',
+    code: mockMotionCode({ text: demoText(clip), index, total, accentLine: !revision }),
+  };
+}
+
+const codeOut = (notes, { code, ...meta }) => `${out(notes, meta)}\n\n\`\`\`js\n${code}\`\`\``;
 
 function mockMap(a) {
   const cuts = [0, ...a.energyChanges.map((c) => c.t), a.duration];
@@ -121,7 +245,7 @@ export async function mockLLM({ step, onDelta, onReasoning, signal, meta }) {
   const [kind, id] = step.split('-');
   const text = (SCRIPTS[kind] || SCRIPTS.final)(id, meta);
   onReasoning?.('(demo) pensando…');
-  const chunk = ['plan', 'ear', 'montage'].includes(kind) ? 90 : 18; // los JSON de edición son largos
+  const chunk = ['plan', 'ear', 'montage', 'direction', 'motion', 'revise'].includes(kind) ? 90 : 18; // los JSON de edición son largos
   for (let i = 0; i < text.length; i += chunk) {
     await sleep(step === 'brief' ? 18 : 10, signal);
     onDelta?.(text.slice(i, i + chunk));

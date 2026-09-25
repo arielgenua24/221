@@ -2,9 +2,11 @@ import { $, el, fmt, append, showError, createSteps, setStatus, handleCommon, st
 import { kindOf, loadAudio, loadVideo, loadPhoto } from './media.js';
 import { handleIdeas } from './ideas.js';
 import { handleEdit, editRequestMedia } from './edit.js';
+import { createStudio, handleIntuition } from './intuition.js';
 
 // Una sola caja de chat: se sueltan (o pegan, o eligen) videos, audios, fotos y texto.
-// Dos modos: "ideas" (fotos + texto → ideas de contenido) y "edicion" (música + tomas → video montado).
+// Tres modos: "ideas" (fotos + texto → ideas de contenido), "edicion" (música + tomas → video montado)
+// e "intuition" (un video + 3 clips → motion design generado como código, encima del video).
 const input = $('text');
 const cfg = { maxPhotos: 8, maxMedia: 24, maxFrames: 60 };
 let music = null; // { name, url, duration, wav, from }
@@ -14,13 +16,15 @@ let mode = 'ideas';
 let modeChosen = false; // el humano eligió el modo a mano: no lo cambiamos solos
 let controller = null;
 let seq = 0;
+const studio = createStudio({ onChange: () => refresh() });
 
 // ---------- Configuración ----------
 fetch('/api/config').then((r) => r.json()).then((c) => {
   Object.assign(cfg, c);
+  if (c.intuition) studio.setLimits(c.intuition);
   const m = $('mode');
   m.textContent = c.mock ? 'Demo' : 'En vivo';
-  m.title = `Ideas → orquestador: ${c.orchestratorModel} · investigador: ${c.researcherModel} · crítico: ${c.criticModel}\nEdición → Director: ${c.directorModel} · Oído: ${c.earModel}`;
+  m.title = `Ideas → orquestador: ${c.orchestratorModel} · investigador: ${c.researcherModel} · crítico: ${c.criticModel}\nEdición → Director: ${c.directorModel} · Oído: ${c.earModel}\nIntuition → Director de Arte y Motion Designers: ${c.motionModel}`;
   if (c.mock) m.classList.add('demo');
 });
 
@@ -29,15 +33,19 @@ function setMode(next, chosen = false) {
   mode = next;
   if (chosen) modeChosen = true;
   document.querySelectorAll('.mode').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === mode)));
-  input.placeholder = mode === 'edicion' ? '¿Qué querés transmitir con el video?' : 'Contá qué hacés…';
+  input.placeholder = { edicion: '¿Qué querés transmitir con el video?', intuition: 'Dirección general del motion (opcional): marca, estilo, qué querés contar…' }[mode] || 'Contá qué hacés…';
+  // Si ya había un video cargado en la caja, es el video de Intuition.
+  if (mode === 'intuition' && !studio.hasVideo() && !studio.busy()) {
+    const v = items.find((m) => m.kind === 'video' && m.status === 'ready');
+    if (v) studio.setVideo(v.file);
+  }
   refresh();
 }
 document.querySelectorAll('.mode').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode, true)));
-if (new URLSearchParams(location.search).get('modo') === 'edicion') setMode('edicion', true);
 
 // Sin elección manual: si hay música o videos, o el texto habla de editar, es edición.
 function autoMode() {
-  if (modeChosen) return;
+  if (modeChosen || mode === 'intuition') return;
   const wantsEdit = !!music || loadingMusic || items.some((m) => m.kind === 'video') || /\bedici[oó]n|\bedit(a|á|ar|en)\b|\bmont(a|á|ar|aje)\b/i.test(input.value);
   if ((mode === 'edicion') !== wantsEdit) setMode(wantsEdit ? 'edicion' : 'ideas');
 }
@@ -57,6 +65,7 @@ const busy = () => loadingMusic || items.some((m) => m.status === 'loading');
 
 // Qué falta para poder enviar en el modo actual (null = listo).
 function missing() {
+  if (mode === 'intuition') return studio.missing();
   if (busy()) return 'Preparando tus archivos…';
   if (mode === 'edicion') {
     if (!music) return items.some((m) => m.kind === 'video') ? 'Falta la música: soltá un audio o tocá ♪ en un video para usar su sonido.' : 'Soltá la música (audio) y tus videos o fotos.';
@@ -66,6 +75,7 @@ function missing() {
 }
 
 function hintText() {
+  if (mode === 'intuition') return studio.hint();
   const why = missing();
   if (why) return why;
   if (mode === 'edicion') {
@@ -79,8 +89,8 @@ function hintText() {
 
 function canSend() {
   if (controller) return true;
+  if (mode === 'intuition' || mode === 'edicion') return !missing();
   if (busy()) return false;
-  if (mode === 'edicion') return !missing();
   return !!input.value.trim() || ready().some((m) => m.kind === 'photo');
 }
 
@@ -88,7 +98,7 @@ function refresh() {
   const running = !!controller;
   $('send-icon').toggleAttribute('hidden', running);
   $('stop-icon').toggleAttribute('hidden', !running);
-  $('send').title = running ? 'Detener' : mode === 'edicion' ? 'Editar' : 'Enviar';
+  $('send').title = running ? 'Detener' : { edicion: 'Editar', intuition: 'Generar motion design' }[mode] || 'Enviar';
   $('send').disabled = !canSend();
   const hint = $('hint');
   hint.textContent = running ? '' : hintText();
@@ -120,6 +130,13 @@ function renumber() {
 async function addFiles(files) {
   showError('');
   const list = [...files];
+  // En Intuition la caja recibe UN video; las referencias se agregan en cada clip.
+  if (mode === 'intuition') {
+    const vids = list.filter((f) => kindOf(f) === 'video');
+    if (!vids.length) return showError('En Intuition soltá un video. Las referencias (imágenes, videos, GIFs) se agregan en cada clip.');
+    if (vids.length > 1 || vids.length < list.length) showError(`Usé "${vids[0].name}" como video. Las referencias se agregan en cada clip.`);
+    return studio.setVideo(vids[0]);
+  }
   const audios = list.filter((f) => kindOf(f) === 'audio');
   const visuals = list.filter((f) => ['video', 'photo'].includes(kindOf(f)));
   const unknown = list.filter((f) => !kindOf(f));
@@ -170,6 +187,7 @@ window.addEventListener('drop', (e) => {
 function renderThumbs() {
   const box = $('thumbs');
   box.replaceChildren();
+  if (mode === 'intuition') return; // el video y los clips viven en el estudio (en el feed)
   if (music || loadingMusic) {
     const chip = el('div', `audio-chip${loadingMusic ? ' loading' : ''}`);
     if (loadingMusic) chip.append(el('span', null, '🎵'), el('span', 'audio-name', 'Leyendo la música…'));
@@ -221,6 +239,7 @@ $('form').addEventListener('submit', (e) => {
 });
 
 async function run() {
+  if (mode === 'intuition') return runIntuition();
   $('welcome')?.remove();
   showError('');
   const text = input.value.trim();
@@ -274,4 +293,35 @@ async function run() {
   }
 }
 
+// ---------- Intuition: el estudio arma el pedido (cuadros de cada clip + referencias) ----------
+async function runIntuition() {
+  showError('');
+  const text = input.value.trim();
+  controller = new AbortController();
+  refresh();
+  const msg = append(el('div', 'msg user-msg'));
+  const strip = el('div', 'user-photos');
+  studio.thumbs().forEach((u) => { const i = el('img'); i.src = u; i.alt = ''; strip.append(i); });
+  msg.append(strip, el('div', 'bubble', [studio.summary(), text].filter(Boolean).join('\n')));
+  const steps = createSteps();
+  try {
+    const { body, ctx } = await studio.request(text);
+    input.value = ''; autosize();
+    await streamEvents('/api/intuition', body, controller.signal, (ev) => {
+      // step_error también le importa al reproductor (marca el clip que falló).
+      if (!handleCommon(ev, steps) || ev.type === 'step_error') handleIntuition(ev, steps, ctx);
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') append(el('div', 'msg note', 'Detuviste el trabajo del equipo.'));
+    else showError(e.message);
+  } finally {
+    steps.all().forEach((s) => { if (s.status.classList.contains('running')) setStatus(s, 'fail'); });
+    controller = null;
+    refresh();
+  }
+}
+
+// /?modo=edicion o /?modo=intuition (va al final: setMode usa funciones definidas más arriba).
+const modoUrl = new URLSearchParams(location.search).get('modo');
+if (['edicion', 'intuition'].includes(modoUrl)) setMode(modoUrl, true);
 refresh();

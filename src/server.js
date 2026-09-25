@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPipeline } from './pipeline.js';
 import { runEditPipeline, parseEditBody, MAX_MEDIA, MAX_FRAMES } from './edit-pipeline.js';
+import { runIntuitionPipeline, runIntuitionRevision, parseIntuitionBody, parseRevisionBody, MAX_CLIPS, MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, CLIP_FRAMES, MAX_REFS } from './intuition-pipeline.js';
 import { streamChat } from './openrouter.js';
 import { mockLLM } from './mock.js';
 
@@ -30,6 +31,11 @@ const config = {
 const editConfig = {
   earModel: process.env.EAR_MODEL || 'google/gemini-3.8-flash,google/gemini-3.7-flash,qwen/qwen3.8-omni-flash',
   directorModel: process.env.DIRECTOR_MODEL || config.orchestratorModel,
+};
+
+// Intuition: el Director de Arte y los Motion Designers (tienen que aceptar imágenes).
+const intuitionConfig = {
+  motionModel: process.env.MOTION_MODEL || config.orchestratorModel,
 };
 
 const llm = mock ? mockLLM : (opts) => streamChat({ apiKey, ...opts });
@@ -112,6 +118,26 @@ async function handleEdit(req, res) {
   return streamFlow(res, { prefix: 'edicion-', runConfig: editConfig, run: (ctx) => runEditPipeline({ ...input, config: editConfig, ...ctx }) });
 }
 
+async function handleIntuition(req, res) {
+  let input;
+  try {
+    input = parseIntuitionBody(await readBody(req));
+  } catch (err) {
+    return badRequest(res, err.message);
+  }
+  return streamFlow(res, { prefix: 'intuition-', runConfig: intuitionConfig, run: (ctx) => runIntuitionPipeline({ ...input, config: intuitionConfig, ...ctx }) });
+}
+
+async function handleIntuitionRevise(req, res) {
+  let input;
+  try {
+    input = parseRevisionBody(await readBody(req));
+  } catch (err) {
+    return badRequest(res, err.message);
+  }
+  return streamFlow(res, { prefix: 'intuition-rev-', runConfig: intuitionConfig, run: (ctx) => runIntuitionRevision({ ...input, config: intuitionConfig, ...ctx }) });
+}
+
 async function handleDecide(req, res) {
   let body;
   try { body = await readBody(req); } catch { body = {}; }
@@ -130,19 +156,28 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'POST' && url.pathname === '/api/run') return handleRun(req, res);
   if (req.method === 'POST' && url.pathname === '/api/edit') return handleEdit(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/intuition') return handleIntuition(req, res);
+  if (req.method === 'POST' && url.pathname === '/api/intuition/revise') return handleIntuitionRevise(req, res);
   if (req.method === 'POST' && url.pathname === '/api/decide') return handleDecide(req, res);
   if (req.method === 'GET' && url.pathname === '/api/config') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ mock, ...config, ...editConfig, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES }));
+    return res.end(JSON.stringify({
+      mock, ...config, ...editConfig, ...intuitionConfig, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
+      intuition: { maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS },
+    }));
   }
   if (req.method !== 'GET') { res.writeHead(405); return res.end(); }
   if (url.pathname === '/edicion') { res.writeHead(302, { Location: '/?modo=edicion' }); return res.end(); }
+  if (url.pathname === '/intuition') { res.writeHead(302, { Location: '/?modo=intuition' }); return res.end(); }
 
   const file = path.normalize(path.join(PUBLIC, url.pathname === '/' ? 'index.html' : url.pathname));
   if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   try {
     const content = await readFile(file);
-    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
+    const headers = { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' };
+    // El worker ejecuta código escrito por la IA: sin red y sin nada más que sus propios módulos.
+    if (path.basename(file) === 'motion-worker.js') headers['Content-Security-Policy'] = "default-src 'none'; script-src 'self' 'unsafe-eval'";
+    res.writeHead(200, headers);
     res.end(content);
   } catch {
     res.writeHead(404); res.end('No encontrado');
@@ -155,4 +190,5 @@ server.listen(PORT, HOST, () => {
     ? 'MODO DEMO: sin OPENROUTER_API_KEY (o MOCK=1). Las respuestas son simuladas.'
     : `Orquestador: ${config.orchestratorModel} · Investigador: ${config.researcherModel} · Crítico: ${config.criticModel} · Web: ${config.researchWeb ? 'sí' : 'no'}`);
   console.log(`Edición con música (mismo chat, modo 🎬) · Oído: ${editConfig.earModel} · Director: ${editConfig.directorModel}`);
+  console.log(`Intuition (motion design, modo ✨) · Director de Arte y Motion Designers: ${intuitionConfig.motionModel}`);
 });

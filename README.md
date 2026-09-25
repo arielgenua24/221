@@ -1,9 +1,10 @@
 # 221 — Arnés de creación de contenido
 
-Una sola caja de chat donde **soltás (drag & drop), pegás o elegís videos, audios, fotos y texto**, y dos modos que se eligen con un toque arriba de la caja (o solos: si soltás un audio o escribís "edición", pasa a Edición):
+Una sola caja de chat donde **soltás (drag & drop), pegás o elegís videos, audios, fotos y texto**, y tres modos que se eligen con un toque arriba de la caja (o solos: si soltás un audio o escribís "edición", pasa a Edición):
 
 1. **💡 Ideas de contenido**: a partir de **fotos y una descripción del negocio**, decide qué contenido crear para Instagram/TikTok (orgánico). Entrega **4 ideas de contenido** (título + subtítulo, con hook, desarrollo, caption y cómo producirla sin filmar).
 2. **🎬 Edición con música**: una **música** (grabación de voz, MP3, M4A, o el sonido de uno de tus videos) + tus **videos y fotos**. El **Director** (Opus) orquesta todo y el **Oído** (Gemini) entiende el sonido y cómo fluye. El Oído escucha **una vez**, vos le corregís lo que haga falta, y el Director monta **3 videos distintos** (una llamada por versión), para ver y exportar.
+3. **✨ Intuition** (motion design): un **video vertical** + hasta **3 clips de hasta 5 s** que marcás en su línea de tiempo, cada uno con su pedido y sus referencias (imágenes, videos, GIFs, texto). Opus escribe **motion design como código** para cada clip, con un único sistema visual para los tres. Movés y redimensionás la **ventana** de cada clip, pedís cambios clip por clip, y al exportar el motion queda **quemado en el video**, en el lugar que elegiste.
 
 ## Cómo correrlo
 
@@ -45,6 +46,32 @@ Soltás música + videos/fotos + (opcional) qué querés transmitir
 - Si no tenés un audio aparte, tocá ♪ en un video para usar su sonido como música.
 - Los videos no se suben al servidor: solo viajan el audio (WAV mono 16 kHz) y algunos cuadros. El render y la exportación se hacen en el navegador (en tiempo real: dejá la pestaña visible).
 - Criterio de edición y por qué esta arquitectura: [investigacion/03-edicion-guiada-por-musica.md](investigacion/03-edicion-guiada-por-musica.md).
+
+## Intuition: motion design sobre tu video (modo ✨)
+
+```
+Soltás UN video + marcás hasta 3 clips (≤ 5 s) + pedido y referencias por clip + (opcional) dirección general
+  │                        (el navegador saca 6 cuadros de cada clip; el video no se sube)
+  ▼
+[1] Director de Arte (Opus 5.5, ve los cuadros y las referencias) → UN sistema visual para todo el video:
+    paleta, tipografías, gramática de movimiento, easing, motivo recurrente; la idea de cada clip,
+    con qué momento del video se sincroniza y dónde va su ventana por defecto
+  ▼
+[2] Motion Designer × clip, en paralelo (Opus 5.5) → notas + código Canvas 2D: draw(ctx, t, env)
+    (el servidor verifica la sintaxis y el contrato; si falla, le pide la corrección)
+  ▼
+Reproductor: el código corre en un worker aislado (sin DOM ni red) y se dibuja encima del video
+  ├─ ✋ VOS: movés y redimensionás la ventana de cada clip (el diseño se adapta a cualquier proporción)
+  ├─ ✋ VOS: "Rehacer este clip" con tu pedido → solo ese clip, sin salirse del sistema visual
+  │        (si el código falla o se cuelga, "Pedir que lo arregle" le manda el error al modelo)
+  ▼
+Exportar → MP4/WebM con el motion quemado en cada ventana y el sonido original
+```
+
+- **El criterio de gusto** que leen los dos agentes está en [src/MOTION_DESIGN.md](src/MOTION_DESIGN.md): mirar antes de diseñar, una idea por clip, estructura entrada/sostén/salida, easing, tipografía cinética, color, composición en 9:16, coherencia entre clips, qué evitar. Editalo para cambiar cómo diseña el equipo.
+- **El contrato técnico** (helpers de animación, tipografías permitidas, reglas de determinismo) sale de [public/motion-lib.js](public/motion-lib.js), el mismo archivo que usa el reproductor: lo que se le documenta al modelo es lo que existe.
+- Cada cuadro es una función pura del tiempo (sin `Math.random` ni reloj), así se puede adelantar, retroceder y exportar igual.
+- Las tipografías (Google Fonts) se bajan en la página y se pasan al worker; si no cargan, se usan las del sistema.
 
 ## Cómo trabaja el equipo de ideas (v1)
 
@@ -88,8 +115,11 @@ Fotos + texto
 | `src/edit-prompts.js` | Manual de edición guiada por la música + prompts del Director y del Oído |
 | `src/edit-pipeline.js` | Flujo de edición musical |
 | `src/timeline.js` | Valida el montaje y engancha los cortes al ritmo |
-| `src/server.js` | Servidor HTTP + streaming de eventos (NDJSON) a la UI; `POST /api/run`, `POST /api/edit`, `POST /api/decide` reanuda el flujo pausado |
-| `public/` | Interfaz: `app.js` (caja única, soltar archivos, modos), `shared.js`, `media.js` (audio/cuadros), `ideas.js`, `edit.js`, `player.js` (reproductor y exportación) |
+| `src/MOTION_DESIGN.md` | Manual de motion design (el criterio de gusto de Intuition) |
+| `src/intuition-prompts.js` | Prompts del Director de Arte y del Motion Designer + lectura de su respuesta (JSON + código) |
+| `src/intuition-pipeline.js` | Flujo de Intuition: validación, sistema visual, un motion por clip, revisiones |
+| `src/server.js` | Servidor HTTP + streaming de eventos (NDJSON) a la UI; `POST /api/run`, `POST /api/edit`, `POST /api/intuition`, `POST /api/intuition/revise`, `POST /api/decide` reanuda el flujo pausado |
+| `public/` | Interfaz: `app.js` (caja única, soltar archivos, modos), `shared.js`, `media.js` (audio/cuadros), `ideas.js`, `edit.js`, `player.js` (reproductor y exportación), `intuition.js` (estudio de clips), `intuition-player.js` (overlay, ventana y exportación), `motion-lib.js` + `motion-worker.js` (runtime aislado del código generado) |
 
 ## Configuración (`.env`)
 
@@ -102,6 +132,7 @@ Fotos + texto
 | `RESEARCHER_VISION` | `0` | Por defecto las fotos solo las ve el orquestador |
 | `EAR_MODEL` | `google/gemini-3.8-flash,google/gemini-3.7-flash,qwen/qwen3.8-omni-flash` | Edición musical: el modelo que escucha. Tiene que aceptar audio. |
 | `DIRECTOR_MODEL` | = orquestador | Edición musical: el que orquesta y monta. Tiene que aceptar imágenes. |
+| `MOTION_MODEL` | = orquestador | Intuition: Director de Arte y Motion Designers. Tiene que aceptar imágenes. |
 | `OPENROUTER_RETRIES` | `3` | Reintentos ante errores pasajeros (429 del pool compartido, 5xx, cortes de red) |
 
 Cualquier variable de modelo acepta una **lista separada por comas**: si el primero no llega a responder

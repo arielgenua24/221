@@ -18,12 +18,13 @@ export function append(node) { feed.append(node); stick = true; follow(); return
 export function showError(msg) { const e = $('error'); e.textContent = msg || ''; e.hidden = !msg; }
 
 // ---------- Tarjetas de agentes ----------
-const INITIAL = { Orquestador: 'O', Investigador: 'I', Crítico: 'C', Director: 'D', 'Oído': '♪', 'Análisis': '∿' };
+const INITIAL = { Orquestador: 'O', Investigador: 'I', Crítico: 'C', Director: 'D', 'Oído': '♪', 'Análisis': '∿', 'Director de Arte': 'A', 'Motion Designer': 'M' };
 
 // Pasos que corren en paralelo: van juntos en un grupo.
 const GROUPS = [
   { prefix: 'research-', role: 'Investigador', title: 'Investigadores trabajando en paralelo' },
   { prefix: 'montage-', role: 'Director', title: 'El Director monta 3 versiones en paralelo' },
+  { prefix: 'motion-', role: 'Motion Designer', title: 'Un Motion Designer por clip, en paralelo' },
 ];
 
 export function createSteps() {

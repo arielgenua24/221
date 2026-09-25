@@ -73,11 +73,8 @@ const once = (node, ev, ms = 10000) => new Promise((resolve, reject) => {
 
 export async function loadVideo(file) {
   const url = URL.createObjectURL(file);
-  const v = document.createElement('video');
-  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
-  await once(v, 'loadeddata');
+  const v = await openVideo(url);
   const d = v.duration;
-  if (!Number.isFinite(d) || !d) throw new Error('no pude leer su duración');
   const frames = [];
   for (const t of [0.12, 0.37, 0.62, 0.87].map((f) => +(d * f).toFixed(2))) {
     v.currentTime = t;
@@ -98,4 +95,75 @@ export async function loadPhoto(file) {
     frames: [{ t: 0, url: frame }], thumb: frame,
     full: toJpeg(img, img.naturalWidth, img.naturalHeight, PHOTO_SIDE, 0.85),
   };
+}
+
+// ---------- Intuition ----------
+
+// Abre un video y devuelve un elemento listo para posicionar (sin sonido: solo para leer cuadros).
+export async function openVideo(url) {
+  const v = document.createElement('video');
+  v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  await once(v, 'loadeddata');
+  // Los WebM grabados en el navegador no traen la duración: ir al final obliga a calcularla.
+  if (v.duration === Infinity) {
+    v.currentTime = 1e7;
+    await once(v, 'seeked', 20000);
+    v.currentTime = 0;
+    await once(v, 'seeked');
+  }
+  if (!Number.isFinite(v.duration) || !v.duration) throw new Error('no pude leer su duración');
+  return v;
+}
+
+// Cuadros JPEG de un video en los segundos pedidos (en orden). `v` es un elemento de openVideo.
+export async function framesAt(v, times, side = FRAME_SIDE, quality = 0.72) {
+  const out = [];
+  for (const t of times) {
+    v.currentTime = Math.min(Math.max(0, t), v.duration - 0.05);
+    await once(v, 'seeked');
+    out.push({ t, url: toJpeg(v, v.videoWidth, v.videoHeight, side, quality) });
+  }
+  return out;
+}
+
+// Referencia visual de un clip: imagen (1 cuadro), video o GIF animado (hasta 4 cuadros).
+export async function loadReference(file) {
+  const name = file.name;
+  const type = file.type || '';
+  if (type === 'image/gif' || /\.gif$/i.test(name)) {
+    const frames = await gifFrames(file).catch(() => null);
+    if (frames?.length > 1) return { kind: 'video', name, frames, thumb: frames[0] };
+  }
+  if (kindOf(file) === 'photo') {
+    const { frames, thumb } = await loadPhoto(file);
+    return { kind: 'image', name, frames: frames.map((f) => f.url), thumb };
+  }
+  if (kindOf(file) === 'video') {
+    const url = URL.createObjectURL(file);
+    try {
+      const v = await openVideo(url);
+      const frames = (await framesAt(v, [0.15, 0.4, 0.65, 0.9].map((f) => v.duration * f))).map((f) => f.url);
+      return { kind: 'video', name, frames, thumb: frames[1] };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+  throw new Error('solo imágenes, videos o GIFs');
+}
+
+// Cuadros repartidos de un GIF animado (donde el navegador tiene ImageDecoder).
+async function gifFrames(file) {
+  if (typeof ImageDecoder === 'undefined') return null;
+  const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: 'image/gif' });
+  await dec.tracks.ready;
+  const n = dec.tracks.selectedTrack?.frameCount || 1;
+  const picks = [...new Set([0.1, 0.37, 0.63, 0.9].map((f) => Math.min(n - 1, Math.floor(n * f))))];
+  const frames = [];
+  for (const frameIndex of picks) {
+    const { image } = await dec.decode({ frameIndex });
+    frames.push(toJpeg(image, image.displayWidth, image.displayHeight, FRAME_SIDE, 0.72));
+    image.close();
+  }
+  dec.close();
+  return frames;
 }
