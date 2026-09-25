@@ -86,6 +86,7 @@ export function handleCommon(ev, steps) {
       return true;
     case 'progress': if (s) s.live.textContent = `Redactando… ${ev.chars.toLocaleString('es')} caracteres`; return true;
     case 'notice': if (s) s.node.append(el('div', 'notice', ev.text)); return true;
+    case 'step_model': if (s) s.sub.textContent = ev.model; return true;
     case 'step_end':
       if (s) { setStatus(s, 'ok'); s.live.textContent = ''; s.node.open = false; s.sub.textContent = 'Listo · tocá para ver sus notas'; }
       return true;

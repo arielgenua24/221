@@ -28,7 +28,7 @@ const config = {
   researcherVision: process.env.RESEARCHER_VISION === '1',
 };
 const editConfig = {
-  earModel: process.env.EAR_MODEL || 'google/gemini-3.8-flash',
+  earModel: process.env.EAR_MODEL || 'google/gemini-3.8-flash,google/gemini-3.7-flash,qwen/qwen3.8-omni-flash',
   directorModel: process.env.DIRECTOR_MODEL || config.orchestratorModel,
 };
 

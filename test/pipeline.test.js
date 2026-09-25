@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runPipeline, extractJson } from '../src/pipeline.js';
+import { modelList } from '../src/agent.js';
 import { mockLLM } from '../src/mock.js';
 
 const config = { orchestratorModel: 'o', researcherModel: 'r', criticModel: 'c', researchWeb: true, researcherVision: false };
@@ -8,6 +9,22 @@ const config = { orchestratorModel: 'o', researcherModel: 'r', criticModel: 'c',
 test('extractJson toma el último bloque json', () => {
   assert.deepEqual(extractJson('notas\n```json\n{"a":1}\n```'), { a: 1 });
   assert.deepEqual(extractJson('sin bloque {"b":2} fin'), { b: 2 });
+});
+
+test('extractJson rescata un JSON cortado a la mitad', () => {
+  // bloque abierto que nunca cierra (la respuesta se quedó sin tokens)
+  const cortado = 'notas\n```json\n{"negocio":{"rubro":"jeans","nota":"texto a medi';
+  assert.deepEqual(extractJson(cortado), { negocio: { rubro: 'jeans' } });
+  // corte justo después de una coma, dentro de un array
+  assert.deepEqual(extractJson('```json\n{"ideas":["una","dos",'), { ideas: ['una', 'dos'] });
+  // corte con una clave sin valor
+  assert.deepEqual(extractJson('{"a":1,"b":'), { a: 1 });
+});
+
+test('extractJson avisa en castellano cuando no hay nada que leer', () => {
+  assert.throws(() => extractJson(''), /no devolvió texto/);
+  assert.throws(() => extractJson('   '), /no devolvió texto/);
+  assert.throws(() => extractJson('perdón, no puedo'), /ningún bloque JSON/);
 });
 
 test('el pipeline completo entrega 4 ideas y oculta el JSON de las notas', async () => {
@@ -61,4 +78,78 @@ test('se pausa en 2 decisiones y las respuestas llegan a los agentes', async () 
   assert.match(prompts.final, /más humor/);
   assert.doesNotMatch(prompts.ideation, /preguntas_al_humano/);
   assert.deepEqual(log.decisions.pick.ids, ['C5', 'C8']);
+});
+
+test('si la respuesta viene cortada, reintenta con más presupuesto', async () => {
+  const events = [];
+  let primera = true;
+  const calls = [];
+  const llm = async (opts) => {
+    calls.push(opts.maxTokens);
+    if (opts.step === 'brief' && primera) {
+      primera = false;
+      return { text: 'notas\n```json\n{"neg', usage: null, finishReason: 'length' };
+    }
+    return mockLLM(opts);
+  };
+  const log = await runPipeline({ text: 'Jeans', photos: [], emit: (e) => events.push(e), llm, config });
+  assert.equal(log.result.ideas.length, 4);
+  assert.ok(events.some((e) => e.type === 'notice' && /se cortó por largo/i.test(e.text)));
+  assert.ok(calls[1] > calls[0], 'el reintento pide más tokens');
+});
+
+test('si el JSON nunca llega, el error nombra el paso', async () => {
+  const llm = async (opts) => (opts.step === 'brief' ? { text: 'no puedo', usage: null } : mockLLM(opts));
+  await assert.rejects(
+    runPipeline({ text: 'Jeans', photos: [], emit: () => {}, llm, config }),
+    /Leyendo tu negocio.*no devolvió un JSON usable/s,
+  );
+});
+
+test('modelList acepta texto, lista y separadores sueltos', () => {
+  assert.deepEqual(modelList('a/b, c/d ,, e/f'), ['a/b', 'c/d', 'e/f']);
+  assert.deepEqual(modelList(['a/b', ' c/d ']), ['a/b', 'c/d']);
+  assert.deepEqual(modelList(''), []);
+});
+
+test('si el primer modelo está saturado, el paso sigue con el siguiente', async () => {
+  const usados = [];
+  const events = [];
+  const llm = async (opts) => {
+    usados.push(opts.model);
+    if (opts.model === 'saturado') {
+      const err = new Error('OpenRouter 429 (saturado): Provider returned error');
+      err.transient = true;
+      err.streamed = false;
+      throw err;
+    }
+    return mockLLM(opts);
+  };
+  const log = await runPipeline({
+    text: 'Jeans', photos: [], emit: (e) => events.push(e), llm,
+    config: { ...config, orchestratorModel: 'saturado,o' },
+  });
+  assert.equal(log.result.ideas.length, 4);
+  assert.equal(usados[0], 'saturado');
+  assert.equal(usados[1], 'o');
+  assert.equal(log.steps.brief.model, 'o', 'el registro guarda el modelo que sí respondió');
+  assert.ok(events.some((e) => e.type === 'notice' && /saturado no pudo responder.*Sigo con o/s.test(e.text)));
+  assert.ok(events.some((e) => e.type === 'step_model' && e.model === 'o'));
+});
+
+test('si el modelo ya escribió, no se cambia de modelo a mitad de respuesta', async () => {
+  const llm = async (opts) => {
+    if (opts.step === 'brief') {
+      opts.onDelta?.('empecé a escribir');
+      const err = new Error('OpenRouter 429 (uno): se cayó el proveedor');
+      err.transient = false;
+      err.streamed = true;
+      throw err;
+    }
+    return mockLLM(opts);
+  };
+  await assert.rejects(
+    runPipeline({ text: 'Jeans', photos: [], emit: () => {}, llm, config: { ...config, orchestratorModel: 'uno,dos' } }),
+    /OpenRouter 429 \(uno\)/,
+  );
 });

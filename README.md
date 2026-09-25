@@ -100,5 +100,10 @@ Fotos + texto
 | `CRITIC_MODEL` | = investigador | Distinto al orquestador a propósito |
 | `RESEARCH_WEB` | `1` | Plugin web de OpenRouter; si falla, sigue sin web |
 | `RESEARCHER_VISION` | `0` | Por defecto las fotos solo las ve el orquestador |
-| `EAR_MODEL` | `google/gemini-3.8-flash` | Edición musical: el modelo que escucha. Tiene que aceptar audio. |
+| `EAR_MODEL` | `google/gemini-3.8-flash,google/gemini-3.7-flash,qwen/qwen3.8-omni-flash` | Edición musical: el modelo que escucha. Tiene que aceptar audio. |
 | `DIRECTOR_MODEL` | = orquestador | Edición musical: el que orquesta y monta. Tiene que aceptar imágenes. |
+| `OPENROUTER_RETRIES` | `3` | Reintentos ante errores pasajeros (429 del pool compartido, 5xx, cortes de red) |
+
+Cualquier variable de modelo acepta una **lista separada por comas**: si el primero no llega a responder
+(saturado, sin cupo, inexistente), el paso sigue con el siguiente y la interfaz lo avisa. Antes de eso,
+cada llamada reintenta sola los errores pasajeros, respetando el `Retry-After` del proveedor.
