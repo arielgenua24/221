@@ -47,16 +47,16 @@ function fail({ status, model, detail, streamed }) {
 
 // Una llamada en streaming a OpenRouter (API compatible con OpenAI).
 // onDelta recibe el texto de la respuesta; onReasoning, el razonamiento si el modelo lo expone.
-async function once({ apiKey, model, messages, maxTokens, temperature, plugins, onDelta, onReasoning, signal }) {
+async function once({ apiKey, model, messages, temperature, plugins, reasoning, onDelta, onReasoning, signal }) {
   const body = {
     model,
     messages,
     stream: true,
-    max_tokens: maxTokens,
     usage: { include: true },
   };
   if (temperature !== undefined) body.temperature = temperature;
   if (plugins) body.plugins = plugins;
+  if (reasoning) body.reasoning = reasoning;
 
   let res;
   try {
@@ -130,6 +130,11 @@ async function once({ apiKey, model, messages, maxTokens, temperature, plugins, 
       }
       if (chunk.usage) usage = chunk.usage;
     }
+  }
+  // El filtro de contenido del proveedor bloqueó la respuesta: reintentar igual no sirve,
+  // pero otro modelo de la lista sí puede responder (no escribió texto, así que no se mezcla nada).
+  if (finishReason === 'content_filter' && !text.trim()) {
+    throw fail({ status: 'content_filter', model, detail: 'el filtro de contenido del proveedor bloqueó la respuesta', streamed: false });
   }
   return { text, usage, finishReason };
 }

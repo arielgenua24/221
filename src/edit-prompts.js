@@ -39,7 +39,7 @@ export const EDIT_PLAYBOOK = `
 
 const OUTPUT_PROTOCOL = `
 FORMATO DE RESPUESTA (obligatorio):
-1. Primero escribí "Notas de trabajo": entre 3 y 8 viñetas breves en español, pensando en voz alta. El humano las ve en vivo, así que tienen que ser concretas (qué escuchás/ves, qué decidís y por qué). Nada de relleno.
+1. Primero escribí "Lo que escucho y lo que propongo": entre 3 y 8 viñetas breves en español. El humano las ve en vivo, así que tienen que ser concretas (qué escuchás/ves, qué proponés y por qué). Nada de relleno.
 2. Después, un único bloque que empiece con \`\`\`json y termine con \`\`\`, con EXACTAMENTE el esquema pedido. Sin comentarios dentro del JSON. Los tiempos van en segundos con decimales (ej. 12.48).`;
 
 export const EAR_SYSTEM = `Sos "el Oído" del equipo: productor/a musical y editor/a de videoclips con años cortando videos sobre la música (estilo de los mejores editores de reels, videoclips y trailers).

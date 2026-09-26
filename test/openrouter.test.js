@@ -23,7 +23,7 @@ test('streamChat parsea el SSE de OpenRouter (contenido, razonamiento, uso y kee
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${server.address().port}`;
   const deltas = []; const thoughts = [];
-  const out = await streamChat({ apiKey: 'k', model: 'm', messages: [], maxTokens: 10, plugins: [{ id: 'web' }], onDelta: (t) => deltas.push(t), onReasoning: (t) => thoughts.push(t) });
+  const out = await streamChat({ apiKey: 'k', model: 'm', messages: [], plugins: [{ id: 'web' }], onDelta: (t) => deltas.push(t), onReasoning: (t) => thoughts.push(t) });
   server.close();
   assert.equal(out.text, 'Hola ```json\n{"ok":true}\n```');
   assert.deepEqual(thoughts, ['pienso']);
@@ -102,4 +102,24 @@ test('streamChat no reintenta un 404 (el modelo no existe)', async () => {
   await assert.rejects(streamChat({ apiKey: 'k', model: 'x/y', messages: [] }), /404 \(x\/y\).*model not found/);
   server.close();
   assert.equal(llamadas, 1);
+});
+
+test('un bloqueo del filtro de contenido sin texto es un error que permite cambiar de modelo', async () => {
+  const original = globalThis.fetch;
+  const chunks = [
+    'data: {"choices":[{"delta":{"reasoning":"mmm"}}]}\n',
+    'data: {"choices":[{"delta":{"content":""},"finish_reason":"content_filter"}]}\n',
+    'data: [DONE]\n',
+  ];
+  globalThis.fetch = async () => new Response(new ReadableStream({
+    start(c) { for (const ch of chunks) c.enqueue(new TextEncoder().encode(ch)); c.close(); },
+  }), { status: 200 });
+  try {
+    const err = await streamChat({ apiKey: 'k', model: 'm', messages: [], retries: 0 }).catch((e) => e);
+    assert.equal(err.status, 'content_filter');
+    assert.equal(err.streamed, false);
+    assert.equal(err.transient, false);
+  } finally {
+    globalThis.fetch = original;
+  }
 });

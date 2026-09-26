@@ -56,7 +56,7 @@ export async function runPipeline({ text, photos, emit, llm, config, signal, ask
   // 3. Ideación divergente (orquestador)
   const ideation = await agent({
     step: 'ideation', role: 'Orquestador', title: 'Generando 8 conceptos distintos', model: orchestratorModel,
-    system: ORCHESTRATOR_SYSTEM, temperature: 1, maxTokens: 10000,
+    system: ORCHESTRATOR_SYSTEM, temperature: 1,
     content: ideationPrompt(brief, research),
   });
   const concepts = ideation.conceptos || [];
@@ -81,7 +81,7 @@ export async function runPipeline({ text, photos, emit, llm, config, signal, ask
   // 5. Selección y mejora final (orquestador = único escritor)
   const final = await agent({
     step: 'final', role: 'Orquestador', title: 'Eligiendo y puliendo las 4 mejores', model: orchestratorModel,
-    system: ORCHESTRATOR_SYSTEM, temperature: 0.5, maxTokens: 10000,
+    system: ORCHESTRATOR_SYSTEM, temperature: 0.5,
     content: finalPrompt(brief, concepts, critique, pick),
   });
   const ideas = (final.ideas || []).slice(0, 4);

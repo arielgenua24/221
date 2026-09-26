@@ -77,7 +77,7 @@ export async function runEditPipeline({ text, audio, media, emit, llm, config, s
   const planContent = [{ type: 'text', text: planPrompt({ text, audioName: audio.name, analysis: forPrompt, catalog }) }, ...mediaParts];
   const plan = await agent({
     step: 'plan', role: 'Director', title: 'Mirando tu material y armando la historia', model: config.directorModel,
-    system: DIRECTOR_SYSTEM, temperature: 0.5, maxTokens: 8000,
+    system: DIRECTOR_SYSTEM, temperature: 0.5,
     content: planContent,
     meta: { analysis, media: catalog },
   });
@@ -86,7 +86,7 @@ export async function runEditPipeline({ text, audio, media, emit, llm, config, s
   // 2. El Oído escucha el tema completo con el encargo del Director
   const map = await agent({
     step: 'ear', role: 'Oído', title: 'Escuchando tu música', model: config.earModel,
-    system: EAR_SYSTEM, temperature: 0.3, maxTokens: 12000,
+    system: EAR_SYSTEM, temperature: 0.3,
     content: [
       { type: 'input_audio', input_audio: { data: audio.wav.toString('base64'), format: 'wav' } },
       { type: 'text', text: earPrompt({ text, audioName: audio.name, analysis: forPrompt, plan }) },
@@ -114,7 +114,7 @@ export async function runEditPipeline({ text, audio, media, emit, llm, config, s
     const step = `montage-${version.id}`;
     const edit = await agent({
       step, role: 'Director', title: `Versión ${version.id} · ${version.nombre}`, model: config.directorModel,
-      system: DIRECTOR_SYSTEM, temperature: temperatures[version.id] ?? 0.7, maxTokens: 20000,
+      system: DIRECTOR_SYSTEM, temperature: temperatures[version.id] ?? 0.7,
       history,
       content: montagePrompt({ map, analysis: forPrompt, answer, version, versions }),
       meta: { analysis, media: catalog, version },

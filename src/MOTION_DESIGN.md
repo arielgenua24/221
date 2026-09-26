@@ -186,7 +186,20 @@ Lo que **varía**: la idea de cada clip y su intensidad, siguiendo un arco:
 
 ---
 
-## 12. Checklist antes de entregar
+## 12. Sonido: el motion también se oye
+
+Cada clip lleva una **partitura de efectos** (sintetizados; el catálogo viene en el encargo) que suena **encima del audio original del video**. El sonido no decora: le da peso físico a lo que se mueve. Un título que cae sin sonido flota; con un golpe grave, aterriza.
+
+- **Sincronía al cuadro**: cada efecto cae en el segundo exacto del evento visual que acompaña (el `t` del sonido = el `t` del keyframe en `draw`). Un sonido 100 ms tarde se siente como un error.
+- **Pocos y con jerarquía**: 2 a 6 eventos por clip. Un solo sonido héroe (el más fuerte, en el momento héroe); el resto, detalle. Un sonido por cada cosa que se mueve es ruido.
+- **El sonido anticipa**: un `riser` o un `whoosh` termina justo donde arranca el golpe; el golpe cae en el cuadro del impacto.
+- **Respeta el audio original**: si hay voz o música, volúmenes bajos (0.2–0.5) y nada que tape la voz; los graves (`impacto`, `sub`) molestan menos que los agudos sobre una voz. El silencio también es una decisión válida.
+- **Coherencia**: los tres clips usan la misma familia de sonidos (la del sistema), igual que la misma tipografía. Si el sistema es suizo y preciso: `click`, `tick`, `whoosh` corto. Si es cálido y editorial: `swell`, `pop` suave, `ding` grave. Si es tech: `glitch`, `tecla`, `tick`.
+- **Evitar**: el mismo efecto repetido sin variar tono ni volumen, `ding` en cada aparición, un `riser` que no desemboca en nada, sonidos en los últimos 0,1 s del clip (se cortan).
+
+---
+
+## 13. Checklist antes de entregar
 
 1. ¿Puedo decir la idea del clip en una frase?
 2. ¿Está sincronizada con al menos un evento visible del video (con su segundo)?
@@ -197,4 +210,5 @@ Lo que **varía**: la idea de cada clip y su intensidad, siguiendo un arco:
 7. ¿Funciona si la ventana es mucho más ancha o mucho más angosta?
 8. ¿Hay un solo momento héroe? ¿Hay al menos una pausa?
 9. ¿Es determinista (sin `Math.random`, sin estado acumulado)?
-10. ¿Quitaría algo? Si la respuesta es sí, quitalo.
+10. ¿Cada sonido cae en el segundo exacto de su evento visual, y hay uno solo que manda?
+11. ¿Quitaría algo? Si la respuesta es sí, quitalo.

@@ -1,5 +1,6 @@
 import { createAgentRunner } from './agent.js';
 import { FONTS } from '../public/motion-lib.js';
+import { SOUNDS, normalizeScore } from '../public/sound-lib.js';
 import { ART_DIRECTOR_SYSTEM, MOTION_SYSTEM, directionPrompt, motionPrompt, revisionPrompt, parseMotion, motionFix } from './intuition-prompts.js';
 
 export const MAX_CLIPS = 3;
@@ -115,6 +116,11 @@ export function normalizeDirection(raw, clips) {
     .slice(0, 5)
     .map((p) => ({ hex: p.hex.trim().toUpperCase(), rol: String(p.rol || '').slice(0, 80) }));
   sistema.paleta = palette.length ? palette : [{ hex: '#F4F1EA', rol: 'texto' }, { hex: '#FF5A1F', rol: 'acento' }];
+  const sonido = sistema.sonido && typeof sistema.sonido === 'object' ? sistema.sonido : {};
+  const efectos = (Array.isArray(sonido.efectos) ? sonido.efectos : [])
+    .map((e) => String(e).trim().toLowerCase())
+    .filter((e) => SOUNDS[e]);
+  sistema.sonido = { ...sonido, efectos: [...new Set(efectos)].slice(0, 6) };
   const byId = new Map((Array.isArray(d.clips) ? d.clips : []).filter((c) => c && typeof c === 'object').map((c) => [String(c.id), c]));
   return {
     ...d,
@@ -142,18 +148,19 @@ function clipParts(clip, maxFrames) {
   ];
 }
 
-const motionView = (id, data) => ({
-  id,
+const motionView = (clip, data) => ({
+  id: clip.id,
   idea: String(data.idea || ''),
   linea_de_tiempo: Array.isArray(data.linea_de_tiempo) ? data.linea_de_tiempo : [],
   nota: String(data.nota_para_el_humano || ''),
+  sonido: normalizeScore(data.sonido, clip.end - clip.start),
   code: data.code,
 });
 
 function motionAgent(agent, config, { step, clip, content, history = [], title, temperature = 0.7, meta }) {
   return agent({
     step: step || `motion-${clip.id}`, role: 'Motion Designer', title, model: config.motionModel,
-    system: MOTION_SYSTEM, temperature, maxTokens: 16000, history, content,
+    system: MOTION_SYSTEM, temperature, history, content,
     parse: parseMotion, fix: motionFix, meta,
   });
 }
@@ -175,7 +182,7 @@ export async function runIntuitionPipeline({ text, video, clips, emit, llm, conf
   // 1. Sistema visual
   const raw = await agent({
     step: 'direction', role: 'Director de Arte', title: 'Mirando tu video y armando el sistema visual', model: config.motionModel,
-    system: ART_DIRECTOR_SYSTEM, temperature: 0.6, maxTokens: 8000,
+    system: ART_DIRECTOR_SYSTEM, temperature: 0.6,
     content: [{ type: 'text', text: directionPrompt({ text, video, clips }) }, ...clips.flatMap((c) => clipParts(c, DIRECTOR_FRAMES))],
     meta: { clips, text },
   });
@@ -191,7 +198,7 @@ export async function runIntuitionPipeline({ text, video, clips, emit, llm, conf
       content: [{ type: 'text', text: motionPrompt({ direction, clip, index, total: clips.length, box: plan.ventana, video }) }, ...clipParts(clip, CLIP_FRAMES)],
       meta: { clip, direction, index, total: clips.length },
     });
-    const view = motionView(clip.id, data);
+    const view = motionView(clip, data);
     emit({ type: 'motion', data: view });
     return view;
   }));
@@ -228,7 +235,7 @@ export async function runIntuitionRevision({ video, clip, direction, box, index,
     content: revisionPrompt({ feedback, error }),
     meta: { clip, direction, index, total, revision: true, feedback },
   });
-  const view = motionView(clip.id, data);
+  const view = motionView(clip, data);
   emit({ type: 'motion', data: { ...view, revision: true } });
   log.finishedAt = new Date().toISOString();
   log.totals = totals;

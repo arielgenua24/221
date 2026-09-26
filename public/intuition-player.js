@@ -1,11 +1,14 @@
 import { el, fmt } from './shared.js';
 import { googleFontsUrl } from './motion-lib.js';
+import { playSound } from './sound-lib.js';
 
 // Reproductor de Intuition: dibuja el video en un canvas y, encima, el motion design de cada clip
 // (lo calcula un worker aislado). Cada clip tiene su "ventana", que el humano mueve y redimensiona.
-// Al exportar, el motion queda "quemado" en el video, en la ventana elegida.
+// Cada clip trae además una partitura de efectos (sintetizados en la página), que suena encima del audio original.
+// Al exportar, el motion queda "quemado" en el video, en la ventana elegida, con sus sonidos.
 
 const MAX_SIDE = 1920; // lado largo del video exportado
+const SFX_AHEAD = 0.25; // segundos de efectos que se programan por adelantado
 const HANG_MS = 2000; // si un cuadro tarda más, el código se colgó (bucle infinito): se reinicia el worker
 const MIN_W = 0.1;
 const MIN_H = 0.05;
@@ -80,7 +83,14 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
   const showBoxInput = el('input');
   showBoxInput.type = 'checkbox'; showBoxInput.checked = true;
   showBox.append(showBoxInput, document.createTextNode(' Ver ventanas'));
-  controls.append(play, time, showBox);
+  const sfxBox = el('label', 'box-toggle small');
+  const sfxOn = el('input');
+  sfxOn.type = 'checkbox'; sfxOn.checked = true;
+  const sfxVol = el('input', 'sfx-vol');
+  sfxVol.type = 'range'; sfxVol.min = '0'; sfxVol.max = '1.5'; sfxVol.step = '0.05'; sfxVol.value = '1';
+  sfxVol.setAttribute('aria-label', 'Volumen de los efectos');
+  sfxBox.append(sfxOn, document.createTextNode(' Efectos de sonido '), sfxVol);
+  controls.append(play, time, showBox, sfxBox);
 
   const tl = el('div', 'tl motion-tl');
   const track = el('div', 'tl-row motion-track');
@@ -214,15 +224,63 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     placeBox(c);
   }
 
+  // ---------- Efectos de sonido ----------
+  // Se programan de a poco, SFX_AHEAD segundos por delante del video: así siguen al video aunque su reloj se desvíe.
+  let sfxCursor = null; // hasta qué segundo del video ya están programados
+  const sfxLive = new Set(); // funciones que cortan los efectos que están sonando
+  const sfxLevel = () => (sfxOn.checked ? Number(sfxVol.value) : 0);
+
+  function stopSfx() {
+    sfxCursor = null;
+    sfxLive.forEach((stop) => stop());
+    sfxLive.clear();
+  }
+
+  function scheduleSfx() {
+    if (!graph || vid.paused || vid.playbackRate !== 1 || !sfxLevel()) return;
+    const { ac, sfx } = graph;
+    if (ac.state !== 'running') return;
+    const now = vid.currentTime;
+    const from = sfxCursor ?? now - 0.03; // al arrancar, suena lo que empezaba justo ahora
+    const to = now + SFX_AHEAD;
+    if (to <= from) return;
+    for (const c of clips) {
+      if (c.status !== 'ready' || !c.meta?.sonido?.length || c.end <= from || c.start >= to) continue;
+      for (const ev of c.meta.sonido) {
+        const at = c.start + ev.t;
+        if (at < from || at >= to || at >= c.end) continue;
+        const stop = playSound(ac, sfx, ev, ac.currentTime + Math.max(0, at - now));
+        sfxLive.add(stop);
+        setTimeout(() => sfxLive.delete(stop), (at - now + ev.dur + 1) * 1000);
+      }
+    }
+    sfxCursor = to;
+  }
+
+  function applySfxLevel() {
+    if (!graph) return;
+    graph.sfx.gain.setTargetAtTime(sfxLevel(), graph.ac.currentTime, 0.02);
+  }
+  sfxOn.onchange = applySfxLevel;
+  sfxVol.oninput = () => { if (!sfxOn.checked) sfxOn.checked = true; applySfxLevel(); };
+
   let raf = 0;
   function loop() {
     draw();
+    scheduleSfx();
     raf = vid.paused && !recording ? 0 : requestAnimationFrame(loop);
   }
   const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
 
-  vid.addEventListener('play', () => { play.textContent = '❚❚'; play.setAttribute('aria-label', 'Pausar'); kick(); });
-  vid.addEventListener('pause', () => { play.textContent = '▶'; play.setAttribute('aria-label', 'Reproducir'); draw(); });
+  vid.addEventListener('play', () => {
+    play.textContent = '❚❚'; play.setAttribute('aria-label', 'Pausar');
+    audioGraph().ac.resume();
+    stopSfx();
+    kick();
+  });
+  vid.addEventListener('pause', () => { play.textContent = '▶'; play.setAttribute('aria-label', 'Reproducir'); stopSfx(); draw(); });
+  vid.addEventListener('seeking', () => stopSfx());
+  vid.addEventListener('ratechange', () => stopSfx());
   vid.addEventListener('seeked', () => draw());
   vid.addEventListener('loadeddata', () => draw());
   play.onclick = () => { if (vid.paused) vid.play(); else vid.pause(); };
@@ -325,6 +383,12 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
       c.meta.linea_de_tiempo.slice(0, 6).forEach((k) => chips.append(el('span', 'chip', `${Number(k.t || 0).toFixed(1)} s · ${k.que_pasa || ''}`)));
       p.append(chips);
     }
+    if (c.meta?.sonido?.length) {
+      const chips = el('div', 'chips flush');
+      c.meta.sonido.slice(0, 8).forEach((k) => chips.append(el('span', 'chip sound-chip', `♪ ${k.t.toFixed(2)} s · ${k.efecto}`)));
+      if (c.meta.sonido.length > 8) chips.append(el('span', 'chip sound-chip', `+${c.meta.sonido.length - 8}`));
+      p.append(chips);
+    }
     if (c.code) {
       const det = el('details', 'motion-code');
       det.append(el('summary', null, 'Ver el código'), el('pre', null, c.code));
@@ -366,6 +430,7 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
   // ---------- Exportación: el motion queda quemado en el video ----------
   let recorder = null;
   let graph = null;
+  // El audio original y los efectos pasan por el mismo grafo: se oyen igual en la vista previa y en el archivo.
   function audioGraph() {
     if (graph) return graph;
     const ac = new (window.AudioContext || window.webkitAudioContext)();
@@ -373,7 +438,11 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     const dest = ac.createMediaStreamDestination();
     source.connect(ac.destination);
     source.connect(dest);
-    graph = { ac, dest };
+    const sfx = ac.createGain();
+    sfx.gain.value = sfxLevel();
+    sfx.connect(ac.destination);
+    sfx.connect(dest);
+    graph = { ac, dest, sfx };
     return graph;
   }
 
@@ -384,6 +453,7 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     if (pending.length && !confirm(`${pending.map((c) => `Clip ${c.index + 1}`).join(', ')} todavía no está${pending.length > 1 ? 'n' : ''} listo${pending.length > 1 ? 's' : ''}: se exporta${pending.length > 1 ? 'n' : ''} sin motion. ¿Seguir?`)) return;
     const { ac, dest } = audioGraph();
     await ac.resume();
+    stopSfx();
     const mime = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
       .find((m) => MediaRecorder.isTypeSupported(m)) || '';
     const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
@@ -400,7 +470,7 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
       const type = recorder.mimeType || mime || 'video/webm';
       recorder = null;
       exportBtn.textContent = 'Exportar video con motion';
-      [play, showBoxInput].forEach((b) => { b.disabled = false; });
+      [play, showBoxInput, sfxOn, sfxVol].forEach((b) => { b.disabled = false; });
       const blob = new Blob(chunks, { type });
       const ext = type.includes('mp4') ? 'mp4' : 'webm';
       const a = el('a', 'download', `Descargar video (${ext.toUpperCase()}, ${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
@@ -418,7 +488,7 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     clips.forEach((c) => request(c, 0));
     await new Promise((r) => setTimeout(r, 300));
     recording = true;
-    [play, showBoxInput].forEach((b) => { b.disabled = true; });
+    [play, showBoxInput, sfxOn, sfxVol].forEach((b) => { b.disabled = true; });
     note('Se graba en tiempo real: dejá esta pestaña visible hasta que termine.');
     vid.addEventListener('timeupdate', onTime);
     vid.addEventListener('ended', onEnd);
@@ -431,7 +501,7 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     const data = {
       video: { name: video.name, duration: video.duration, width: video.width, height: video.height },
       sistema: direction.sistema,
-      clips: clips.map((c) => ({ id: c.id, inicio: c.start, fin: c.end, ventana: c.box, idea: c.meta?.idea || c.plan.idea, codigo: c.code })),
+      clips: clips.map((c) => ({ id: c.id, inicio: c.start, fin: c.end, ventana: c.box, idea: c.meta?.idea || c.plan.idea, sonido: c.meta?.sonido || [], codigo: c.code })),
     };
     const a = el('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));

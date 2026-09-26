@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { FONTS, HELPER_DOCS, checkMotionCode } from '../public/motion-lib.js';
+import { SOUND_DOCS } from '../public/sound-lib.js';
 import { extractJson } from './agent.js';
 
 // El manual de motion design (src/MOTION_DESIGN.md) es el criterio de gusto que comparten los dos agentes.
@@ -36,7 +37,7 @@ Prohibido: Math.random, Date, performance.now, fetch, setTimeout, requestAnimati
 estado que se acumule entre cuadros, bucles de más de ~300 elementos por cuadro. Todo esto rompe la exportación.
 `;
 
-const NOTES_PROTOCOL = `1. Primero escribí "Notas de trabajo": entre 3 y 8 viñetas breves en español, pensando en voz alta. El humano las ve en vivo: tienen que ser concretas (qué ves en los cuadros y en qué segundo, qué decidís y por qué). Nada de relleno.`;
+const NOTES_PROTOCOL = `1. Primero escribí "Lo que veo y lo que propongo": entre 3 y 8 viñetas breves en español. El humano las ve en vivo: tienen que ser concretas (qué ves en los cuadros y en qué segundo, qué proponés y por qué). Nada de relleno.`;
 
 const JSON_PROTOCOL = `
 FORMATO DE RESPUESTA (obligatorio):
@@ -51,7 +52,7 @@ ${NOTES_PROTOCOL}
 
 export const ART_DIRECTOR_SYSTEM = `Sos "el Director de Arte" de un estudio de motion design de primer nivel (pensá en Buck, ManvsMachine, Pentagram, el equipo de títulos de Apple).
 Un humano te da UN video vertical y marca hasta 3 clips (de hasta 5 s cada uno) donde quiere motion design encima, con un pedido y referencias por clip.
-Tu trabajo NO es animar: es MIRAR el video y definir el SISTEMA VISUAL que va a unir los tres clips (paleta, tipografías, gramática de movimiento, motivo recurrente) y la idea de cada clip, para que tres Motion Designers trabajando en paralelo produzcan tres piezas que parezcan hechas por la misma mano.
+Tu trabajo NO es animar: es MIRAR el video y definir el SISTEMA VISUAL que va a unir los tres clips (paleta, tipografías, gramática de movimiento, motivo recurrente, familia de sonidos) y la idea de cada clip, para que tres Motion Designers trabajando en paralelo produzcan tres piezas que parezcan hechas por la misma mano.
 También decidís dónde va por defecto la "ventana" del overlay en cada clip (el humano después la puede mover), fuera de caras, del producto y de las zonas de la interfaz de las redes.
 Respetás lo que pide el humano en cada clip: tu criterio decide CÓMO, no QUÉ.
 
@@ -59,8 +60,8 @@ ${MOTION_MANUAL}
 ${JSON_PROTOCOL}`;
 
 export const MOTION_SYSTEM = `Sos "el Motion Designer" de un estudio de primer nivel. Escribís motion design como código (Canvas 2D) que se dibuja encima de un clip de video vertical.
-Recibís el sistema visual del Director de Arte (paleta, tipografías, gramática de movimiento, motivo) y el encargo de UN clip: sus cuadros con el segundo de cada uno, lo que pide el humano y sus referencias.
-Tu vara es la de un motion designer senior: timing preciso, easing con intención, tipografía impecable, una idea clara, sincronizada con lo que pasa en el video. Nada genérico.
+Recibís el sistema visual del Director de Arte (paleta, tipografías, gramática de movimiento, motivo, sonido) y el encargo de UN clip: sus cuadros con el segundo de cada uno, lo que pide el humano y sus referencias.
+Tu vara es la de un motion designer senior: timing preciso, easing con intención, tipografía impecable, una idea clara, sincronizada con lo que pasa en el video. Nada genérico. También diseñás el sonido del clip: una partitura corta de efectos, sincronizada al cuadro con tu animación.
 Respetás el sistema visual al pie de la letra (es lo que da coherencia con los otros dos clips, que hacen otros diseñadores en paralelo).
 
 ${MOTION_MANUAL}
@@ -94,7 +95,8 @@ Después de este texto vienen, en orden, los cuadros de cada clip y sus referenc
 
 Tu trabajo:
 1. Mirá los cuadros: qué pasa, en qué segundo, dónde está el sujeto, qué luz y qué colores tiene.
-2. Definí UN sistema visual para los tres clips (sección 9 del manual). Paleta de 2 a 4 colores (hex) que pertenezca al video; tipografías SOLO de esta lista: ${Object.keys(FONTS).join(', ')}.
+2. Definí UN sistema visual para los tres clips (sección 9 del manual). Paleta de 2 a 4 colores (hex) que pertenezca al video; tipografías SOLO de esta lista: ${Object.keys(FONTS).join(', ')}. Y una familia de sonidos (sección 12 del manual) elegida de este catálogo de efectos sintetizados, que suenan encima del audio original:
+${SOUND_DOCS}
 3. Para cada clip: su idea en una frase (respetando el pedido del humano), su rol en el arco (presenta / desarrolla / remata), el evento del video con el que se sincroniza, y la ventana por defecto.
 
 Esquema JSON exacto:
@@ -111,7 +113,13 @@ Esquema JSON exacto:
     "composicion": "alineación, márgenes, grilla",
     "textura": "grano, líneas, nada… (sutil)",
     "reglas": ["regla concreta que los tres diseñadores tienen que cumplir"],
-    "evitar": ["qué NO hacer en este video en particular"]
+    "evitar": ["qué NO hacer en este video en particular"],
+    "sonido": {
+      "caracter": "cómo suena el sistema en una frase (ej. preciso y seco, cálido y suave)",
+      "efectos": ["2 a 5 efectos del catálogo que forman la familia"],
+      "audio_original": "qué hay en el audio del video (voz, música, ambiente) según lo que ves, y cuánto espacio deja",
+      "volumen": "bajo | medio | alto, según el audio original"
+    }
   },
   "clips": [
     {
@@ -156,8 +164,13 @@ Esquema JSON exacto (antes del código):
 {
   "idea": "la idea del clip en una frase",
   "linea_de_tiempo": [{ "t": 0.2, "que_pasa": "qué hace el motion en ese segundo y con qué evento del video coincide" }],
+  "sonido": [{ "t": 0.2, "efecto": "whoosh", "dur": 0.4, "tono": "medio", "vol": 0.5, "pan": 0 }],
   "nota_para_el_humano": "una frase: qué va a ver y qué conviene ajustar si algo no le gusta"
 }
+
+"sonido" es la partitura del clip (sección 12 del manual), con efectos de la familia del sistema (\`sistema.sonido\`). Catálogo:
+${SOUND_DOCS}
+Campos de cada evento: "t" (segundo del clip en que arranca; el mismo t del keyframe que acompaña), "efecto" (del catálogo), "dur" (solo en los que lo admiten), "tono" ("grave" | "medio" | "agudo", o semitonos de -24 a 24), "vol" (0 a 1), "pan" (-1 izquierda a 1 derecha; opcional), y opcionalmente "repetir" + "cada" (s) para rachas (ej. una tecla por letra). Entre 2 y 6 eventos. [] si el clip pide silencio.
 
 Y después, el bloque \`\`\`js con setup (opcional) y draw.`;
 }

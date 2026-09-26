@@ -1,7 +1,7 @@
 // Piezas compartidas por todos los flujos: ejecutar un agente con streaming de notas,
 // extraer su JSON (con una reparación si viene roto) y llevar la cuenta de costos.
 
-// Separa las "notas de trabajo" (visibles, en vivo) del bloque JSON final.
+// Separa las notas (visibles, en vivo) del bloque JSON final.
 export class NotesSplitter {
   constructor(emit) { this.emit = emit; this.buf = ''; this.sent = 0; this.inJson = false; }
   push(t) {
@@ -109,7 +109,7 @@ export function createAgentRunner({ emit, llm, signal, log }) {
   // `history`: turnos previos del mismo agente (así conserva su contexto entre etapas).
   // `meta` no llega al modelo: solo lo usan los modelos simulados del modo demo.
   // `parse` lee la respuesta (por defecto, su bloque JSON); `fix` arma el pedido de corrección si no se pudo leer.
-  async function agent({ step, role, title, model, system, content, history = [], maxTokens = 8000, temperature, plugins, meta, parse = extractJson, fix = jsonFix }) {
+  async function agent({ step, role, title, model, system, content, history = [], temperature, reasoning, plugins, meta, parse = extractJson, fix = jsonFix }) {
     const candidates = modelList(model);
     if (!candidates.length) throw new Error(`«${title}» no tiene modelo configurado.`);
     emit({ type: 'step_start', step, role, title, model: candidates[0] });
@@ -117,7 +117,7 @@ export function createAgentRunner({ emit, llm, signal, log }) {
     let splitter;
     let chars = 0;
     const call = (usedModel, msgs, plg) => llm({
-      step, model: usedModel, messages: msgs, maxTokens, temperature, plugins: plg, signal, meta,
+      step, model: usedModel, messages: msgs, temperature, reasoning, plugins: plg, signal, meta,
       onDelta: (t) => {
         splitter.push(t);
         if (splitter.inJson) { chars += t.length; if (chars % 400 < t.length) emit({ type: 'progress', step, chars }); }
@@ -148,15 +148,19 @@ export function createAgentRunner({ emit, llm, signal, log }) {
         break;
       } catch (err) {
         // Si ya escribió algo, cambiar de modelo mezclaría dos respuestas: cortamos acá.
-        if (i === candidates.length - 1 || signal?.aborted || err.streamed) throw err;
+        if (i === candidates.length - 1 || signal?.aborted || err.streamed) {
+          if (err.status === 'content_filter') {
+            throw new Error(`«${title}»: el filtro de contenido de ${used} bloqueó el pedido (suele ser algo en los cuadros o referencias). Probá con otro modelo o agregá uno de respaldo en MOTION_MODEL, separado por comas.`);
+          }
+          throw err;
+        }
         emit({ type: 'notice', step, text: `${used} no pudo responder (${err.message.slice(0, 160)}). Sigo con ${candidates[i + 1]}.` });
       }
     }
     splitter.end();
     track(result.usage);
 
-    // Si el JSON no se puede leer, pedimos una corrección; si se cortó por falta de
-    // tokens, el reintento va sin notas y con el doble de presupuesto.
+    // Si el JSON no se puede leer, pedimos una corrección; si se cortó, el reintento va sin notas y más corto.
     let data;
     let last = result;
     for (let intento = 0; ; intento++) {
@@ -165,21 +169,25 @@ export function createAgentRunner({ emit, llm, signal, log }) {
         break;
       } catch (err) {
         if (intento >= 2 || signal?.aborted) {
-          throw new Error(`«${title}» no devolvió ${parse === extractJson ? 'un JSON' : 'una respuesta'} usable: ${err.message}`);
+          throw new Error(`«${title}» no devolvió ${parse === extractJson ? 'un JSON' : 'una respuesta'} usable: ${err.message}${last.finishReason ? ` (fin: ${last.finishReason})` : ''}`);
         }
         const cortado = last.finishReason === 'length' || /cortado|no devolvió texto/.test(err.message);
+        // Sin texto: el reintento piensa menos.
+        const vacio = !last.text?.trim();
         emit({
           type: 'notice', step,
-          text: cortado
-            ? 'La respuesta se cortó por largo; la pido de nuevo, más corta.'
-            : `La respuesta vino mal formada (${err.message.slice(0, 140)}); pido una corrección.`,
+          text: vacio
+            ? `No llegó texto (fin: ${last.finishReason || 'desconocido'}); lo pido de nuevo, pensando menos.`
+            : cortado
+              ? 'La respuesta se cortó por largo; la pido de nuevo, más corta.'
+              : `La respuesta vino mal formada (${err.message.slice(0, 140)}); pido una corrección.`,
         });
         const previo = last.text?.trim()
           ? [{ role: 'assistant', content: last.text }, { role: 'user', content: fix(err.message, cortado) }]
           : [{ role: 'user', content: 'No llegó ninguna respuesta. Devolvé SOLO el bloque ```json pedido, sin notas ni razonamiento extenso.' }];
         last = await llm({
           step, model: used, signal, meta, temperature,
-          maxTokens: cortado ? Math.min(maxTokens * 2, 32000) : maxTokens,
+          reasoning: vacio ? { effort: 'low' } : reasoning,
           messages: [...messages, ...previo],
         });
         track(last.usage);

@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseIntuitionBody, parseRevisionBody, normalizeDirection, sanitizeBox, runIntuitionPipeline, runIntuitionRevision } from '../src/intuition-pipeline.js';
-import { parseMotion, MOTION_SYSTEM, ART_DIRECTOR_SYSTEM, RUNTIME_CONTRACT } from '../src/intuition-prompts.js';
+import { parseMotion, MOTION_SYSTEM, ART_DIRECTOR_SYSTEM, RUNTIME_CONTRACT, directionPrompt, motionPrompt } from '../src/intuition-prompts.js';
 import { HELPERS, HELPER_DOCS, FONTS, compileMotion, checkMotionCode, makeEnv, googleFontsUrl } from '../public/motion-lib.js';
+import { SOUNDS, SOUND_DOCS, normalizeScore, MAX_SOUND_EVENTS } from '../public/sound-lib.js';
 import { mockLLM, mockMotionCode } from '../src/mock.js';
 
 const IMG = 'data:image/jpeg;base64,/9j/AA==';
@@ -58,6 +59,42 @@ test('normalizeDirection corrige tipografías, colores y ventanas', () => {
   assert.ok(d.clips.every((c) => c.ventana.x + c.ventana.w <= 1));
   const empty = normalizeDirection(null, [clip('C1', 0, 2)]);
   assert.ok(empty.sistema.paleta.length >= 2);
+  assert.deepEqual(empty.sistema.sonido.efectos, []);
+  const sonido = normalizeDirection({ sistema: { sonido: { caracter: 'seco', efectos: ['Whoosh', 'laser', 'tick', 'tick'] } } }, [clip('C1', 0, 2)]).sistema.sonido;
+  assert.deepEqual(sonido.efectos, ['whoosh', 'tick']);
+  assert.equal(sonido.caracter, 'seco');
+});
+
+test('normalizeScore deja una partitura que siempre se puede sonar', () => {
+  const score = normalizeScore([
+    { t: 1, efecto: 'Impacto', vol: 3, tono: 'grave' },
+    { t: 0.2, efecto: 'whoosh', dur: 99, pan: -5 },
+    { t: 0.5, efecto: 'tecla', repetir: 5, cada: 0.1, tono: 40 },
+    { t: 2.9, efecto: 'tick', repetir: 4, cada: 0.2 }, // se corta al final del clip
+    { t: 3.5, efecto: 'pop' }, // fuera del clip
+    { t: -1, efecto: 'pop' },
+    { t: 1, efecto: 'laser' },
+    null, 'x',
+  ], 3);
+  assert.deepEqual(score.map((e) => e.t), [0.2, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2.9]);
+  const imp = score.find((e) => e.efecto === 'impacto');
+  assert.equal(imp.vol, 1);
+  assert.equal(imp.tono, -7);
+  assert.equal(imp.dur, SOUNDS.impacto.dur[0], 'los efectos sin "sustain" usan su duración fija');
+  const wh = score.find((e) => e.efecto === 'whoosh');
+  assert.equal(wh.dur, SOUNDS.whoosh.dur[2]);
+  assert.equal(wh.pan, -1);
+  assert.equal(score.find((e) => e.efecto === 'tecla').tono, 24);
+  assert.deepEqual(normalizeScore('nada'), []);
+  assert.equal(normalizeScore(Array.from({ length: 50 }, (_, i) => ({ t: i * 0.01, efecto: 'click' })), 5).length, MAX_SOUND_EVENTS);
+});
+
+test('el catálogo de sonidos está documentado y llega a los dos agentes', () => {
+  for (const name of Object.keys(SOUNDS)) assert.ok(SOUND_DOCS.includes(`"${name}"`), name);
+  const director = directionPrompt({ text: '', video, clips: [clip('C1', 0, 2)] });
+  const motion = motionPrompt({ direction: normalizeDirection({}, [clip('C1', 0, 2)]), clip: clip('C1', 0, 2), index: 0, total: 1, box: { x: 0, y: 0, w: 1, h: 0.3 }, video });
+  for (const p of [director, motion]) assert.ok(p.includes(SOUND_DOCS));
+  assert.match(motion, /"sonido": \[/);
 });
 
 test('parseMotion separa el JSON del código y detecta errores', () => {
@@ -128,6 +165,8 @@ test('flujo completo en modo demo: sistema visual + un motion por clip', async (
   const motions = events.filter((e) => e.type === 'motion').map((e) => e.data);
   assert.deepEqual(motions.map((m) => m.id).sort(), ['C1', 'C2', 'C3']);
   motions.forEach((m) => assert.doesNotThrow(() => checkMotionCode(m.code)));
+  motions.forEach((m) => assert.ok(m.sonido.length && m.sonido.every((e) => SOUNDS[e.efecto])));
+  assert.ok(direction.sistema.sonido.efectos.length);
   assert.equal(log.result.motions.length, 3);
   assert.ok(events.some((e) => e.type === 'step_start' && e.step === 'motion-C2'));
 

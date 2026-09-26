@@ -3,7 +3,7 @@ import { PLAYBOOK } from './knowledge.js';
 // Protocolo de salida común: notas visibles para el humano + JSON para la máquina.
 const OUTPUT_PROTOCOL = `
 FORMATO DE RESPUESTA (obligatorio):
-1. Primero escribí "Notas de trabajo": entre 3 y 8 viñetas breves en español, pensando en voz alta. El humano las ve en vivo, así que tienen que ser concretas e interesantes (qué notás, qué decidís y por qué). Nada de relleno.
+1. Primero escribí "Lo que noto y lo que propongo": entre 3 y 8 viñetas breves en español. El humano las ve en vivo, así que tienen que ser concretas e interesantes (qué notás, qué proponés y por qué). Nada de relleno.
 2. Después, un único bloque que empiece con \`\`\`json y termine con \`\`\`, con EXACTAMENTE el esquema pedido. Sin comentarios dentro del JSON.`;
 
 export const ORCHESTRATOR_SYSTEM = `Sos el Director Creativo y orquestador de un equipo de contenido para redes sociales (Instagram y TikTok, contenido orgánico) que trabaja para pymes de cualquier rubro: productos (ropa, comida...) y servicios (fotografía, fletes...).

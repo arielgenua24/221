@@ -5,7 +5,7 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
   signal?.addEventListener('abort', () => { clearTimeout(t); reject(new Error('cancelado')); }, { once: true });
 });
 
-const out = (notes, data) => `Notas de trabajo:\n${notes.map((n) => `- ${n}`).join('\n')}\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+const out = (notes, data) => `Lo que noto y lo que propongo:\n${notes.map((n) => `- ${n}`).join('\n')}\n\n\`\`\`json\n${JSON.stringify(data, null, 2)}\n\`\`\``;
 
 const BRIEF = {
   negocio: { nombre: null, rubro: 'Indumentaria — jeans', que_ofrece: 'Jeans de tiro alto con elastano, producción local', tipo: 'producto', ubicacion_o_mercado: 'Argentina (supuesto)' },
@@ -116,6 +116,7 @@ function mockDirection({ clips, text }) {
       textura: 'Ninguna.',
       reglas: ['Máximo 8 palabras por clip', 'El acento solo en la línea del motivo'],
       evitar: ['Glow', 'Rebotes', 'Tapar caras'],
+      sonido: { caracter: 'Preciso y seco', efectos: ['whoosh', 'tick', 'click'], audio_original: '(demo) no lo escuché', volumen: 'bajo' },
     },
     clips: clips.map((c, i) => ({
       id: c.id,
@@ -211,6 +212,11 @@ function mockMotion({ clip, direction, index, total, revision, feedback }) {
   return {
     idea: plan.idea || '(demo) Título revelado',
     linea_de_tiempo: [{ t: 0.1, que_pasa: 'Se dibuja la línea del motivo' }, { t: 0.35, que_pasa: 'Sube el título línea por línea' }, { t: clip.end - clip.start - 0.6, que_pasa: 'Sale hacia arriba' }],
+    sonido: [
+      { t: 0.1, efecto: 'whoosh', dur: 0.5, tono: 'agudo', vol: 0.35 },
+      { t: 0.35, efecto: 'tick', repetir: 3, cada: 0.12, vol: 0.4 },
+      { t: clip.end - clip.start - 0.6, efecto: 'whoosh', dur: 0.45, tono: 'grave', vol: 0.3 },
+    ],
     nota_para_el_humano: revision ? `(demo) Apliqué: "${feedback || 'arreglo'}" (en demo solo cambia el color de la línea).` : 'MODO DEMO: es un motion de ejemplo. Mové y redimensioná la ventana para ver cómo se adapta.',
     code: mockMotionCode({ text: demoText(clip), index, total, accentLine: !revision }),
   };

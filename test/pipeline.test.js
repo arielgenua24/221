@@ -80,12 +80,10 @@ test('se pausa en 2 decisiones y las respuestas llegan a los agentes', async () 
   assert.deepEqual(log.decisions.pick.ids, ['C5', 'C8']);
 });
 
-test('si la respuesta viene cortada, reintenta con más presupuesto', async () => {
+test('si la respuesta viene cortada, la pide de nuevo más corta', async () => {
   const events = [];
   let primera = true;
-  const calls = [];
   const llm = async (opts) => {
-    calls.push(opts.maxTokens);
     if (opts.step === 'brief' && primera) {
       primera = false;
       return { text: 'notas\n```json\n{"neg', usage: null, finishReason: 'length' };
@@ -95,7 +93,6 @@ test('si la respuesta viene cortada, reintenta con más presupuesto', async () =
   const log = await runPipeline({ text: 'Jeans', photos: [], emit: (e) => events.push(e), llm, config });
   assert.equal(log.result.ideas.length, 4);
   assert.ok(events.some((e) => e.type === 'notice' && /se cortó por largo/i.test(e.text)));
-  assert.ok(calls[1] > calls[0], 'el reintento pide más tokens');
 });
 
 test('si el JSON nunca llega, el error nombra el paso', async () => {

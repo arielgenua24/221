@@ -295,6 +295,9 @@ button, textarea, input { font: inherit; color: inherit; }
 .motion-handle.sw { left: -11px; bottom: -11px; cursor: nesw-resize; }
 .motion-handle.se { right: -11px; bottom: -11px; cursor: nwse-resize; }
 .box-toggle { display: flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+.intuition-player .player-controls { flex-wrap: wrap; }
+.sfx-vol { width: 80px; accent-color: var(--accent, currentColor); }
+.sound-chip { font-variant-numeric: tabular-nums; }
 .motion-track { height: 26px; background: var(--surface-2); border-radius: 6px; }
 .motion-range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--c) 45%, transparent); border-radius: 5px; font-size: 11px; font-weight: 800; color: var(--text); display: grid; place-items: center; overflow: hidden; }
 .motion-range.now { background: var(--c); color: #fff; }
