@@ -73,6 +73,28 @@ Exportar → MP4/WebM con el motion quemado en cada ventana y el sonido original
 - Cada cuadro es una función pura del tiempo (sin `Math.random` ni reloj), así se puede adelantar, retroceder y exportar igual.
 - Las tipografías (Google Fonts) se bajan en la página y se pasan al worker; si no cargan, se usan las del sistema.
 
+### Clips "Video IA + texto" (opción por clip)
+
+A veces la mejor animación no es animar: es **dirigir**. En cada clip elegís **Motion en código** (lo de arriba) o **Video IA + texto**:
+
+```
+[2'] Director de Video IA (Opus 5.5, perfeccionista) → elige el mejor cuadro real del clip como primer cuadro
+     y escribe la toma al detalle: cámara, lente, luz, física, tiempos, qué no puede cambiar, y el prompt (en inglés)
+  ▼
+Storyboard: GPT Image 2.5 (WaveSpeed) dibuja 6 viñetas a partir del cuadro base
+  ├─ ✋ VOS: "Generar el video", o "Pedir cambios" (Opus mira el storyboard y corrige) · podés editar el prompt a mano
+  ▼
+En paralelo:
+  ├─ Seedance 2.0 o Wan 3.0 Prime (WaveSpeed, image→video) genera la toma a partir del cuadro real (1–5 min)
+  └─ Tipógrafo (Opus 5.5) → capa de SOLO palabras (+ velo/subrayado de legibilidad), sincronizada con los tiempos de la toma
+  ▼
+Reproductor: durante el clip se ve la toma generada (muda: sigue el audio original) y encima, las palabras
+```
+
+- Necesita `WAVESPEED_API_KEY`. Sin clave, la opción no aparece; en modo demo el storyboard es el cuadro base y no se genera video.
+- Los storyboards y las tomas se guardan en `runs/media/` y se sirven en `/media/…` (mismo origen: así se pueden exportar).
+- "Rehacer el texto" en un clip de video IA manda cuadros de la **toma generada**, para que el texto se ubique sobre lo que realmente se ve.
+
 ## Cómo trabaja el equipo de ideas (v1)
 
 ```
@@ -117,7 +139,8 @@ Fotos + texto
 | `src/timeline.js` | Valida el montaje y engancha los cortes al ritmo |
 | `src/MOTION_DESIGN.md` | Manual de motion design (el criterio de gusto de Intuition) |
 | `src/intuition-prompts.js` | Prompts del Director de Arte y del Motion Designer + lectura de su respuesta (JSON + código) |
-| `src/intuition-pipeline.js` | Flujo de Intuition: validación, sistema visual, un motion por clip, revisiones |
+| `src/intuition-pipeline.js` | Flujo de Intuition: validación, sistema visual, un motion por clip (o toma de video IA + capa de texto), revisiones |
+| `src/wavespeed.js` | Cliente de WaveSpeed: subida de cuadros, storyboard (GPT Image 2.5) y video (Seedance 2.0 / Wan 3.0 Prime) |
 | `src/server.js` | Servidor HTTP + streaming de eventos (NDJSON) a la UI; `POST /api/run`, `POST /api/edit`, `POST /api/intuition`, `POST /api/intuition/revise`, `POST /api/decide` reanuda el flujo pausado |
 | `public/` | Interfaz: `app.js` (caja única, soltar archivos, modos), `shared.js`, `media.js` (audio/cuadros), `ideas.js`, `edit.js`, `player.js` (reproductor y exportación), `intuition.js` (estudio de clips), `intuition-player.js` (overlay, ventana y exportación), `motion-lib.js` + `motion-worker.js` (runtime aislado del código generado) |
 
@@ -133,6 +156,11 @@ Fotos + texto
 | `EAR_MODEL` | `google/gemini-3.8-flash,google/gemini-3.7-flash,qwen/qwen3.8-omni-flash` | Edición musical: el modelo que escucha. Tiene que aceptar audio. |
 | `DIRECTOR_MODEL` | = orquestador | Edición musical: el que orquesta y monta. Tiene que aceptar imágenes. |
 | `MOTION_MODEL` | = orquestador | Intuition: Director de Arte y Motion Designers. Tiene que aceptar imágenes. |
+| `WAVESPEED_API_KEY` | — | Intuition · Video IA + texto. Sin clave, la opción no aparece. |
+| `VIDEO_MODEL` | `seedance` | Modelo de video por defecto (`seedance` o `wan`); se cambia en cada clip. |
+| `VIDEO_RESOLUTION` | `720p` | `480p`, `720p` o `1080p`. |
+| `STORYBOARD_MODEL` / `STORYBOARD_QUALITY` | `openai/gpt-image-2.5-flare/edit` / `high` | Modelo y calidad del storyboard. |
+| `SEEDANCE_MODEL` / `WAN_MODEL` | rutas de WaveSpeed | Por si WaveSpeed publica otra versión. |
 | `OPENROUTER_RETRIES` | `3` | Reintentos ante errores pasajeros (429 del pool compartido, 5xx, cortes de red) |
 
 Cualquier variable de modelo acepta una **lista separada por comas**: si el primero no llega a responder

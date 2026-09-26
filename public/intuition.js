@@ -1,4 +1,4 @@
-import { el, fmt, append, addChips, showError, createSteps, handleCommon, streamEvents } from './shared.js';
+import { el, fmt, append, addChips, showError, createSteps, handleCommon, streamEvents, decide, decisionShell } from './shared.js';
 import { openVideo, framesAt, loadReference } from './media.js';
 import { createMotionPlayer } from './intuition-player.js';
 
@@ -10,10 +10,10 @@ const FILMSTRIP = 10;
 
 // ---------- Estudio: elegir el video, marcar los clips y escribir el pedido de cada uno ----------
 export function createStudio({ limits, onChange }) {
-  const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, clipFrames: 6, maxRefs: 4, ...limits };
+  const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', ...limits };
   let video = null; // { file, url, name, duration, width, height, el }
   let loading = false;
-  let clips = []; // { key, id, start, end, prompt, notes, refs: [{ key, kind, name, frames, thumb, status }] }
+  let clips = []; // { key, id, start, end, prompt, notes, mode: 'motion' | 'ai', videoModel, refs: [{ key, kind, name, frames, thumb, status }] }
   let seq = 0;
   let card = null;
 
@@ -62,7 +62,7 @@ export function createStudio({ limits, onChange }) {
     start = Math.max(start, prev ? prev.end : 0);
     if (end - start < lim.minClipSeconds) return showError('No queda lugar para un clip ahí.');
     showError('');
-    clips.push({ key: ++seq, start, end, prompt: '', notes: '', refs: [] });
+    clips.push({ key: ++seq, start, end, prompt: '', notes: '', mode: 'motion', videoModel: lim.defaultVideoModel, refs: [] });
     renumber();
     refreshClips();
     onChange();
@@ -221,9 +221,31 @@ export function createStudio({ limits, onChange }) {
       x.onclick = () => { clips = clips.filter((k) => k !== c); renumber(); refreshClips(); onChange(); };
       head.append(el('span', 'motion-dot', c.id.replace('C', '')), el('strong', null, `Clip ${c.id.replace('C', '')}`), el('span', 'muted small clip-time', clipTime(c)), go, x);
 
+      // Técnica del clip: motion como código, o una toma generada por IA con palabras animadas encima.
+      const modeRow = el('div', 'clip-mode');
+      if (lim.aiVideo) {
+        [['motion', 'Motion en código'], ['ai', 'Video IA + texto']].forEach(([m, label]) => {
+          const b = el('button', 'option', label);
+          b.type = 'button';
+          b.setAttribute('aria-pressed', String(c.mode === m));
+          b.onclick = () => { c.mode = m; renderCards(); onChange(); };
+          modeRow.append(b);
+        });
+        if (c.mode === 'ai') {
+          const sel = el('select', 'clip-model');
+          sel.setAttribute('aria-label', 'Modelo de video');
+          lim.videoModels.forEach((m) => { const o = el('option', null, m.label); o.value = m.id; sel.append(o); });
+          sel.value = c.videoModel;
+          sel.onchange = () => { c.videoModel = sel.value; };
+          modeRow.append(sel);
+        }
+      }
+
       const prompt = el('textarea');
       prompt.rows = 2; prompt.value = c.prompt;
-      prompt.placeholder = '¿Qué pasa en este clip? Ej. "que aparezca el precio: $12.900"';
+      prompt.placeholder = c.mode === 'ai'
+        ? 'Qué tiene que pasar en la toma y qué palabras van encima. Ej. "la taza gira lento hacia la luz; texto: Nuevo blend"'
+        : '¿Qué pasa en este clip? Ej. "que aparezca el precio: $12.900"';
       prompt.oninput = () => { c.prompt = prompt.value; };
       const notes = el('textarea');
       notes.rows = 1; notes.value = c.notes;
@@ -253,7 +275,7 @@ export function createStudio({ limits, onChange }) {
         addRef.append(inp, el('span', null, '+ Referencia'), el('span', 'muted small', 'imagen, video o GIF'));
         refs.append(addRef);
       }
-      box.append(head, prompt, notes, refs);
+      box.append(head, ...(lim.aiVideo ? [modeRow] : []), prompt, notes, refs);
       cardsBox.append(box);
     });
   }
@@ -286,6 +308,7 @@ export function createStudio({ limits, onChange }) {
       const frames = await framesAt(video.reader, Array.from({ length: n }, (_, k) => c.start + ((k + 0.5) / n) * len));
       snap.push({
         id: c.id, start: +c.start.toFixed(3), end: +c.end.toFixed(3), prompt: c.prompt.trim(), notes: c.notes.trim(),
+        mode: lim.aiVideo ? c.mode : 'motion', videoModel: c.videoModel,
         frames: frames.map((f) => ({ t: +(f.t - c.start).toFixed(2), url: f.url })),
         refs: c.refs.filter((r) => r.status === 'ready').map((r) => ({ kind: r.kind, name: r.name, frames: r.frames })),
       });
@@ -297,7 +320,7 @@ export function createStudio({ limits, onChange }) {
     };
   }
 
-  const summary = () => (video ? `✨ Intuition · ${video.name} · ${clips.map((c) => `${c.id} ${fmt(c.start)}–${fmt(c.end)}`).join(' · ')}` : '');
+  const summary = () => (video ? `✨ Intuition · ${video.name} · ${clips.map((c) => `${c.id} ${fmt(c.start)}–${fmt(c.end)}${c.mode === 'ai' ? ' (video IA)' : ''}`).join(' · ')}` : '');
   const thumbs = () => clips.map((c) => video.strip[Math.min(FILMSTRIP - 1, Math.floor((c.start / video.duration) * FILMSTRIP))].url);
 
   return { setVideo, setLimits, missing, hint, request, summary, thumbs, busy: () => loading, hasVideo: () => !!video };
@@ -325,9 +348,88 @@ export function handleIntuition(ev, steps, ctx) {
       return;
     }
     case 'motion': return ctx.player?.setMotion(ev.data);
-    case 'step_error': return ctx.player?.failClip(ev.step.replace('motion-', ''), ev.text);
+    case 'ai_plan': return ctx.player?.setPlan(ev.data);
+    case 'ai_video': return ctx.player?.setAiVideo(ev.data);
+    case 'media_status':
+      mediaStatus(steps.get(ev.step), ev);
+      if (ev.step.startsWith('video-')) ctx.player?.aiStatus(ev.step.split('-')[1], 'generating', ev.elapsed);
+      return;
+    case 'decision': if (ev.kind === 'storyboard') append(storyboardCard(ev)); return;
+    case 'step_error': {
+      const [kind, id] = ev.step.split('-');
+      if (kind === 'video' || kind === 'storyboard') return ctx.player?.failVideo(id, ev.text, kind);
+      return ctx.player?.failClip(id, ev.text);
+    }
     default:
   }
+}
+
+const STATUS = { created: 'En cola', queued: 'En cola', processing: 'Generando', completed: 'Bajando el resultado' };
+function mediaStatus(s, ev) {
+  if (!s) return;
+  s.live.textContent = `${STATUS[ev.status] || ev.status || 'Esperando'}… ${Math.round(ev.elapsed || 0)} s`;
+}
+
+// El storyboard de un clip de video IA: el humano lo aprueba (se genera la toma) o pide cambios (Opus rehace la dirección).
+function storyboardCard(ev) {
+  const p = ev.plan;
+  const card = decisionShell(ev, `Storyboard · ${p.modelLabel}${p.round > 1 ? ` · versión ${p.round}` : ''}`);
+  const media = el('div', 'storyboard');
+  const img = el('img', 'storyboard-img');
+  img.src = p.storyboard || p.frame;
+  img.alt = p.storyboard ? `Storyboard del clip ${p.id}` : `Cuadro base del clip ${p.id}`;
+  media.append(img);
+  if (!p.storyboard) media.append(el('p', 'muted small', p.demo ? 'Modo demo: se muestra el cuadro base en lugar del storyboard.' : 'No se pudo dibujar el storyboard: se muestra el cuadro base.'));
+  card.append(media);
+
+  const facts = el('div', 'facts');
+  const fact = (label, value) => {
+    if (!value || (Array.isArray(value) && !value.length)) return;
+    const f = el('div', 'fact');
+    f.append(el('strong', null, label), document.createTextNode(Array.isArray(value) ? value.join(' · ') : value));
+    facts.append(f);
+  };
+  fact('Toma', p.toma);
+  fact('Cámara', p.camara);
+  fact('Luz y color', p.luz_y_color);
+  fact('Tiempos', p.beats.map((b) => `${Number(b.desde || 0).toFixed(1)}–${Number(b.hasta || 0).toFixed(1)} s: ${b.accion || ''}`));
+  fact('No cambia', p.continuidad);
+  fact('Palabras encima', p.textos);
+  fact('Lugar del texto', p.espacio_para_texto);
+  card.append(facts);
+  if (p.nota) card.append(el('p', 'motion-note', p.nota));
+
+  const det = el('details', 'motion-code');
+  det.append(el('summary', null, 'Ver y editar el prompt de video'));
+  const prompt = el('textarea', 'prompt-edit');
+  prompt.rows = 7;
+  prompt.value = p.prompt_video;
+  det.append(prompt);
+  if (p.evitar.length) det.append(el('p', 'muted small', `Además se evita: ${p.evitar.join(', ')}`));
+  card.append(det);
+
+  const ask = el('textarea');
+  ask.rows = 2;
+  ask.placeholder = p.lastRound ? 'Es la última versión: al tocar el botón se genera la toma.' : '¿Qué cambiarías? Ej. "que la cámara no se mueva", "más luz de atardecer", "que termine en la mano"';
+  ask.disabled = p.lastRound;
+  card.append(ask);
+  const edited = () => (prompt.value.trim() !== p.prompt_video.trim() ? prompt.value.trim() : '');
+
+  const actions = el('div', 'actions');
+  const go = el('button', 'primary', 'Generar el video');
+  go.type = 'button';
+  go.onclick = () => decide(card, ev.id, { aprobar: true, prompt: edited() }, `Clip ${p.id.replace('C', '')}: aprobado${edited() ? ' (con el prompt editado)' : ''}, a generar con ${p.modelLabel}.`);
+  const redo = el('button', 'ghost', 'Pedir cambios');
+  redo.type = 'button';
+  redo.hidden = p.lastRound;
+  redo.onclick = () => {
+    const cambios = ask.value.trim();
+    if (!cambios && !edited()) { ask.focus(); ask.placeholder = 'Contá qué querés cambiar (o editá el prompt).'; return; }
+    decide(card, ev.id, { cambios, prompt: edited() }, `Clip ${p.id.replace('C', '')}: ${cambios || 'prompt editado'}`);
+  };
+  actions.append(go, redo);
+  card.append(el('p', 'muted small', 'Generar la toma cuesta y tarda (1 a 5 min). Revisá el storyboard antes de aprobar.'), actions);
+  return card;
 }
 
 function paintSwatches(s, palette) {
@@ -345,7 +447,20 @@ async function revise(ctx, id, { feedback, error, box, previous }) {
   const clip = ctx.clips[index];
   append(el('div', 'msg user-msg')).append(el('div', 'bubble', error ? `Clip ${index + 1}: arreglá el error${feedback ? ` · ${feedback}` : ''}` : `Clip ${index + 1}: ${feedback}`));
   const steps = createSteps();
-  const body = JSON.stringify({ video: ctx.video, clip, direction: ctx.direction, box, index, total: ctx.clips.length, previous, feedback, error });
+  // Clip de video IA con la toma ya generada: se mandan cuadros de ESA toma (lo que el texto tiene encima).
+  const state = ctx.player.clip(id);
+  let frames = null;
+  if (state?.ai?.url) {
+    try {
+      const v = await openVideo(state.ai.url);
+      const n = clip.frames.length;
+      frames = (await framesAt(v, Array.from({ length: n }, (_, k) => ((k + 0.5) / n) * state.dur))).map((f) => ({ t: +f.t.toFixed(2), url: f.url }));
+    } catch { frames = null; }
+  }
+  const body = JSON.stringify({
+    video: ctx.video, clip: frames ? { ...clip, frames } : clip, direction: ctx.direction, box, index, total: ctx.clips.length, previous, feedback, error,
+    plan: state?.vplan || null, generated: !!frames,
+  });
   let failed = null;
   await streamEvents('/api/intuition/revise', body, undefined, (ev) => {
     if (ev.type === 'error') failed = ev.text;

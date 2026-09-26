@@ -93,6 +93,7 @@ const SCRIPTS = {
   }),
   direction: (_, meta) => out(['(demo) No miro de verdad los cuadros.', 'Sistema editorial: Space Grotesk + mono, un solo acento.', 'Ventanas lejos de las zonas de botones.'], mockDirection(meta)),
   revise: (id, meta) => SCRIPTS.motion(id, meta),
+  vdirector: (id, meta) => out([`(demo) ${id}: tomo el cuadro del medio como base.`, 'Una sola toma: dolly-in lento, la misma luz del cuadro.', 'Dejo el tercio de arriba limpio para las palabras.'], mockVideoPlan(meta)),
   motion: (id, meta) => codeOut([`(demo) ${id}: título que se revela desde una máscara.`, 'Entrada outExpo, salida inQuart, todo termina antes del final.'], mockMotion(meta)),
   montage: (id, meta) => out([`(demo) Versión ${id}: roto el material sobre la grilla con otro ritmo y otro orden.`, 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: `Versión ${id} de demostración: ${meta.version?.nombre || ''}`, ...autoTimeline({ ...meta, ...{ A: { pace: 1, shift: 0 }, B: { pace: 2, shift: 1 }, C: { pace: 0.5, shift: 2 } }[id] }), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
 };
@@ -128,6 +129,27 @@ function mockDirection({ clips, text }) {
       por_que_ahi: '(demo) Lejos de la zona de botones y de la descripción.',
     })),
     nota_para_el_humano: 'MODO DEMO: el sistema visual es fijo. Configurá OPENROUTER_API_KEY para que Opus mire tu video.',
+  };
+}
+
+// Plan de demostración del Director de Video IA.
+function mockVideoPlan({ clip, layout, round }) {
+  const dur = clip.end - clip.start;
+  const n = layout?.panels || 6;
+  return {
+    cuadro_base: Math.floor(clip.frames.length / 2),
+    por_que_ese_cuadro: '(demo) El del medio suele estar más nítido.',
+    toma: `(demo${round > 1 ? `, versión ${round}` : ''}) Dolly-in lento hacia el sujeto, una sola toma.`,
+    camara: 'Slow dolly-in, eye level, 35mm, shallow depth of field.',
+    luz_y_color: 'Same light as the first frame; warm, soft contrast.',
+    beats: [{ desde: 0, hasta: dur / 2, accion: 'La cámara empieza a acercarse.' }, { desde: dur / 2, hasta: dur, accion: 'Se asienta en un plano medio.' }],
+    continuidad: ['La misma persona, ropa y fondo'],
+    espacio_para_texto: 'El tercio superior del cuadro.',
+    prompt_video: 'Keep the exact same subject and setting as the first frame. Slow, steady dolly-in at eye level, 35mm lens, shallow depth of field. Same soft warm light. Natural subtle movement only.',
+    evitar: ['on-screen text', 'cuts'],
+    vinetas: Array.from({ length: n }, (_, i) => ({ n: i + 1, t: +((i / n) * dur).toFixed(1), encuadre: 'medium shot', accion: 'slow push-in' })),
+    textos: [demoText(clip)],
+    nota_para_el_humano: 'MODO DEMO: el storyboard es el cuadro base y no se genera video (se ve el original). Configurá WAVESPEED_API_KEY y OPENROUTER_API_KEY para usarlo de verdad.',
   };
 }
 
@@ -251,7 +273,7 @@ export async function mockLLM({ step, onDelta, onReasoning, signal, meta }) {
   const [kind, id] = step.split('-');
   const text = (SCRIPTS[kind] || SCRIPTS.final)(id, meta);
   onReasoning?.('(demo) pensando…');
-  const chunk = ['plan', 'ear', 'montage', 'direction', 'motion', 'revise'].includes(kind) ? 90 : 18; // los JSON de edición son largos
+  const chunk = ['plan', 'ear', 'montage', 'direction', 'motion', 'revise', 'vdirector'].includes(kind) ? 90 : 18; // los JSON de edición son largos
   for (let i = 0; i < text.length; i += chunk) {
     await sleep(step === 'brief' ? 18 : 10, signal);
     onDelta?.(text.slice(i, i + chunk));

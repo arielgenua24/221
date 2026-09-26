@@ -6,6 +6,7 @@ import { playSound } from './sound-lib.js';
 // (lo calcula un worker aislado). Cada clip tiene su "ventana", que el humano mueve y redimensiona.
 // Cada clip trae además una partitura de efectos (sintetizados en la página), que suena encima del audio original.
 // Al exportar, el motion queda "quemado" en el video, en la ventana elegida, con sus sonidos.
+// En los clips de "Video IA + texto", durante el clip se ve la toma generada (muda: sigue el audio original) y encima, las palabras.
 
 const MAX_SIDE = 1920; // lado largo del video exportado
 const SFX_AHEAD = 0.25; // segundos de efectos que se programan por adelantado
@@ -53,6 +54,8 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
       dur: c.end - c.start,
       box: { ...plan.ventana }, defaultBox: { ...plan.ventana },
       status: 'waiting', code: null, meta: null, error: null,
+      // Video IA: plan del Director de Video IA y la toma generada ({ status, url, el, error }).
+      vplan: null, ai: c.mode === 'ai' ? { status: 'planning', url: null, el: null, error: null, lastSeek: null } : null,
       bitmap: null, bitmapT: -1, inflight: false, wantT: null, lastKey: null, req: 0, timer: 0,
     };
   });
@@ -196,19 +199,47 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
   // ---------- Dibujo ----------
   const activeAt = (t) => clips.find((c) => t >= c.start && t < c.end) || null;
 
-  function drawVideo() {
-    const sw = vid.videoWidth; const sh = vid.videoHeight;
+  // Durante un clip de video IA con la toma lista, se dibuja la toma en lugar del video original.
+  function drawVideo(c) {
+    const a = c?.ai;
+    const src = a?.status === 'ready' && a.el.readyState >= 2 ? a.el : vid;
+    const sw = src.videoWidth; const sh = src.videoHeight;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
-    if (!sw || !sh || vid.readyState < 2) return;
+    if (!sw || !sh || src.readyState < 2) return;
     const k = Math.max(W / sw, H / sh);
-    ctx.drawImage(vid, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
+    ctx.drawImage(src, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
+  }
+
+  // La toma generada sigue al reloj del video original (que es el que lleva el audio).
+  function syncAi(active, t) {
+    for (const c of clips) {
+      const a = c.ai;
+      if (a?.status !== 'ready') continue;
+      const e = a.el;
+      const local = t - c.start;
+      if (c === active) {
+        e.playbackRate = vid.playbackRate;
+        if (vid.paused && !recording) {
+          if (!e.paused) e.pause();
+          if (Math.abs(e.currentTime - local) > 0.03 && a.lastSeek !== local) { a.lastSeek = local; e.currentTime = local; }
+        } else {
+          if (Math.abs(e.currentTime - local) > 0.25) e.currentTime = local;
+          if (e.paused) e.play().catch(() => {});
+        }
+      } else {
+        if (!e.paused) e.pause();
+        // Se acerca el clip: la toma espera en su primer cuadro.
+        if (local < 0 && local > -1.5 && e.currentTime > 0.05) e.currentTime = 0;
+      }
+    }
   }
 
   function draw() {
     const t = vid.currentTime || 0;
-    drawVideo();
     const c = activeAt(t);
+    syncAi(c, t);
+    drawVideo(c);
     if (c && c.status === 'ready') {
       const local = t - c.start;
       request(c, local);
@@ -362,9 +393,21 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     p.style.setProperty('--c', c.color);
     p.replaceChildren();
     const headRow = el('div', 'motion-panel-head');
-    const status = { waiting: 'Diseñando…', loading: 'Cargando…', ready: 'Listo', error: 'Con error', revising: 'Rehaciendo…' }[c.status];
+    const status = { waiting: c.ai ? 'Esperando la toma…' : 'Diseñando…', loading: 'Cargando…', ready: 'Listo', error: 'Con error', revising: 'Rehaciendo…' }[c.status];
     headRow.append(el('span', 'motion-dot', `${c.index + 1}`), el('strong', null, c.plan.idea || c.meta?.idea || `Clip ${c.index + 1}`), el('span', `motion-status ${c.status}`, status));
     p.append(headRow, el('div', 'muted small', `${fmt(c.start)} → ${fmt(c.end)} · ${c.dur.toFixed(1)} s · ventana ${Math.round(c.box.w * 100)}×${Math.round(c.box.h * 100)} %`));
+    if (c.ai) {
+      const label = { planning: 'dirigiendo la toma…', storyboard: 'esperando tu aprobación del storyboard', generating: `generando la toma…${c.ai.elapsed ? ` ${Math.round(c.ai.elapsed)} s` : ''}`, loading: 'cargando la toma…', ready: 'toma lista', demo: 'modo demo: se ve el video original', error: 'la toma falló: se ve el video original' }[c.ai.status];
+      p.append(el('div', `ai-line ${c.ai.status}`, `🎥 Video IA${c.vplan ? ` · ${c.vplan.modelLabel}` : ''} · ${label}`));
+      if (c.ai.status === 'error' && c.ai.error) p.append(el('div', 'notice', c.ai.error));
+      if (c.vplan) {
+        const det = el('details', 'motion-code');
+        det.append(el('summary', null, 'Ver la dirección de la toma'));
+        if (c.vplan.storyboard) { const img = el('img', 'storyboard-img'); img.src = c.vplan.storyboard; img.alt = 'Storyboard'; det.append(img); }
+        det.append(el('pre', null, [c.vplan.toma, c.vplan.camara, c.vplan.prompt_video].filter(Boolean).join('\n\n')));
+        p.append(det);
+      }
+    }
     if (c.meta?.nota) p.append(el('p', 'motion-note', c.meta.nota));
     if (c.status === 'error') p.append(el('div', 'notice', c.error));
 
@@ -398,8 +441,8 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     if (c.code || c.status === 'error') {
       const ask = el('textarea');
       ask.rows = 2;
-      ask.placeholder = c.status === 'error' ? '(Opcional) algo más que quieras cambiar' : '¿Qué cambiarías? Ej. "más lento", "el texto más chico", "que entre desde la derecha"';
-      const go = el('button', 'primary', c.status === 'error' ? 'Pedir que lo arregle' : 'Rehacer este clip');
+      ask.placeholder = c.status === 'error' ? '(Opcional) algo más que quieras cambiar' : c.ai ? '¿Qué cambiarías del texto? Ej. "más chico", "otra palabra", "que entre más tarde"' : '¿Qué cambiarías? Ej. "más lento", "el texto más chico", "que entre desde la derecha"';
+      const go = el('button', 'primary', c.status === 'error' ? 'Pedir que lo arregle' : c.ai ? 'Rehacer el texto' : 'Rehacer este clip');
       go.type = 'button';
       go.disabled = c.status === 'revising' || c.status === 'waiting';
       go.onclick = async () => {
@@ -449,6 +492,8 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
   exportBtn.onclick = async () => {
     if (recorder) { recorder.stop(); return; }
     if (!window.MediaRecorder || !canvas.captureStream) return note('Este navegador no puede exportar video. Probá con Chrome, Edge o Safari actualizados.');
+    const aiPending = clips.filter((c) => c.ai && ['planning', 'storyboard', 'generating', 'loading'].includes(c.ai.status));
+    if (aiPending.length && !confirm(`La toma de ${aiPending.map((c) => `Clip ${c.index + 1}`).join(', ')} todavía no está: se exporta con el video original en ese tramo. ¿Seguir?`)) return;
     const pending = clips.filter((c) => c.status !== 'ready');
     if (pending.length && !confirm(`${pending.map((c) => `Clip ${c.index + 1}`).join(', ')} todavía no está${pending.length > 1 ? 'n' : ''} listo${pending.length > 1 ? 's' : ''}: se exporta${pending.length > 1 ? 'n' : ''} sin motion. ¿Seguir?`)) return;
     const { ac, dest } = audioGraph();
@@ -501,7 +546,10 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     const data = {
       video: { name: video.name, duration: video.duration, width: video.width, height: video.height },
       sistema: direction.sistema,
-      clips: clips.map((c) => ({ id: c.id, inicio: c.start, fin: c.end, ventana: c.box, idea: c.meta?.idea || c.plan.idea, sonido: c.meta?.sonido || [], codigo: c.code })),
+      clips: clips.map((c) => ({
+        id: c.id, inicio: c.start, fin: c.end, ventana: c.box, idea: c.meta?.idea || c.plan.idea, sonido: c.meta?.sonido || [], codigo: c.code,
+        ...(c.ai ? { video_ia: { modelo: c.vplan?.modelLabel, toma: c.vplan?.toma, prompt: c.ai.prompt || c.vplan?.prompt_video, storyboard: c.vplan?.storyboard, archivo: c.ai.file } } : {}),
+      })),
     };
     const a = el('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
@@ -528,6 +576,52 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
       loadClip(c);
     },
     failClip(id, text) { const c = byId.get(id); if (c && !c.code) fail(c, text); },
+    // Video IA: llega el plan (storyboard para aprobar), cambia el estado de la generación, o llega la toma.
+    setPlan(plan) {
+      const c = byId.get(plan.id);
+      if (!c?.ai) return;
+      c.vplan = plan;
+      if (c.ai.status === 'planning' || c.ai.status === 'storyboard') c.ai.status = 'storyboard';
+      renderPanel(c);
+    },
+    aiStatus(id, status, elapsed) {
+      const c = byId.get(id);
+      if (!c?.ai || ['ready', 'loading', 'error', 'demo'].includes(c.ai.status)) return;
+      c.ai.status = status; c.ai.elapsed = elapsed;
+      renderPanel(c);
+    },
+    async setAiVideo({ id, url, demo, prompt }) {
+      const c = byId.get(id);
+      if (!c?.ai) return;
+      c.ai.prompt = prompt;
+      if (!url) { c.ai.status = demo ? 'demo' : 'error'; renderPanel(c); return; }
+      c.ai.status = 'loading'; c.ai.file = url;
+      renderPanel(c);
+      try {
+        // Se baja entero: así se puede adelantar y retroceder sin depender del servidor.
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`No pude bajar la toma (${res.status}).`);
+        const blobUrl = URL.createObjectURL(await res.blob());
+        const e = el('video');
+        e.muted = true; e.playsInline = true; e.preload = 'auto'; e.src = blobUrl;
+        await new Promise((resolve, reject) => {
+          e.addEventListener('loadeddata', resolve, { once: true });
+          e.addEventListener('error', () => reject(new Error('El navegador no pudo leer la toma generada.')), { once: true });
+        });
+        e.addEventListener('seeked', () => { if (vid.paused && !recording) draw(); });
+        Object.assign(c.ai, { status: 'ready', url: blobUrl, el: e, lastSeek: null });
+      } catch (err) {
+        Object.assign(c.ai, { status: 'error', error: err.message });
+      }
+      renderPanel(c);
+      if (vid.paused) draw();
+    },
+    failVideo(id, text, kind) {
+      const c = byId.get(id);
+      if (!c?.ai || kind !== 'video') return; // un storyboard que falla no frena nada: se aprueba sobre el cuadro base
+      Object.assign(c.ai, { status: 'error', error: text });
+      renderPanel(c);
+    },
     // Estado actual de un clip para pedir una revisión.
     clip: (id) => byId.get(id),
   };

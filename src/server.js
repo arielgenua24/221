@@ -8,10 +8,12 @@ import { runEditPipeline, parseEditBody, MAX_MEDIA, MAX_FRAMES } from './edit-pi
 import { runIntuitionPipeline, runIntuitionRevision, parseIntuitionBody, parseRevisionBody, MAX_CLIPS, MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, CLIP_FRAMES, MAX_REFS } from './intuition-pipeline.js';
 import { streamChat } from './openrouter.js';
 import { mockLLM } from './mock.js';
+import { createWaveSpeed, createMockWaveSpeed, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from './wavespeed.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const RUNS = path.join(ROOT, 'runs');
+const MEDIA = path.join(RUNS, 'media'); // storyboards y videos generados (se sirven en /media/…)
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 40 * 1024 * 1024;
@@ -34,16 +36,26 @@ const editConfig = {
 };
 
 // Intuition: el Director de Arte y los Motion Designers (tienen que aceptar imágenes).
+// Los clips de "Video IA + texto" usan WaveSpeed: GPT Image para el storyboard y Seedance / Wan para la toma.
+const wavespeedKey = process.env.WAVESPEED_API_KEY;
 const intuitionConfig = {
   motionModel: process.env.MOTION_MODEL || config.orchestratorModel,
+  storyboardModel: process.env.STORYBOARD_MODEL || 'openai/gpt-image-2.5-flare/edit',
+  storyboardQuality: process.env.STORYBOARD_QUALITY || 'high',
+  videoResolution: process.env.VIDEO_RESOLUTION || '720p',
+  mediaDir: MEDIA,
 };
+const ws = mock ? createMockWaveSpeed({ mediaDir: MEDIA }) : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir: MEDIA }) : null;
 
 const llm = mock ? mockLLM : (opts) => streamChat({ apiKey, ...opts });
 
 // Decisiones esperando respuesta del humano: id -> resolve.
 const pending = new Map();
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' };
+const TYPES = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
+};
 
 async function readBody(req, max = MAX_BODY) {
   const chunks = [];
@@ -125,7 +137,9 @@ async function handleIntuition(req, res) {
   } catch (err) {
     return badRequest(res, err.message);
   }
-  return streamFlow(res, { prefix: 'intuition-', runConfig: intuitionConfig, run: (ctx) => runIntuitionPipeline({ ...input, config: intuitionConfig, ...ctx }) });
+  if (input.clips.some((c) => c.mode === 'ai') && !ws) return badRequest(res, 'Los clips de "Video IA + texto" necesitan WAVESPEED_API_KEY en el .env del servidor.');
+  const { mediaDir, ...runConfig } = intuitionConfig;
+  return streamFlow(res, { prefix: 'intuition-', runConfig, run: (ctx) => runIntuitionPipeline({ ...input, config: intuitionConfig, ws, ...ctx }) });
 }
 
 async function handleIntuitionRevise(req, res) {
@@ -135,7 +149,8 @@ async function handleIntuitionRevise(req, res) {
   } catch (err) {
     return badRequest(res, err.message);
   }
-  return streamFlow(res, { prefix: 'intuition-rev-', runConfig: intuitionConfig, run: (ctx) => runIntuitionRevision({ ...input, config: intuitionConfig, ...ctx }) });
+  const { mediaDir, ...runConfig } = intuitionConfig;
+  return streamFlow(res, { prefix: 'intuition-rev-', runConfig, run: (ctx) => runIntuitionRevision({ ...input, config: intuitionConfig, ...ctx }) });
 }
 
 async function handleDecide(req, res) {
@@ -162,16 +177,22 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/config') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
-      mock, ...config, ...editConfig, ...intuitionConfig, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
-      intuition: { maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS },
+      mock, ...config, ...editConfig, motionModel: intuitionConfig.motionModel, storyboardModel: intuitionConfig.storyboardModel, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
+      intuition: {
+        maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS,
+        aiVideo: !!ws, videoModels: Object.entries(VIDEO_MODELS).map(([id, m]) => ({ id, label: m.label })), defaultVideoModel: DEFAULT_VIDEO_MODEL,
+      },
     }));
   }
   if (req.method !== 'GET') { res.writeHead(405); return res.end(); }
   if (url.pathname === '/edicion') { res.writeHead(302, { Location: '/?modo=edicion' }); return res.end(); }
   if (url.pathname === '/intuition') { res.writeHead(302, { Location: '/?modo=intuition' }); return res.end(); }
 
-  const file = path.normalize(path.join(PUBLIC, url.pathname === '/' ? 'index.html' : url.pathname));
-  if (!file.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  // Storyboards y videos generados: mismo origen, para que el canvas pueda dibujarlos y exportarlos.
+  const media = url.pathname.startsWith('/media/');
+  const dir = media ? MEDIA : PUBLIC;
+  const file = path.normalize(path.join(dir, media ? url.pathname.slice('/media'.length) : url.pathname === '/' ? 'index.html' : url.pathname));
+  if (!file.startsWith(dir + path.sep)) { res.writeHead(403); return res.end(); }
   try {
     const content = await readFile(file);
     const headers = { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' };
@@ -191,4 +212,7 @@ server.listen(PORT, HOST, () => {
     : `Orquestador: ${config.orchestratorModel} · Investigador: ${config.researcherModel} · Crítico: ${config.criticModel} · Web: ${config.researchWeb ? 'sí' : 'no'}`);
   console.log(`Edición con música (mismo chat, modo 🎬) · Oído: ${editConfig.earModel} · Director: ${editConfig.directorModel}`);
   console.log(`Intuition (motion design, modo ✨) · Director de Arte y Motion Designers: ${intuitionConfig.motionModel}`);
+  console.log(ws
+    ? `Video IA + texto · storyboard: ${intuitionConfig.storyboardModel} · video: ${Object.values(VIDEO_MODELS).map((m) => m.path()).join(' / ')}${ws.mock ? ' (demo: no se genera nada)' : ''}`
+    : 'Video IA + texto: desactivado (falta WAVESPEED_API_KEY).');
 });
