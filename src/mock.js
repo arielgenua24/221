@@ -97,6 +97,7 @@ const SCRIPTS = {
   cine: (id, meta) => out([`(demo) ${id}: no miro de verdad los cuadros; aplico un look fílmico cálido de ejemplo.`, 'Luz de ventana suave desde la izquierda (cinematic-light/motivated-lighting).', 'Push-in lento de intención (camera-movement/push-in).'], mockTreatment(meta)),
   recine: (id, meta) => out([`(demo) ${id}: apliqué "${meta.feedback || 'el cambio'}" (en demo, un look más frío).`], mockTreatment(meta)),
   motion: (id, meta) => codeOut([`(demo) ${id}: título que se revela desde una máscara.`, 'Entrada outExpo, salida inQuart, todo termina antes del final.'], mockMotion(meta)),
+  raw: (_, meta) => out(['(demo) No miro de verdad las imágenes: decido por orden de llegada.'], mockRaw(meta)),
   montage: (id, meta) => out([`(demo) Versión ${id}: roto el material sobre la grilla con otro ritmo y otro orden.`, 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: `Versión ${id} de demostración: ${meta.version?.nombre || ''}`, ...autoTimeline({ ...meta, ...{ A: { pace: 1, shift: 0 }, B: { pace: 2, shift: 1 }, C: { pace: 0.5, shift: 2 } }[id] }), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
 };
 
@@ -306,11 +307,38 @@ function mockMap(a) {
   };
 }
 
+// Raw (demo): pregunta cuál referencia si hay varias, y genera con la última persona + la elegida.
+function mockRaw({ text = '', selected = [], assets = [], lastShown }) {
+  const etiquetas = assets.filter((a) => !a.category && a.kind !== 'generada')
+    .map((a) => ({ codigo: a.code, tipo: a.kind, categoria: a.kind === 'persona' ? 'personaje' : 'estilo', nombre: `${a.kind} ${a.code} (demo)`, descripcion: '(demo) sin mirar la imagen' }));
+  const people = assets.filter((a) => a.kind === 'persona');
+  const refs = assets.filter((a) => a.kind === 'referencia');
+  const base = { etiquetas, mostrar: null, generar: null };
+  if (!assets.length) return { ...base, decir: 'Todavía no hay imágenes en este proyecto. Súbeme una persona y una referencia de estilo.' };
+  const picked = selected[0] || (lastShown && /primer|izquierda/i.test(text) ? lastShown.codigos[0] : null);
+  const wants = picked || /convi|conver|genera|haz|hac|dibuj|transform|estilo|crea/i.test(text);
+  if (!wants) return { ...base, decir: '(Demo) Te escucho. Dime qué quieres crear con estas imágenes.' };
+  if (!people.length && !picked) return { ...base, decir: '¿A quién quieres usar? Súbeme la foto de la persona.' };
+  if (!refs.length && !picked) return { ...base, decir: '¿Con qué estilo? Súbeme una referencia.' };
+  const ref = picked || (refs.length === 1 ? refs[0].code : null);
+  if (!ref) {
+    const last = refs.slice(-3).map((a) => a.code);
+    return { ...base, decir: `A ver, espera: estas ${last.length} son las últimas referencias. ¿A cuál te refieres?`, mostrar: { codigos: last, pregunta: '¿Cuál de estas?' } };
+  }
+  const person = people.at(-1)?.code;
+  const entradas = [person, ref].filter((c, i, l) => c && l.indexOf(c) === i);
+  return {
+    ...base,
+    decir: 'Okay: esta persona con este estilo de referencia. Dame un momento.',
+    generar: { entradas, prompt: 'Image 1: the person — keep identity. Image 2: style reference — match its rendering. (demo)', proporcion: null, resumen: `${entradas.join(' al estilo de ')} (demo)` },
+  };
+}
+
 export async function mockLLM({ step, onDelta, onReasoning, signal, meta }) {
   const [kind, id] = step.split('-');
   const text = (SCRIPTS[kind] || SCRIPTS.final)(id, meta);
   onReasoning?.('(demo) pensando…');
-  const chunk = ['plan', 'ear', 'montage', 'direction', 'motion', 'revise', 'vdirector', 'cine', 'recine'].includes(kind) ? 90 : 18; // los JSON de edición son largos
+  const chunk = ['plan', 'ear', 'montage', 'direction', 'motion', 'revise', 'vdirector', 'cine', 'recine', 'raw'].includes(kind) ? 90 : 18; // los JSON de edición son largos
   for (let i = 0; i < text.length; i += chunk) {
     await sleep(step === 'brief' ? 18 : 10, signal);
     onDelta?.(text.slice(i, i + chunk));

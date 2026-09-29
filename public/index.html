@@ -11,13 +11,108 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="logo">221</span><span>Estudio de contenido</span></div>
+      <div class="brand"><span class="logo">221</span></div>
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button type="button" class="tab" role="tab" data-tab="raw" aria-selected="true">Raw</button>
+        <button type="button" class="tab" role="tab" data-tab="studio" aria-selected="false">Estudio</button>
+      </nav>
       <div class="meta">
         <span id="usage" class="muted"></span>
         <span id="mode" class="pill"></span>
       </div>
     </header>
 
+    <section id="view-raw" class="view raw" role="tabpanel" aria-label="Raw">
+      <div id="raw-home" class="raw-scroll">
+        <div class="raw-inner">
+          <h1 class="raw-title">Raw</h1>
+          <p class="muted">Tus proyectos. Cada carpeta guarda sus personas, referencias e imágenes generadas; adentro, hablás con Raw.</p>
+          <form id="raw-new-folder" class="raw-new">
+            <input id="raw-new-name" type="text" placeholder="Nueva carpeta (ej. pes13)" maxlength="80" aria-label="Nombre de la carpeta nueva">
+            <button type="submit" class="primary">Crear</button>
+          </form>
+          <div id="raw-folders" class="raw-folders"></div>
+        </div>
+      </div>
+
+      <div id="raw-work" class="raw-scroll" hidden>
+        <div class="raw-inner">
+          <div class="raw-head">
+            <nav id="raw-crumbs" class="raw-crumbs" aria-label="Ubicación"></nav>
+            <button id="raw-folder-menu" type="button" class="raw-round small-round" title="Renombrar o borrar la carpeta" aria-label="Opciones de la carpeta">⋯</button>
+          </div>
+          <div id="raw-subfolders" class="raw-subfolders"></div>
+
+          <div class="raw-card" id="raw-card">
+            <div class="raw-card-top">
+              <button id="raw-close" type="button" class="raw-round" title="Salir de la carpeta" aria-label="Salir de la carpeta">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+              <label class="raw-style">
+                <span class="sr-only">Estilo</span>
+                <select id="raw-style">
+                  <option>Any Style</option><option>Foto realista</option><option>Ilustración</option><option>Videojuego</option>
+                  <option>Anime</option><option>3D</option><option>Cómic</option><option>Acuarela</option><option>Pixel art</option>
+                </select>
+              </label>
+            </div>
+            <form id="raw-form" class="raw-prompt">
+              <textarea id="raw-text" rows="2" placeholder="Describe an image" aria-label="Qué querés crear"></textarea>
+              <p id="raw-try" class="raw-try">Try “Golden hour photo”</p>
+            </form>
+            <div class="raw-card-bottom">
+              <div class="raw-pair">
+                <label class="raw-icon" title="Agregar referencias">
+                  <input type="file" id="raw-add-ref" accept="image/*" multiple hidden>
+                  <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M7 3h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v7.6l3-3 4 4 2-2 3 3V5H7Zm7.5 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM3 7v12a2 2 0 0 0 2 2h12v-2H5V7H3Z"/></svg>
+                  <span class="sr-only">Agregar referencias</span>
+                </label>
+                <label class="raw-icon" title="Agregar personas">
+                  <input type="file" id="raw-add-person" accept="image/*" multiple hidden>
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z"/></svg>
+                  <span class="sr-only">Agregar personas</span>
+                </label>
+              </div>
+              <div class="raw-aspect-wrap">
+                <button id="raw-aspect" type="button" class="raw-round" title="Proporción" aria-label="Proporción" aria-expanded="false">
+                  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M4 10h16M13 10v10" stroke="currentColor" stroke-width="2.2"/></svg>
+                </button>
+                <div id="raw-aspects" class="raw-aspects" hidden></div>
+              </div>
+              <button id="raw-mic" type="button" class="raw-round raw-mic" aria-pressed="true" title="Micrófono">
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg>
+                <span class="sr-only">Micrófono</span>
+              </button>
+              <button id="raw-send" type="submit" form="raw-form" class="raw-round raw-send" title="Enviar" aria-label="Enviar">
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="raw-voice" aria-live="polite">
+            <span id="raw-orb" class="raw-orb" data-phase="idle"></span>
+            <div class="raw-voice-text">
+              <span id="raw-phase" class="raw-phase">Listo</span>
+              <span id="raw-caption" class="raw-caption"></span>
+            </div>
+          </div>
+          <p id="raw-error" class="error" hidden></p>
+          <div id="raw-choice" class="raw-choice" hidden></div>
+
+          <div id="raw-library" class="raw-library"></div>
+
+          <h2 class="raw-section">Generadas antes</h2>
+          <div id="raw-grid" class="raw-grid"></div>
+
+          <details class="raw-transcript">
+            <summary>Conversación</summary>
+            <div id="raw-log" class="raw-log"></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <div id="view-studio" class="view" role="tabpanel" aria-label="Estudio" hidden>
     <main id="feed" class="feed" aria-live="polite">
       <section id="welcome" class="welcome">
         <h1>¿Qué creamos hoy?</h1>
@@ -57,7 +152,9 @@
         </button>
       </form>
     </footer>
+    </div>
   </div>
+  <div id="raw-lightbox" class="raw-lightbox" hidden></div>
   <div id="drop" class="drop" hidden>
     <div class="drop-box">
       <strong>Soltá acá</strong>
@@ -65,5 +162,6 @@
     </div>
   </div>
   <script src="/app.js" type="module"></script>
+  <script src="/raw.js" type="module"></script>
 </body>
 </html>

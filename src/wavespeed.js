@@ -147,8 +147,9 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
     const res = await fetchImpl(url, { signal });
     if (!res.ok) throw new Error(`No pude bajar el resultado de WaveSpeed (${res.status}).`);
     const type = res.headers.get('content-type') || '';
-    const fromUrl = /\.(mp4|webm|mov|png|jpe?g|webp)(?:\?|$)/i.exec(url)?.[1]?.toLowerCase();
-    const ext = fromUrl || (type.includes('mp4') ? 'mp4' : type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : type.includes('jpeg') ? 'jpg' : fallbackExt);
+    const fromUrl = /\.(mp4|webm|mov|png|jpe?g|webp|mp3|wav|ogg|m4a)(?:\?|$)/i.exec(url)?.[1]?.toLowerCase();
+    const ext = fromUrl || (type.includes('mp4') ? 'mp4' : type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : type.includes('jpeg') ? 'jpg'
+      : type.includes('mpeg') ? 'mp3' : type.includes('wav') ? 'wav' : type.includes('ogg') ? 'ogg' : fallbackExt);
     const file = `${randomUUID()}.${ext}`;
     await mkdir(mediaDir, { recursive: true });
     await writeFile(path.join(mediaDir, file), Buffer.from(await res.arrayBuffer()));
@@ -170,6 +171,13 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
       const file = await save(url, 'mp4', signal);
       return { task: task.id, remote: url, file };
     },
+    // Voz (text-to-speech). Tarda segundos, no minutos.
+    async audio({ model, body, signal, timeoutMs = 90 * 1000, onStatus }) {
+      const task = await submit(model, body, signal);
+      const url = await wait(task, { signal, timeoutMs, onStatus });
+      const file = await save(url, 'mp3', signal);
+      return { task: task.id, remote: url, file };
+    },
   };
 }
 
@@ -188,6 +196,8 @@ export function createMockWaveSpeed({ mediaDir }) {
       return { task: 'demo', remote: null, file };
     },
     async video() { return { task: 'demo', remote: null, file: null }; },
+    // Sin voz generada: el navegador lee el texto con su propia voz.
+    async audio() { return { task: 'demo', remote: null, file: null }; },
   };
 }
 

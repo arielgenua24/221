@@ -6,6 +6,32 @@ Una sola caja de chat donde **soltás (drag & drop), pegás o elegís videos, au
 2. **🎬 Edición con música**: una **música** (grabación de voz, MP3, M4A, o el sonido de uno de tus videos) + tus **videos y fotos**. El **Director** (Opus) orquesta todo y el **Oído** (Gemini) entiende el sonido y cómo fluye. El Oído escucha **una vez**, vos le corregís lo que haga falta, y el Director monta **3 videos distintos** (una llamada por versión), para ver y exportar.
 3. **✨ Intuition** (motion design): un **video vertical** + hasta **3 clips de hasta 5 s** que marcás en su línea de tiempo, cada uno con su pedido y sus referencias (imágenes, videos, GIFs, texto). Opus escribe **motion design como código** para cada clip, con un único sistema visual para los tres. Movés y redimensionás la **ventana** de cada clip, pedís cambios clip por clip, y al exportar el motion queda **quemado en el video**, en el lugar que elegiste.
 
+## Raw (pestaña principal)
+
+Tus **proyectos por carpetas** (ej. `pes13`, con subcarpetas si querés) y, adentro de cada uno, una **conversación por voz** con Raw, un director de arte que genera imágenes.
+
+```
+Entrás a la carpeta → Raw saluda en voz alta: "Hola, dime qué quieres trabajar hoy."
+  │   (el micrófono está encendido por defecto; se apaga con el botón 🎙)
+  ▼
+Subís personas (👤) y referencias (🖼) → quedan guardadas en el proyecto, a mano para siempre
+  ▼
+Hablás: "convierteme a esta persona en un dibujo estilo PES 13 con la última referencia"
+  ▼
+Raw (RAW_MODEL, ve las imágenes con su código P1, R3, G2…) → categoriza las nuevas (estilo, personaje, pose…)
+  ├─ ¿duda? → "A ver, espera: estas 3 son las últimas referencias. ¿A cuál te refieres?" + te las muestra
+  │           ✋ VOS: tocás una o decís "a esta" / "la segunda"
+  └─ ¿seguro? → "Okay: esta persona con este estilo" → GPT Image 2.5 Flare Edit (WaveSpeed) genera
+  ▼
+La imagen aparece en "Generadas antes" (y también queda en el proyecto para seguir editándola)
+```
+
+- **Voz de Raw**: Gemini 3.8 Flash TTS en WaveSpeed (`RAW_TTS_MODEL`, voz `RAW_TTS_VOICE`). Cada frase se cachea en disco, así el saludo suena al instante. Sin `WAVESPEED_API_KEY` (o si falla) habla la voz del navegador.
+- **Tu voz**: el reconocimiento de voz del navegador (Chrome, Edge, Safari). En Chrome el audio lo procesa Google. Mientras Raw habla, el micrófono se pausa para no escucharse a sí mismo. Siempre podés escribir en la caja.
+- **Carpetas**: una subcarpeta ve las personas y referencias de sus carpetas padre. Todo se guarda en `runs/raw/` (`index.json` + `files/`).
+- **Tocar una imagen** la "señala": viaja con tu próximo mensaje ("esta").
+- Mientras se genera una imagen podés seguir hablando.
+
 ## Cómo correrlo
 
 Requiere Node 22+. No tiene dependencias.
@@ -149,6 +175,10 @@ Fotos + texto
 
 | Archivo | Qué hace |
 |---|---|
+| `src/raw-store.js` | Raw: carpetas, imágenes (personas, referencias, generadas) y conversación, en `runs/raw/` |
+| `src/raw-agent.js` / `src/raw-prompts.js` | Raw: un turno de conversación (qué ve el agente, qué contesta, cuándo pregunta, cuándo genera) |
+| `src/raw-voice.js` | Raw: texto → voz (TTS de WaveSpeed) con caché |
+| `public/raw.js` | Raw: la pestaña (carpetas, tarjeta, micrófono, reproducción de voz, biblioteca, generadas) |
 | `src/knowledge.js` | Manual de contenido compartido por todos los agentes |
 | `src/prompts.js` | Rol de cada agente y encargo de cada etapa |
 | `src/pipeline.js` | Orquestación: etapas, paralelismo, extracción/reparación de JSON |

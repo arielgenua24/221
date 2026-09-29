@@ -10,6 +10,10 @@ import { streamChat } from './openrouter.js';
 import { mockLLM } from './mock.js';
 import { createWaveSpeed, createMockWaveSpeed, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, EDIT_MODEL } from './wavespeed.js';
 import { FILM_GUIDES, FILM_RULES } from './film-knowledge.js';
+import { createRawStore, KINDS } from './raw-store.js';
+import { runRawTurn, parseRawTurnBody } from './raw-agent.js';
+import { createSpeaker } from './raw-voice.js';
+import { GREETING } from './raw-prompts.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -49,6 +53,22 @@ const intuitionConfig = {
 };
 const ws = mock ? createMockWaveSpeed({ mediaDir: MEDIA }) : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir: MEDIA }) : null;
 
+// Raw: proyectos (carpetas) con personas y referencias, un agente que habla y genera imágenes.
+const rawStore = createRawStore(path.join(RUNS, 'raw'));
+const rawConfig = {
+  rawModel: process.env.RAW_MODEL || config.orchestratorModel,
+  rawReasoning: process.env.RAW_REASONING ?? 'low', // la conversación es por voz: mejor rápido
+  imageModel: process.env.RAW_IMAGE_MODEL || 'openai/gpt-image-2.5-flare/edit',
+  imageQuality: process.env.RAW_IMAGE_QUALITY || 'high',
+  ttsModel: process.env.RAW_TTS_MODEL || 'google/gemini-3.8-flash/text-to-speech',
+  ttsVoice: process.env.RAW_TTS_VOICE || 'Kore',
+  ttsStyle: process.env.RAW_TTS_STYLE || '',
+};
+const rawWs = mock ? createMockWaveSpeed({ mediaDir: rawStore.filesDir }) : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir: rawStore.filesDir }) : null;
+// La voz consulta más seguido: una frase tarda segundos.
+const ttsWs = mock ? rawWs : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir: rawStore.filesDir, pollMs: 400 }) : null;
+const speak = createSpeaker({ ws: ttsWs, filesDir: rawStore.filesDir, publicPrefix: '/raw-files/', model: rawConfig.ttsModel, voice: rawConfig.ttsVoice, style: rawConfig.ttsStyle });
+
 const llm = mock ? mockLLM : (opts) => streamChat({ apiKey, ...opts });
 
 // Decisiones esperando respuesta del humano: id -> resolve.
@@ -56,6 +76,7 @@ const pending = new Map();
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.gif': 'image/gif',
   '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
 };
 
@@ -169,8 +190,64 @@ async function handleDecide(req, res) {
   res.end('{"ok":true}');
 }
 
+// ---------- Raw ----------
+function sendJson(res, status, data) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
+// Operaciones cortas de Raw (carpetas e imágenes): JSON de ida y vuelta.
+const RAW_ACTIONS = {
+  '/api/raw/folders': async (b) => ({ folder: await rawStore.createFolder({ name: b.name, parentId: b.parentId }) }),
+  '/api/raw/folders/rename': async (b) => ({ folder: await rawStore.renameFolder(String(b.id), b.name) }),
+  '/api/raw/folders/delete': async (b) => rawStore.deleteFolder(String(b.id)),
+  '/api/raw/assets': async (b) => {
+    if (!KINDS[b.kind] || b.kind === 'generada') throw new Error('Tipo inválido: persona o referencia.');
+    return { asset: await rawStore.addAsset({ folderId: String(b.folderId), kind: b.kind, dataUrl: b.dataUrl, name: b.name }) };
+  },
+  '/api/raw/assets/update': async (b) => ({ asset: await rawStore.updateAsset(String(b.code), { kind: b.kind, name: b.name, category: b.category }) }),
+  '/api/raw/assets/delete': async (b) => ({ asset: await rawStore.deleteAsset(String(b.code)) }),
+  '/api/raw/speak': async (b) => {
+    try { return { url: await speak(String(b.text || '').slice(0, 800)) }; } catch (err) { return { url: null, error: err.message }; }
+  },
+};
+
+async function handleRawAction(req, res, action) {
+  try {
+    sendJson(res, 200, await action(await readBody(req, 25 * 1024 * 1024)));
+  } catch (err) {
+    sendJson(res, 400, { error: err.message });
+  }
+}
+
+async function handleRawGet(res, url) {
+  try {
+    if (url.pathname === '/api/raw/folders') return sendJson(res, 200, { folders: await rawStore.tree() });
+    const id = url.searchParams.get('id') || '';
+    const [lineage, assets, history, tree] = await Promise.all([rawStore.lineage(id), rawStore.assetsFor(id), rawStore.history(id), rawStore.tree()]);
+    return sendJson(res, 200, { lineage, assets, history: history.filter((h) => !h.note), children: tree.filter((f) => f.parentId === id) });
+  } catch (err) {
+    return sendJson(res, 404, { error: err.message });
+  }
+}
+
+async function handleRawTurn(req, res) {
+  let input;
+  try {
+    input = parseRawTurnBody(await readBody(req));
+    await rawStore.lineage(input.folderId);
+  } catch (err) {
+    return badRequest(res, err.message);
+  }
+  const { ttsStyle, ...runConfig } = rawConfig;
+  return streamFlow(res, { prefix: 'raw-', runConfig, run: (ctx) => runRawTurn({ store: rawStore, input, config: rawConfig, ws: rawWs, speak, ...ctx }) });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (req.method === 'POST' && url.pathname === '/api/raw/turn') return handleRawTurn(req, res);
+  if (req.method === 'POST' && RAW_ACTIONS[url.pathname]) return handleRawAction(req, res, RAW_ACTIONS[url.pathname]);
+  if (req.method === 'GET' && (url.pathname === '/api/raw/folders' || url.pathname === '/api/raw/folder')) return handleRawGet(res, url);
   if (req.method === 'POST' && url.pathname === '/api/run') return handleRun(req, res);
   if (req.method === 'POST' && url.pathname === '/api/edit') return handleEdit(req, res);
   if (req.method === 'POST' && url.pathname === '/api/intuition') return handleIntuition(req, res);
@@ -179,7 +256,8 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/config') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
-      mock, ...config, ...editConfig, motionModel: intuitionConfig.motionModel, storyboardModel: intuitionConfig.storyboardModel, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
+      mock, ...config, ...editConfig,
+      raw: { model: rawConfig.rawModel, imageModel: rawConfig.imageModel, ttsModel: rawConfig.ttsModel, voice: !!ttsWs && !ttsWs.mock, images: !!rawWs, greeting: GREETING }, motionModel: intuitionConfig.motionModel, storyboardModel: intuitionConfig.storyboardModel, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
       intuition: {
         maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS,
         cine: true, refilm: !!ws, refilmModel: EDIT_MODEL.label, filmGuides: FILM_GUIDES.length,
@@ -192,9 +270,11 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/intuition') { res.writeHead(302, { Location: '/?modo=intuition' }); return res.end(); }
 
   // Storyboards y videos generados: mismo origen, para que el canvas pueda dibujarlos y exportarlos.
-  const media = url.pathname.startsWith('/media/');
-  const dir = media ? MEDIA : PUBLIC;
-  const file = path.normalize(path.join(dir, media ? url.pathname.slice('/media'.length) : url.pathname === '/' ? 'index.html' : url.pathname));
+  // /raw-files/…: las imágenes y audios de los proyectos de Raw.
+  const mount = [['/media/', MEDIA], ['/raw-files/', rawStore.filesDir]].find(([prefix]) => url.pathname.startsWith(prefix));
+  const dir = mount ? mount[1] : PUBLIC;
+  const rel = mount ? decodeURIComponent(url.pathname.slice(mount[0].length - 1)) : url.pathname === '/' ? 'index.html' : url.pathname;
+  const file = path.normalize(path.join(dir, rel));
   if (!file.startsWith(dir + path.sep)) { res.writeHead(403); return res.end(); }
   try {
     const content = await readFile(file);
@@ -218,5 +298,6 @@ server.listen(PORT, HOST, () => {
   console.log(ws
     ? `Video IA + texto · storyboard: ${intuitionConfig.storyboardModel} · video: ${Object.values(VIDEO_MODELS).map((m) => m.path()).join(' / ')}${ws.mock ? ' (demo: no se genera nada)' : ''}`
     : 'Video IA + texto: desactivado (falta WAVESPEED_API_KEY).');
+  console.log(`Raw (pestaña principal) · agente: ${rawConfig.rawModel} · imágenes: ${rawWs ? rawConfig.imageModel : 'desactivado (falta WAVESPEED_API_KEY)'} · voz: ${ttsWs && !ttsWs.mock ? `${rawConfig.ttsModel} (${rawConfig.ttsVoice})` : 'la del navegador'}`);
   console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${EDIT_MODEL.path()}${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });
