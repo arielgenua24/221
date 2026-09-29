@@ -171,13 +171,14 @@ input.addEventListener('paste', (e) => {
 // Arrastrar y soltar en cualquier parte de la página.
 let dragDepth = 0;
 const dropZone = $('drop');
-// En la pestaña Raw, soltar archivos lo maneja raw.js.
-const hasFiles = (e) => document.body.dataset.tab !== 'raw' && [...(e.dataTransfer?.types || [])].some((t) => t === 'Files' || t === 'text/plain');
+// En las pestañas Raw e Historia, soltar archivos lo manejan raw.js y story.js.
+const ownDrop = () => ['raw', 'story'].includes(document.body.dataset.tab);
+const hasFiles = (e) => !ownDrop() && [...(e.dataTransfer?.types || [])].some((t) => t === 'Files' || t === 'text/plain');
 window.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; dropZone.hidden = false; });
 window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
 window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) dropZone.hidden = true; });
 window.addEventListener('drop', (e) => {
-  if (document.body.dataset.tab === 'raw') return;
+  if (ownDrop()) return;
   e.preventDefault();
   dragDepth = 0; dropZone.hidden = true;
   const files = [...(e.dataTransfer?.files || [])];

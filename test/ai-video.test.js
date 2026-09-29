@@ -23,7 +23,7 @@ test('duración, proporción y grilla del storyboard', () => {
   assert.equal(nearestRatio(1000, 1000), '1:1');
   assert.deepEqual(storyboardLayout(1080, 1920), { cols: 3, rows: 2, aspect: '3:4', panels: 6 });
   assert.equal(storyboardLayout(1920, 1080).aspect, '4:3');
-  assert.equal(VIDEO_MODELS.wan.body({ prompt: 'p', image: 'u', duration: 3, aspect: '9:16', resolution: '720p' }).enable_audio, false);
+  assert.equal(VIDEO_MODELS.wan.body({ prompt: 'p', image: 'u', duration: 3, aspect: '9:16', resolution: '720p' }).generate_audio, false);
 });
 
 test('parseIntuitionBody lee la técnica y el modelo de cada clip', () => {

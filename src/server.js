@@ -14,6 +14,8 @@ import { createRawStore, KINDS } from './raw-store.js';
 import { runRawTurn, parseRawTurnBody } from './raw-agent.js';
 import { createSpeaker } from './raw-voice.js';
 import { GREETING } from './raw-prompts.js';
+import { createStoryStore, ASPECTS as STORY_ASPECTS, SHOT_SECONDS, MAX_SHOTS, MAX_ASSETS as STORY_MAX_ASSETS } from './story-store.js';
+import { createStoryJobs, runStoryTurn, parseStoryTurnBody } from './story-pipeline.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -69,6 +71,19 @@ const rawWs = mock ? createMockWaveSpeed({ mediaDir: rawStore.filesDir }) : wave
 const ttsWs = mock ? rawWs : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir: rawStore.filesDir, pollMs: 400 }) : null;
 const speak = createSpeaker({ ws: ttsWs, filesDir: rawStore.filesDir, publicPrefix: '/raw-files/', model: rawConfig.ttsModel, voice: rawConfig.ttsVoice, style: rawConfig.ttsStyle });
 
+// Historia: el Guionista conversa y arma las tomas; cada toma aprobada la dirige el DP y la genera Wan 3.0.
+const storyStore = createStoryStore(path.join(RUNS, 'story'));
+const storyConfig = {
+  storyModel: process.env.STORY_MODEL || config.orchestratorModel,
+  dpModel: process.env.STORY_DP_MODEL || process.env.STORY_MODEL || config.orchestratorModel,
+  frameModel: process.env.STORY_FRAME_MODEL || 'openai/gpt-image-2.5-flare/text-to-image',
+  frameEditModel: process.env.STORY_FRAME_EDIT_MODEL || 'openai/gpt-image-2.5-flare/edit',
+  frameQuality: process.env.STORY_FRAME_QUALITY || 'high',
+  videoModel: process.env.STORY_VIDEO_MODEL || VIDEO_MODELS.wan.path(),
+  videoResolution: process.env.STORY_VIDEO_RESOLUTION || '480p',
+};
+const storyWs = mock ? createMockWaveSpeed({ mediaDir: storyStore.filesDir }) : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir: storyStore.filesDir }) : null;
+
 const llm = mock ? mockLLM : (opts) => streamChat({ apiKey, ...opts });
 
 // Decisiones esperando respuesta del humano: id -> resolve.
@@ -76,7 +91,7 @@ const pending = new Map();
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
-  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.gif': 'image/gif',
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.gif': 'image/gif',
   '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
 };
 
@@ -243,8 +258,54 @@ async function handleRawTurn(req, res) {
   return streamFlow(res, { prefix: 'raw-', runConfig, run: (ctx) => runRawTurn({ store: rawStore, input, config: rawConfig, ws: rawWs, speak, ...ctx }) });
 }
 
+// ---------- Historia ----------
+const storyJobs = storyWs ? createStoryJobs({ store: storyStore, ws: storyWs, llm, config: storyConfig }) : null;
+const needWs = () => { if (!storyJobs) throw new Error('Los cuadros y los videos necesitan WAVESPEED_API_KEY en el .env del servidor.'); return storyJobs; };
+const view = (id) => (storyJobs ? storyJobs.view(id) : storyStore.get(id));
+const STORY_ACTIONS = {
+  '/api/story/projects': async (b) => ({ project: await storyStore.create({ title: b.title, aspect: b.aspect }) }),
+  '/api/story/projects/update': async (b) => { await storyStore.update(String(b.id), b); return { project: await view(String(b.id)) }; },
+  '/api/story/projects/delete': async (b) => {
+    const p = await storyStore.get(String(b.id));
+    p.shots.forEach((s) => storyJobs?.cancel(p.id, s.id));
+    return storyStore.remove(p.id);
+  },
+  '/api/story/assets': async (b) => ({ asset: await storyStore.addAsset(String(b.projectId), { dataUrl: b.dataUrl, name: b.name, source: b.source }) }),
+  '/api/story/assets/delete': async (b) => storyStore.deleteAsset(String(b.projectId), String(b.code)),
+  '/api/story/frames': async (b) => needWs().frames(String(b.projectId), Array.isArray(b.shotIds) ? b.shotIds.map(String) : null),
+  '/api/story/shots/revise': async (b) => needWs().reviseFrame(String(b.projectId), String(b.shotId), { feedback: String(b.feedback || '').slice(0, 1500).trim(), prompt: String(b.prompt || '').slice(0, 2000).trim() }),
+  '/api/story/shots/approve': async (b) => needWs().approve(String(b.projectId), String(b.shotId), { feedback: b.feedback }),
+  '/api/story/shots/cancel': async (b) => { storyJobs?.cancel(String(b.projectId), String(b.shotId)); return { ok: true }; },
+  '/api/story/music': async (b) => { await storyStore.setMusic(String(b.projectId), { dataUrl: b.dataUrl, name: b.name }); return { project: await view(String(b.projectId)) }; },
+  '/api/story/timeline': async (b) => { await storyStore.setTimeline(String(b.projectId), { order: b.order, music: b.music }); return { project: await view(String(b.projectId)) }; },
+};
+
+async function handleStoryTurn(req, res) {
+  let input;
+  try {
+    input = parseStoryTurnBody(await readBody(req));
+    await storyStore.get(input.projectId);
+  } catch (err) {
+    return badRequest(res, err.message);
+  }
+  const jobs = storyJobs || { cancel() {}, view: (id) => storyStore.get(id) };
+  return streamFlow(res, { prefix: 'story-', runConfig: storyConfig, run: (ctx) => runStoryTurn({ store: storyStore, jobs, input, config: storyConfig, ...ctx }) });
+}
+
+async function handleStoryGet(res, url) {
+  try {
+    if (url.pathname === '/api/story/projects') return sendJson(res, 200, { projects: await storyStore.list() });
+    return sendJson(res, 200, { project: await view(url.searchParams.get('id') || '') });
+  } catch (err) {
+    return sendJson(res, 404, { error: err.message });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (req.method === 'POST' && url.pathname === '/api/story/turn') return handleStoryTurn(req, res);
+  if (req.method === 'POST' && STORY_ACTIONS[url.pathname]) return handleRawAction(req, res, STORY_ACTIONS[url.pathname]);
+  if (req.method === 'GET' && (url.pathname === '/api/story/projects' || url.pathname === '/api/story/project')) return handleStoryGet(res, url);
   if (req.method === 'POST' && url.pathname === '/api/raw/turn') return handleRawTurn(req, res);
   if (req.method === 'POST' && RAW_ACTIONS[url.pathname]) return handleRawAction(req, res, RAW_ACTIONS[url.pathname]);
   if (req.method === 'GET' && (url.pathname === '/api/raw/folders' || url.pathname === '/api/raw/folder')) return handleRawGet(res, url);
@@ -257,6 +318,10 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       mock, ...config, ...editConfig,
+      story: {
+        model: storyConfig.storyModel, dpModel: storyConfig.dpModel, frameModel: storyConfig.frameModel, videoModel: storyConfig.videoModel, resolution: storyConfig.videoResolution,
+        shotSeconds: SHOT_SECONDS, maxShots: MAX_SHOTS, maxAssets: STORY_MAX_ASSETS, aspects: STORY_ASPECTS, generate: !!storyJobs, filmGuides: FILM_GUIDES.length,
+      },
       raw: { model: rawConfig.rawModel, imageModel: rawConfig.imageModel, ttsModel: rawConfig.ttsModel, voice: !!ttsWs && !ttsWs.mock, images: !!rawWs, greeting: GREETING }, motionModel: intuitionConfig.motionModel, storyboardModel: intuitionConfig.storyboardModel, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
       intuition: {
         maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS,
@@ -271,7 +336,7 @@ const server = http.createServer(async (req, res) => {
 
   // Storyboards y videos generados: mismo origen, para que el canvas pueda dibujarlos y exportarlos.
   // /raw-files/…: las imágenes y audios de los proyectos de Raw.
-  const mount = [['/media/', MEDIA], ['/raw-files/', rawStore.filesDir]].find(([prefix]) => url.pathname.startsWith(prefix));
+  const mount = [['/media/', MEDIA], ['/raw-files/', rawStore.filesDir], ['/story-files/', storyStore.filesDir]].find(([prefix]) => url.pathname.startsWith(prefix));
   const dir = mount ? mount[1] : PUBLIC;
   const rel = mount ? decodeURIComponent(url.pathname.slice(mount[0].length - 1)) : url.pathname === '/' ? 'index.html' : url.pathname;
   const file = path.normalize(path.join(dir, rel));
@@ -281,6 +346,17 @@ const server = http.createServer(async (req, res) => {
     const headers = { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' };
     // El worker ejecuta código escrito por la IA: sin red y sin nada más que sus propios módulos.
     if (path.basename(file) === 'motion-worker.js') headers['Content-Security-Policy'] = "default-src 'none'; script-src 'self' 'unsafe-eval'";
+    // Rangos: Safari no reproduce video sin ellos, y la línea de tiempo salta a cualquier segundo.
+    const range = mount && /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+    if (range && (range[1] || range[2])) {
+      const size = content.length;
+      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+      if (start >= size || start > end) { res.writeHead(416, { 'Content-Range': `bytes */${size}` }); return res.end(); }
+      res.writeHead(206, { ...headers, 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+      return res.end(content.subarray(start, end + 1));
+    }
+    if (mount) headers['Accept-Ranges'] = 'bytes';
     res.writeHead(200, headers);
     res.end(content);
   } catch {
@@ -289,6 +365,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
+  storyJobs?.resume().catch((err) => console.error(`Historia: no pude retomar las tomas pendientes: ${err.message}`));
   console.log(`221 — arnés de contenido en http://${HOST}:${PORT}`);
   console.log(mock
     ? 'MODO DEMO: sin OPENROUTER_API_KEY (o MOCK=1). Las respuestas son simuladas.'
@@ -299,5 +376,6 @@ server.listen(PORT, HOST, () => {
     ? `Video IA + texto · storyboard: ${intuitionConfig.storyboardModel} · video: ${Object.values(VIDEO_MODELS).map((m) => m.path()).join(' / ')}${ws.mock ? ' (demo: no se genera nada)' : ''}`
     : 'Video IA + texto: desactivado (falta WAVESPEED_API_KEY).');
   console.log(`Raw (pestaña principal) · agente: ${rawConfig.rawModel} · imágenes: ${rawWs ? rawConfig.imageModel : 'desactivado (falta WAVESPEED_API_KEY)'} · voz: ${ttsWs && !ttsWs.mock ? `${rawConfig.ttsModel} (${rawConfig.ttsVoice})` : 'la del navegador'}`);
+  console.log(`Historia · Guionista: ${storyConfig.storyModel} · DP: ${storyConfig.dpModel} · cuadros: ${storyConfig.frameModel} / ${storyConfig.frameEditModel} · video: ${storyWs ? `${storyConfig.videoModel} (${storyConfig.videoResolution}, ${SHOT_SECONDS} s)${storyWs.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
   console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${EDIT_MODEL.path()}${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });

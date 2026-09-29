@@ -32,6 +32,35 @@ La imagen aparece en "Generadas antes" (y también queda en el proyecto para seg
 - **Tocar una imagen** la "señala": viaja con tu próximo mensaje ("esta").
 - Mientras se genera una imagen podés seguir hablando.
 
+## Historia (pestaña)
+
+Contás una historia con tu material y el equipo la arma en **tomas de 5 segundos**, la dibuja, la genera con **Wan 3.0** y la montás sobre tu música.
+
+```
+Creás una historia (9:16, 16:9 o 1:1) + subís tu material (fotos; de los videos se toman 3 cuadros) → M1, M2…
+  ▼
+[1] Guionista (STORY_MODEL, ve el material) ⇄ VOS, en una conversación
+    → historia (emoción, arco, estilo visual, personajes fijos) + tomas: acción, encuadre, cámara, luz, refs, prompt del cuadro
+    → si le falta algo, pregunta con opciones para tocar; si pedís un cambio, toca SOLO esa toma
+  ▼
+[2] Storyboard: GPT Image 2.5 dibuja el PRIMER CUADRO de cada toma, en paralelo (con tu material como referencia;
+    sin material, el primer cuadro fija el mundo y los demás lo usan para mantener personajes y look)
+  ├─ ✋ VOS, toma por toma: "Pedir cambios" (el Guionista mira el cuadro y lo corrige) · editar el prompt a mano
+  └─ ✋ VOS: "Aprobar y generar" (o "Aprobar todas")
+  ▼  cada aprobación arranca su propia tarea, en paralelo:
+[3] Director de Fotografía (STORY_DP_MODEL, ve el cuadro aprobado y las tomas vecinas) → acción, un movimiento de cámara,
+    beats en 5 s, luz → prompt → Wan 3.0 image→video (480p, 5 s, sin audio propio) → se baja a runs/story/files/
+  ▼
+[4] Montaje: las tomas en orden (arrastrar o ‹ ›), la pista de música con su volumen y desde qué segundo empieza
+    (con fundido al final) → reproducir y exportar (MP4 o WebM, en el navegador)
+```
+
+- **El criterio**: los agentes leen [agents-film/](agents-film/) con [src/film-knowledge.js](src/film-knowledge.js). El Guionista recibe completas las guías de edición y emoción (Kuleshov, regla de seis, emoción no narrativa), estructura visual y encuadre; el Director de Fotografía, las de cinematografía (cámara, movimiento, encuadre, color) y luz. Los dos reciben el catálogo de reglas de toda la biblioteca y citan por id las que usan. Los prompts están en [src/story-prompts.js](src/story-prompts.js).
+- **El cuadro aprobado ES el primer cuadro del video**: lo que aprobás es lo que se anima.
+- **Todo lo largo corre en el servidor** ([src/story-pipeline.js](src/story-pipeline.js)): podés cerrar la pestaña mientras se generan las tomas. Si el servidor se reinicia con una toma ya enviada a WaveSpeed, la retoma sin volver a pagarla.
+- Las tomas que todavía no tienen video se ven en el montaje como su cuadro (y así se exportan, si querés).
+- Cada proyecto se guarda en `runs/story/projects/<id>.json`; los archivos, en `runs/story/files/` (se sirven en `/story-files/…`).
+
 ## Cómo correrlo
 
 Requiere Node 22+. No tiene dependencias.
@@ -175,6 +204,10 @@ Fotos + texto
 
 | Archivo | Qué hace |
 |---|---|
+| `src/story-store.js` | Historia: proyectos (material, conversación, historia, tomas, montaje) en `runs/story/` |
+| `src/story-prompts.js` | Historia: prompts del Guionista y del Director de Fotografía, con la biblioteca agents-film |
+| `src/story-pipeline.js` | Historia: turno de conversación + tareas en segundo plano por toma (cuadro, dirección, video Wan 3.0) |
+| `public/story.js` / `public/story-timeline.js` | Historia: la pestaña (chat, storyboard, tomas) y el montaje (orden, música, volumen, exportación) |
 | `src/raw-store.js` | Raw: carpetas, imágenes (personas, referencias, generadas) y conversación, en `runs/raw/` |
 | `src/raw-agent.js` / `src/raw-prompts.js` | Raw: un turno de conversación (qué ve el agente, qué contesta, cuándo pregunta, cuándo genera) |
 | `src/raw-voice.js` | Raw: texto → voz (TTS de WaveSpeed) con caché |
@@ -215,6 +248,9 @@ Fotos + texto
 | `VIDEO_RESOLUTION` | `720p` | `480p`, `720p` o `1080p`. |
 | `STORYBOARD_MODEL` / `STORYBOARD_QUALITY` | `openai/gpt-image-2.5-flare/edit` / `high` | Modelo y calidad del storyboard. |
 | `SEEDANCE_MODEL` / `WAN_MODEL` | rutas de WaveSpeed | Por si WaveSpeed publica otra versión. |
+| `STORY_MODEL` / `STORY_DP_MODEL` | = orquestador | Historia: Guionista y Director de Fotografía. Tienen que aceptar imágenes. |
+| `STORY_FRAME_MODEL` / `STORY_FRAME_EDIT_MODEL` | GPT Image 2.5 Flare text-to-image / edit | Cuadros del storyboard (sin / con material de referencia). |
+| `STORY_VIDEO_MODEL` / `STORY_VIDEO_RESOLUTION` | `alibaba/wan-3.0-prime/image-to-video` / `480p` | Video de cada toma (5 s). |
 | `OPENROUTER_RETRIES` | `3` | Reintentos ante errores pasajeros (429 del pool compartido, 5xx, cortes de red) |
 
 Cualquier variable de modelo acepta una **lista separada por comas**: si el primero no llega a responder

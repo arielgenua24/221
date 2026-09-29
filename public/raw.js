@@ -40,11 +40,14 @@ function setTab(tab) {
   document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
   $('view-raw').hidden = tab !== 'raw';
   $('view-studio').hidden = tab !== 'studio';
+  $('view-story').hidden = tab !== 'story';
+  window.dispatchEvent(new CustomEvent('tab', { detail: tab }));
   if (tab !== 'raw') { stopListening(); stopSpeaking(); } else if (current) resumeListening();
 }
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
   setTab(b.dataset.tab);
   if (b.dataset.tab === 'studio') history.replaceState(null, '', '#estudio');
+  else if (b.dataset.tab === 'story') history.replaceState(null, '', '#historia');
   else history.replaceState(null, '', current ? `#raw/${current.id}` : '#raw');
 }));
 
@@ -645,6 +648,7 @@ function pendingTile(ev) {
 function route() {
   const hash = location.hash.slice(1);
   if (hash === 'estudio' || new URLSearchParams(location.search).get('modo')) return setTab('studio');
+  if (/^historia(\/|$)/.test(hash)) return setTab('story');
   setTab('raw');
   const m = /^raw\/(.+)$/.exec(hash);
   loadFolders().then(() => { if (m && folders.some((f) => f.id === m[1])) openFolder(m[1]); }).catch((err) => showError(err.message));

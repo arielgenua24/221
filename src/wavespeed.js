@@ -23,8 +23,8 @@ export const VIDEO_MODELS = {
     path: () => process.env.WAN_MODEL || 'alibaba/wan-3.0-prime/image-to-video',
     minSeconds: 2,
     maxSeconds: 30,
-    // Sin audio propio: el clip conserva el sonido original del video.
-    body: ({ prompt, image, duration, aspect, resolution, seed }) => ({ prompt, image, duration, aspect_ratio: aspect, resolution, enable_audio: false, ...(seed !== undefined ? { seed } : {}) }),
+    // Sin audio propio (el campo es generate_audio y por defecto es true): el clip conserva el sonido original del video.
+    body: ({ prompt, image, duration, aspect, resolution, seed }) => ({ prompt, image, duration, aspect_ratio: aspect, resolution, generate_audio: false, ...(seed !== undefined ? { seed } : {}) }),
   },
 };
 export const DEFAULT_VIDEO_MODEL = VIDEO_MODELS[process.env.VIDEO_MODEL] ? process.env.VIDEO_MODEL : 'seedance';
@@ -171,6 +171,12 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
       const file = await save(url, 'mp4', signal);
       return { task: task.id, remote: url, file };
     },
+    // Retoma una tarea de video ya enviada (ej. después de reiniciar el servidor): no se vuelve a cobrar.
+    async collect({ task, signal, timeoutMs = 15 * 60 * 1000, onStatus }) {
+      const url = await wait({ id: task, getUrl: `${base()}/api/v3/predictions/${task}/result` }, { signal, timeoutMs, onStatus });
+      const file = await save(url, 'mp4', signal);
+      return { task, remote: url, file };
+    },
     // Voz (text-to-speech). Tarda segundos, no minutos.
     async audio({ model, body, signal, timeoutMs = 90 * 1000, onStatus }) {
       const task = await submit(model, body, signal);
@@ -196,6 +202,7 @@ export function createMockWaveSpeed({ mediaDir }) {
       return { task: 'demo', remote: null, file };
     },
     async video() { return { task: 'demo', remote: null, file: null }; },
+    async collect() { return { task: 'demo', remote: null, file: null }; },
     // Sin voz generada: el navegador lee el texto con su propia voz.
     async audio() { return { task: 'demo', remote: null, file: null }; },
   };

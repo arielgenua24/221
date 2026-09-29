@@ -97,6 +97,9 @@ const SCRIPTS = {
   cine: (id, meta) => out([`(demo) ${id}: no miro de verdad los cuadros; aplico un look fílmico cálido de ejemplo.`, 'Luz de ventana suave desde la izquierda (cinematic-light/motivated-lighting).', 'Push-in lento de intención (camera-movement/push-in).'], mockTreatment(meta)),
   recine: (id, meta) => out([`(demo) ${id}: apliqué "${meta.feedback || 'el cambio'}" (en demo, un look más frío).`], mockTreatment(meta)),
   motion: (id, meta) => codeOut([`(demo) ${id}: título que se revela desde una máscara.`, 'Entrada outExpo, salida inQuart, todo termina antes del final.'], mockMotion(meta)),
+  story: (_, meta) => out(['(demo) No miro de verdad el material: armo una historia de ejemplo.', 'Arco de intensidad creciente (visual-structure).'], mockStory(meta)),
+  shotfix: (id, meta) => out([`(demo) ${id}: aplico "${meta.feedback}".`], { toma: { ...meta.shot, prompt_cuadro: `${meta.shot.prompt_cuadro} (${meta.feedback})` }, cambios: `(demo) Apliqué: ${meta.feedback}` }),
+  shotdp: (id, meta) => out([`(demo) ${id}: una sola acción y un movimiento de cámara.`], { que_veo: '(demo)', accion: meta.shot.accion, camara: meta.shot.camara, beats: [{ desde: 0, hasta: 5, accion: meta.shot.accion }], luz: meta.shot.luz, reglas: ['camera-movement/static'], prompt_video: `(demo) ${meta.shot.accion}. Slow camera move. Cinematic, photorealistic, natural motion.`, evitar: ['on-screen text'], nota: '(demo) En modo demo no se genera el video: se ve el cuadro.' }),
   raw: (_, meta) => out(['(demo) No miro de verdad las imágenes: decido por orden de llegada.'], mockRaw(meta)),
   montage: (id, meta) => out([`(demo) Versión ${id}: roto el material sobre la grilla con otro ritmo y otro orden.`, 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: `Versión ${id} de demostración: ${meta.version?.nombre || ''}`, ...autoTimeline({ ...meta, ...{ A: { pace: 1, shift: 0 }, B: { pace: 2, shift: 1 }, C: { pace: 0.5, shift: 2 } }[id] }), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
 };
@@ -331,6 +334,30 @@ function mockRaw({ text = '', selected = [], assets = [], lastShown }) {
     ...base,
     decir: 'Okay: esta persona con este estilo de referencia. Dame un momento.',
     generar: { entradas, prompt: 'Image 1: the person — keep identity. Image 2: style reference — match its rendering. (demo)', proporcion: null, resumen: `${entradas.join(' al estilo de ')} (demo)` },
+  };
+}
+
+// Historia (demo): propone 4 tomas con el material que haya, sin mirarlo de verdad.
+function mockStory({ project, text = '' }) {
+  const codes = project.assets.map((a) => a.code);
+  const first = !project.shots.length;
+  const tomas = [
+    ['Presentación', 'La protagonista mira por la ventana al amanecer.', 'plano medio, 35mm', 'fija', 2],
+    ['El detalle', 'Sus manos toman el objeto y lo giran a la luz.', 'primer plano, 85mm', 'dolly-in lento', 3],
+    ['El giro', 'Sale a la calle y el viento le mueve el pelo.', 'plano general, 24mm', 'travelling lateral', 4],
+    ['Cierre', 'Sonríe a cámara mientras la luz cálida la envuelve.', 'primer plano, 50mm', 'push-in sutil', 5],
+  ].map(([titulo, accion, encuadre, camara, intensidad], i) => ({
+    id: `S${i + 1}`, titulo, funcion: ['presenta', 'desarrolla', 'quiebre', 'remata'][i], intensidad, accion, emocion: 'calma que crece', encuadre, camara,
+    luz: 'luz de ventana suave desde la izquierda', refs: codes.slice(0, 2),
+    prompt_cuadro: `(demo) ${encuadre}, cinematic film still. ${accion}`, reglas: ['visual-structure/progresion-de-intensidad'],
+  }));
+  return {
+    decir: first ? `(Demo) Te propongo una historia de 4 tomas, ${tomas.length * 5} segundos: de la calma al impulso. ¿La dibujamos?` : `(Demo) Anotado: "${text.slice(0, 60)}". Ajusté la historia.`,
+    preguntas: first ? [{ pregunta: '¿Qué tono buscás?', opciones: ['Cálido', 'Épico', 'Íntimo'] }] : [],
+    notas_material: project.assets.filter((a) => !a.note).map((a) => ({ codigo: a.code, nota: '(demo) sin mirar la imagen' })),
+    historia: first ? { titulo: 'Amanecer', logline: '(demo) Una mañana cualquiera se vuelve un comienzo.', emocion_central: 'esperanza', arco: 'calma → impulso → plenitud', estilo_visual: { paleta: 'ámbar y azul petróleo', luz: 'natural, motivada', textura: 'grano fino', look: 'warm golden grade, soft film grain' }, personajes: [], musica: 'piano + cuerdas, 90 BPM' } : null,
+    tomas: first ? tomas : null,
+    listo_para_storyboard: true,
   };
 }
 

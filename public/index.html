@@ -14,6 +14,7 @@
       <div class="brand"><span class="logo">221</span></div>
       <nav class="tabs" role="tablist" aria-label="Secciones">
         <button type="button" class="tab" role="tab" data-tab="raw" aria-selected="true">Raw</button>
+        <button type="button" class="tab" role="tab" data-tab="story" aria-selected="false">Historia</button>
         <button type="button" class="tab" role="tab" data-tab="studio" aria-selected="false">Estudio</button>
       </nav>
       <div class="meta">
@@ -112,6 +113,74 @@
       </div>
     </section>
 
+    <section id="view-story" class="view story" role="tabpanel" aria-label="Historia" hidden>
+      <div id="story-home" class="raw-scroll">
+        <div class="story-inner">
+          <h1 class="raw-title">Historia</h1>
+          <p class="muted">Contá una historia con tu material. El Guionista la arma con vos en tomas de 5 segundos, dibuja el storyboard, y cada toma que aprobás se genera con Wan 3.0. Después la montás sobre tu música.</p>
+          <form id="story-new" class="raw-new">
+            <input id="story-new-name" type="text" placeholder="Nombre de la historia" maxlength="80" aria-label="Nombre de la historia nueva">
+            <select id="story-new-aspect" aria-label="Formato">
+              <option value="9:16">9:16 vertical</option><option value="16:9">16:9 horizontal</option><option value="1:1">1:1 cuadrado</option>
+            </select>
+            <button type="submit" class="primary">Crear</button>
+          </form>
+          <div id="story-projects" class="story-projects"></div>
+        </div>
+      </div>
+
+      <div id="story-work" class="raw-scroll" hidden>
+        <div class="story-inner">
+          <div class="story-head">
+            <button id="story-back" type="button" class="raw-round small-round" title="Volver a las historias" aria-label="Volver">‹</button>
+            <input id="story-title" class="story-title" type="text" maxlength="80" aria-label="Nombre de la historia">
+            <span id="story-aspect" class="pill"></span>
+            <span id="story-cost" class="muted small"></span>
+            <button id="story-delete" type="button" class="raw-round small-round" title="Borrar la historia" aria-label="Borrar la historia">⋯</button>
+          </div>
+
+          <ol class="story-steps" aria-label="Pasos">
+            <li data-step="talk">1 · Historia</li><li data-step="board">2 · Storyboard</li><li data-step="clips">3 · Tomas</li><li data-step="edit">4 · Montaje</li>
+          </ol>
+
+          <section class="story-panel" aria-label="Conversación con el Guionista">
+            <div id="story-material" class="story-material"></div>
+            <div id="story-chat" class="story-chat" aria-live="polite"></div>
+            <div id="story-live" class="story-live" hidden></div>
+            <p id="story-error" class="error" hidden></p>
+            <form id="story-form" class="composer-row">
+              <label class="icon-btn" title="Agregar fotos o videos (tu material)">
+                <input type="file" id="story-file" accept="image/*,video/*" multiple hidden>
+                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/></svg>
+                <span class="sr-only">Agregar fotos o videos</span>
+              </label>
+              <textarea id="story-text" rows="1" placeholder="Contá tu historia o soltá tu material…" aria-label="Mensaje al Guionista"></textarea>
+              <button id="story-send" class="send" type="submit" title="Enviar" aria-label="Enviar">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg>
+              </button>
+            </form>
+          </section>
+
+          <section id="story-board-wrap" class="story-panel" hidden>
+            <div class="story-panel-head">
+              <h2 class="raw-section">Storyboard</h2>
+              <div class="actions">
+                <button id="story-draw" type="button" class="primary">Dibujar storyboard</button>
+                <button id="story-approve-all" type="button" class="small-btn" hidden>Aprobar todas</button>
+              </div>
+            </div>
+            <p id="story-board-hint" class="muted small"></p>
+            <div id="story-board" class="story-board"></div>
+          </section>
+
+          <section id="story-edit-wrap" class="story-panel" hidden>
+            <h2 class="raw-section">Montaje</h2>
+            <div id="story-editor"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
     <div id="view-studio" class="view" role="tabpanel" aria-label="Estudio" hidden>
     <main id="feed" class="feed" aria-live="polite">
       <section id="welcome" class="welcome">
@@ -163,5 +232,6 @@
   </div>
   <script src="/app.js" type="module"></script>
   <script src="/raw.js" type="module"></script>
+  <script src="/story.js" type="module"></script>
 </body>
 </html>
