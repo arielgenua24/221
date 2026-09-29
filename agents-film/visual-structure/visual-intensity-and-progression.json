@@ -1,0 +1,212 @@
+{
+  "fuente": "visual-intensity-and-progression.md",
+  "categoria": "estructura_visual",
+  "reglas": [
+    {
+      "id": "establecer-patron-visual",
+      "nombre": "Establecer patrón visual",
+      "definicion": "Repetir rasgos visibles entre tomas para crear una referencia que permita reconocer cambios posteriores.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["gancho", "desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "rasgos_comparables": "dirección de líneas, distancia de cámara, color, movimiento o ritmo",
+          "condicion": "repetir al menos un rasgo visible"
+        }
+      },
+      "cuando_usar": "Cuando un cambio posterior deba resultar perceptible frente a una referencia visual previa.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["introducir-contraste-relevante"]
+    },
+    {
+      "id": "introducir-contraste-relevante",
+      "nombre": "Introducir contraste relevante",
+      "definicion": "Cambiar un componente visual reconocible respecto del patrón anterior para destacar información nueva.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "componentes_posibles": "línea, espacio, forma, tono, color, movimiento o ritmo",
+          "criterio": "seleccionar el menor cambio que exprese el propósito"
+        }
+      },
+      "cuando_usar": "Cuando un nuevo dato o acción cambie lo que el espectador debe notar o entender y exista un patrón previo que vuelva legible el contraste.",
+      "cuando_no_usar": "Cuando el cambio perjudique la claridad espacial, la acción o la lectura del producto y del texto esencial.",
+      "combina_bien_con": ["establecer-patron-visual"]
+    },
+    {
+      "id": "destacar-diagonal-nueva",
+      "nombre": "Destacar diagonal nueva",
+      "definicion": "Hacer visible una dirección diagonal después de una secuencia dominada por líneas horizontales.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "patron_previo": "líneas predominantemente horizontales",
+          "cambio": "diagonal visible y prominente"
+        }
+      },
+      "cuando_usar": "Cuando una diagonal nueva deba señalar un momento de énfasis después de varias composiciones horizontales.",
+      "cuando_no_usar": "Cuando la diagonal no sea suficientemente visible o no tenga una razón en el contenido.",
+      "combina_bien_con": ["establecer-patron-visual", "introducir-contraste-relevante"]
+    },
+    {
+      "id": "escalar-movimiento-sujeto-camara",
+      "nombre": "Escalar movimiento",
+      "definicion": "Pasar de sujeto y cámara quietos a movimiento del sujeto y luego a movimiento de ambos.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 5,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "progresion": "ambos quietos; sujeto en movimiento; sujeto y cámara en movimiento",
+          "variables_a_verificar": "dirección, velocidad, escala, estabilidad y movimiento relativo"
+        }
+      },
+      "cuando_usar": "Cuando la secuencia requiera una escalada visible y el movimiento combinado sirva al contenido.",
+      "cuando_no_usar": "Cuando el movimiento de cámara o sujeto oculte el producto, rompa la continuidad o dificulte comprender la acción.",
+      "combina_bien_con": ["establecer-patron-visual"]
+    },
+    {
+      "id": "volver-a-quietud",
+      "nombre": "Volver a quietud",
+      "definicion": "Reducir el movimiento de sujeto y cámara después de una fase más activa.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "cambio": "retorno a la quietud"
+        }
+      },
+      "cuando_usar": "Cuando una resolución visual se beneficie de volver a la quietud tras una progresión de movimiento.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["escalar-movimiento-sujeto-camara"]
+    },
+    {
+      "id": "preservar-direccion-y-ritmo-de-movimiento",
+      "nombre": "Preservar movimiento entre cortes",
+      "definicion": "Mantener dirección y ritmo de movimiento semejantes a ambos lados de un corte.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "comparar": "dirección y ritmo de movimiento antes y después del corte"
+        }
+      },
+      "cuando_usar": "Cuando se busque que el movimiento continúe de forma fluida a través de un corte.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "romper-patron-de-movimiento-en-corte",
+      "nombre": "Romper patrón de movimiento",
+      "definicion": "Cambiar la dirección o el ritmo de movimiento entre tomas para hacer perceptible la transición.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "comparar": "dirección y ritmo de movimiento antes y después del corte"
+        }
+      },
+      "cuando_usar": "Cuando la transición deba llamar la atención por una razón concreta del contenido.",
+      "cuando_no_usar": "Cuando el quiebre dificulte la continuidad de la acción o la claridad espacial.",
+      "combina_bien_con": ["introducir-contraste-relevante"]
+    },
+    {
+      "id": "dejar-camara-fija-para-claridad",
+      "nombre": "Mantener cámara fija",
+      "definicion": "Mantener la cámara quieta para que el sujeto, el producto o una idea compleja se lean con claridad.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "movimiento_camara": "ninguno"
+        }
+      },
+      "cuando_usar": "Cuando el movimiento de cámara dificulte comprender una explicación, leer texto o distinguir rasgos importantes del producto.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "revelar-prenda-con-movimiento-del-modelo",
+      "nombre": "Revelar prenda con giro",
+      "definicion": "Mantener la cámara fija mientras el modelo gira o cruza el cuadro para mostrar la prenda en movimiento.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": ["ropa"]
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "movimiento_camara": "ninguno",
+          "movimiento_sujeto": "giro o cruce del cuadro",
+          "verificacion": "prenda y ajuste visibles"
+        }
+      },
+      "cuando_usar": "Cuando un reveal de prueba de ropa necesite mostrar el movimiento de la prenda sin perder legibilidad del ajuste.",
+      "cuando_no_usar": "Cuando el movimiento del sujeto o los artefactos generados oculten la prenda o deformen su silueta.",
+      "combina_bien_con": ["dejar-camara-fija-para-claridad"]
+    }
+  ],
+  "principios_generales": [
+    "La afinidad surge de similitudes visibles y el contraste de diferencias visibles dentro de una toma o entre tomas; su efecto depende del contexto anterior y del contenido.",
+    "Las diagonales tienden a mayor intensidad visual que las verticales, y las verticales más que las horizontales, pero densidad, contraste, posición y tema pueden cambiar la impresión total.",
+    "Sujeto y cámara quietos suelen ser la combinación menos activa; ambos en movimiento pueden ser la más activa, según dirección, velocidad, escala, estabilidad y movimiento relativo.",
+    "La intensidad visual no determina por sí sola calidad, emoción ni interés, y no conviene sostenerla siempre al máximo.",
+    "El ritmo visual puede surgir de entradas, salidas, comienzos, pausas, cambios de dirección, repeticiones y distancia entre cortes; no requiere música ni cortes rápidos.",
+    "Registrar rasgos observables y una razón legible para cada sugerencia, en vez de asignar etiquetas emocionales fijas a la geometría.",
+    "Revisar el video generado para confirmar legibilidad del sujeto, texto y producto, identidad, continuidad de acción y ausencia de deriva de cámara, siluetas deformadas o prendas inconsistentes.",
+    "Si una toma generada falla, simplificarla o ajustar la edición en vez de conservar una progresión teórica de intensidad.",
+    "No inferir un movimiento preciso de cámara a partir de un solo cuadro cuando el movimiento del sujeto, el zoom o los artefactos hagan ambigua la evidencia."
+  ]
+}

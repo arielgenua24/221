@@ -1,0 +1,282 @@
+{
+  "fuente": "seven-visual-components.md",
+  "categoria": "estructura_visual",
+  "reglas": [
+    {
+      "id": "espacio-profundo",
+      "nombre": "espacio profundo",
+      "definicion": "La composición muestra profundidad mediante líneas convergentes, diferencias de tamaño, superposición, cambios de textura o desplazamiento hacia la cámara o desde ella.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "indicadores_de_profundidad": "líneas convergentes, diferencias de tamaño, superposición, cambios de textura o movimiento en profundidad"
+        }
+      },
+      "cuando_usar": "Cuando la relación espacial o el desplazamiento en profundidad aporte información a la secuencia.",
+      "cuando_no_usar": "Cuando los indicadores de profundidad no sean visibles en el recorte final.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "espacio-plano",
+      "nombre": "espacio plano",
+      "definicion": "La composición enfatiza el plano de imagen con disposición frontal, pocas pistas de profundidad y movimiento lateral.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "disposicion": "frontal",
+          "profundidad": "pocas pistas",
+          "direccion_movimiento": "lateral"
+        }
+      },
+      "cuando_usar": "Cuando una vista frontal y clara facilite comprender el sujeto o la acción.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "lineas-dominantes",
+      "nombre": "líneas dominantes",
+      "definicion": "Los bordes, límites tonales, miradas o trayectorias forman líneas que orientan la atención dentro del encuadre.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "orientacion": "horizontal, vertical o diagonal",
+          "direccion": "especificar",
+          "calidad": "recta o curva"
+        }
+      },
+      "cuando_usar": "Cuando una línea visible pueda conducir la atención hacia la información importante o mantener un motivo entre tomas.",
+      "cuando_no_usar": "Cuando la línea dominante dirija la atención fuera de la información importante.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "silueta-legible",
+      "nombre": "silueta legible",
+      "definicion": "La forma del sujeto se reconoce por su contorno o masa en el recorte final.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "verificacion": "evaluar contorno en el recorte final"
+        }
+      },
+      "cuando_usar": "Cuando la forma de un producto o sujeto deba reconocerse en pantalla.",
+      "cuando_no_usar": "Cuando el recorte o el texto superpuesto oculten la silueta esencial.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "legibilidad-tonal",
+      "nombre": "legibilidad tonal",
+      "definicion": "La distribución de claros y oscuros mantiene distinguible al sujeto incluso al revisar la imagen en escala de grises.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "verificacion": "revisar en escala de grises",
+          "variables": "iluminación, exposición y brillo de objetos o vestuario"
+        }
+      },
+      "cuando_usar": "Cuando el sujeto o una zona clave deban distinguirse con claridad del resto del encuadre.",
+      "cuando_no_usar": "Cuando la separación tonal oculte información que debe verse.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "asociacion-color-repetida",
+      "nombre": "asociación de color repetida",
+      "definicion": "Un color recurrente conecta elementos o distingue secciones mediante contexto y repetición.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "variables": "tono, saturación, valor, ubicación y cambio entre tomas",
+          "asociacion": "establecer mediante contexto y repetición"
+        }
+      },
+      "cuando_usar": "Cuando un color deba conectar sujetos o lugares, distinguir secciones o señalar un detalle.",
+      "cuando_no_usar": "Cuando la asociación dependa solo de atribuir un significado fijo al tono.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "movimiento-relativo",
+      "nombre": "movimiento relativo",
+      "definicion": "El movimiento se especifica por elemento, dirección, ritmo y relación con lo que permanece quieto.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "elemento_que_se_mueve": "sujeto, objeto, cámara o punto de atención",
+          "direccion": "especificar",
+          "ritmo": "especificar",
+          "referencia_estatica": "especificar"
+        }
+      },
+      "cuando_usar": "Cuando el movimiento deba comunicar una relación espacial o un cambio de atención observable.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "ritmo-visual-repetido",
+      "nombre": "ritmo visual repetido",
+      "definicion": "La repetición o alternancia de formas, colores, gestos, movimientos o cortes establece un patrón visual en el tiempo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "elemento_repetido": "especificar",
+          "patron": "repetición, alternancia o cambio"
+        }
+      },
+      "cuando_usar": "Cuando una secuencia necesite establecer un patrón reconocible que pueda sostenerse o interrumpirse.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["contraste-en-cambio-de-contenido"]
+    },
+    {
+      "id": "afinidad-visual",
+      "nombre": "afinidad visual",
+      "definicion": "La similitud entre decisiones visuales sostiene continuidad o un estilo reconocible entre tomas.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "componentes_estables": "elegir uno o dos entre espacio, línea, forma, tono, color, movimiento y ritmo visual"
+        }
+      },
+      "cuando_usar": "Cuando varias tomas deban percibirse como parte de una misma etapa o estilo.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["contraste-en-cambio-de-contenido"]
+    },
+    {
+      "id": "contraste-en-cambio-de-contenido",
+      "nombre": "contraste en cambio de contenido",
+      "definicion": "Uno o dos componentes visuales cambian de forma perceptible tras establecer un patrón previo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "componentes_que_cambian": "elegir uno o dos",
+          "momento_del_cambio": "revelación, comparación, remate o nueva etapa"
+        }
+      },
+      "cuando_usar": "Cuando una revelación, comparación, remate o transición de etapa justifique romper un patrón visual ya reconocible.",
+      "cuando_no_usar": "Cuando el cambio sea decorativo o exija modificar todos los componentes a la vez sin motivo.",
+      "combina_bien_con": ["afinidad-visual", "ritmo-visual-repetido"]
+    },
+    {
+      "id": "revision-recorte-final",
+      "nombre": "revisión del recorte final",
+      "definicion": "La composición se verifica en el formato de entrega y a tamaño de teléfono para conservar legibles sujetos, productos, acciones y texto esencial.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "verificacion": "recorte real a tamaño de teléfono",
+          "prioridad": "rostros, acciones, productos y texto esencial legibles"
+        }
+      },
+      "cuando_usar": "Antes de aprobar tomas destinadas a formatos sociales, especialmente si el recorte es vertical o incluye texto superpuesto.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["silueta-legible", "espacio-profundo"]
+    },
+    {
+      "id": "simplificar-cambio-generado",
+      "nombre": "simplificar cambio generado",
+      "definicion": "Un cambio visual difícil de generar se reduce a una composición más simple o se ejecuta en la edición.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "condicion": "el modelo no produce de manera fiable el cambio previsto",
+          "alternativas": "simplificar composición o realizar el cambio en edición"
+        }
+      },
+      "cuando_usar": "Cuando la generación no conserve de manera fiable las relaciones visibles planificadas.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Elegir los componentes visuales según lo que deba cambiar para el espectador, en vez de modificar todos por defecto.",
+    "La afinidad puede sostener continuidad y el contraste puede marcar cambios, pero ninguno garantiza una emoción específica.",
+    "Un cambio fuerte tiene más impacto si antes se estableció el patrón que interrumpe y si coincide con un cambio significativo del contenido.",
+    "Revisar la secuencia en orden y no aprobar cada fotograma de forma aislada.",
+    "Describir las relaciones visibles de forma concreta para generar y evaluar material con IA.",
+    "Preservar sujetos, vestuario, objetos y motivos visuales recurrentes entre tomas generadas.",
+    "Priorizar la legibilidad de rostros, acciones, productos y texto esencial antes de sumar complejidad visual.",
+    "El ritmo visual existe aunque no haya música.",
+    "No asignar significados universales a colores o formas sin establecerlos por contexto."
+  ]
+}

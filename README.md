@@ -95,6 +95,28 @@ Reproductor: durante el clip se ve la toma generada (muda: sigue el audio origin
 - Los storyboards y las tomas se guardan en `runs/media/` y se sirven en `/media/…` (mismo origen: así se pueden exportar).
 - "Rehacer el texto" en un clip de video IA manda cuadros de la **toma generada**, para que el texto se ubique sobre lo que realmente se ve.
 
+### Clips "Cinematic Pro" (opción por clip)
+
+Tu clip ya está filmado: la idea es que **se vea como cine sin perder lo que tiene** (lo que la persona hace y dice, el audio, el momento). En cada clip elegís **🎞️ Cinematic Pro**:
+
+```
+[2''] Director de Fotografía (Opus 5.5) lee la biblioteca agents-film (luz, color, cámara, encuadre, estructura visual)
+      y mira los cuadros del clip → diagnóstico por componente, reglas aplicadas (citadas por id) y un TRATAMIENTO:
+      grade (balance, contraste, split toning, negros), luz motivada (ventana, key, contraluz, práctica, sombra),
+      cámara virtual (push-in, drift, temblor de mano) y textura (grano, halation, viñeta), con entrada/salida suave
+  ▼
+Reproductor: el tratamiento se aplica en WebGL sobre tu video real, cuadro a cuadro (se ve al instante y se exporta igual)
+  ├─ ✋ VOS: control de intensidad (0–150 %), "Mantener: ver original" para comparar, "Rehacer el tratamiento" con tu pedido
+  └─ Si el clip no se salva con eso (luz plana imposible, "que parezca atardecer", "que llueva afuera"), el DP propone
+     RE-FILMARLO con IA: ✋ VOS aprobás (y podés editar el prompt) → el navegador graba solo ese tramo y lo manda →
+     Seedance 2.5 Video Edit (WaveSpeed, video→video) lo regenera manteniendo movimiento, encuadre e identidad
+     → durante el clip se ve la toma re-filmada (con la textura del tratamiento encima)
+```
+
+- **La biblioteca** es [agents-film/](agents-film/): cada guía en `.md` (para aprender) y `.json` (reglas accionables). El DP recibe completas las guías de luz, color, movimiento de cámara, encuadre y estructura visual, y el catálogo de reglas de todas. Se lee al arrancar: sumar una guía nueva la incorpora sola ([src/film-knowledge.js](src/film-knowledge.js)). Va primero en el prompt y marcada para el caché del proveedor.
+- **El contrato del tratamiento** (parámetros, rangos, cómo se dibuja) está en [public/cine-lib.js](public/cine-lib.js), que usan el servidor (valida y documenta) y el reproductor (dibuja).
+- Funciona sin WaveSpeed (solo tratamiento). Re-filmar necesita `WAVESPEED_API_KEY`; el modelo se cambia con `CINE_EDIT_MODEL`.
+
 ## Cómo trabaja el equipo de ideas (v1)
 
 ```
@@ -140,9 +162,11 @@ Fotos + texto
 | `src/MOTION_DESIGN.md` | Manual de motion design (el criterio de gusto de Intuition) |
 | `src/intuition-prompts.js` | Prompts del Director de Arte y del Motion Designer + lectura de su respuesta (JSON + código) |
 | `src/intuition-pipeline.js` | Flujo de Intuition: validación, sistema visual, un motion por clip (o toma de video IA + capa de texto), revisiones |
+| `src/film-knowledge.js` | Carga la biblioteca agents-film (guías .md + reglas .json) y arma el manual de cine de los agentes |
+| `src/cine-prompts.js` | Prompts del Director de Fotografía (Cinematic Pro) y del re-filmado con IA |
 | `src/wavespeed.js` | Cliente de WaveSpeed: subida de cuadros, storyboard (GPT Image 2.5) y video (Seedance 2.0 / Wan 3.0 Prime) |
 | `src/server.js` | Servidor HTTP + streaming de eventos (NDJSON) a la UI; `POST /api/run`, `POST /api/edit`, `POST /api/intuition`, `POST /api/intuition/revise`, `POST /api/decide` reanuda el flujo pausado |
-| `public/` | Interfaz: `app.js` (caja única, soltar archivos, modos), `shared.js`, `media.js` (audio/cuadros), `ideas.js`, `edit.js`, `player.js` (reproductor y exportación), `intuition.js` (estudio de clips), `intuition-player.js` (overlay, ventana y exportación), `motion-lib.js` + `motion-worker.js` (runtime aislado del código generado) |
+| `public/` | Interfaz: `app.js` (caja única, soltar archivos, modos), `shared.js`, `media.js` (audio/cuadros), `ideas.js`, `edit.js`, `player.js` (reproductor y exportación), `intuition.js` (estudio de clips), `intuition-player.js` (overlay, ventana y exportación), `motion-lib.js` + `motion-worker.js` (runtime aislado del código generado), `cine-lib.js` (tratamiento de Cinematic Pro en WebGL) |
 
 ## Configuración (`.env`)
 

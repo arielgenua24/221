@@ -326,3 +326,11 @@ button, textarea, input { font: inherit; color: inherit; }
 .prompt-edit { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; margin-top: 8px; }
 .ai-line { font-size: 13px; font-weight: 600; }
 .ai-line.error { color: var(--cri); }
+
+/* Cinematic Pro */
+.cine-hint { margin: 0; }
+.cine-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cine-intensity { display: flex; align-items: center; gap: 8px; flex: 1 1 220px; }
+.cine-intensity input { flex: 1; accent-color: var(--accent); }
+.cine-controls .ghost { touch-action: none; user-select: none; -webkit-user-select: none; }
+.rule-chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }

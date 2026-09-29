@@ -1,0 +1,104 @@
+{
+  "fuente": "kuleshov-effect.md",
+  "categoria": "corte_edicion",
+  "reglas": [
+    {
+      "id": "look-object-reaction",
+      "nombre": "look → object → reaction",
+      "definicion": "Una mirada establece el punto de vista, un objeto revela lo visto y una reacción muestra la respuesta.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "orden_tomas": "mirada → objeto → reacción",
+          "punto_de_vista": "establecer quién mira",
+          "coherencia_espacial": "alinear dirección de mirada, iluminación y espacio"
+        }
+      },
+      "cuando_usar": "Cuando deba entenderse quién ve un objeto y cómo responde a él.",
+      "cuando_no_usar": "Cuando la dirección de mirada o el espacio contradigan la relación sugerida entre persona y objeto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "object-face",
+      "nombre": "object → face",
+      "definicion": "Una toma del objeto o situación precede a un rostro para dar contexto a su interpretación.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["gancho"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "orden_tomas": "objeto o acción → rostro",
+          "compatibilidad_actuacion": "la expresión debe admitir la emoción sugerida por el contexto"
+        }
+      },
+      "cuando_usar": "Cuando el espectador deba conocer primero una situación y después interpretar la respuesta de una persona.",
+      "cuando_no_usar": "Cuando la expresión contradiga la emoción que se intenta atribuirle o la reacción no tenga sustento en la acción.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "reaction-delayed-object",
+      "nombre": "reaction → delayed object",
+      "definicion": "Una reacción aparece antes de revelar el objeto o su causa para retrasar la información al espectador.",
+      "triggers": {
+        "emocion": ["curiosidad", "sorpresa"],
+        "momento_video": ["gancho"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "orden_tomas": "reacción → objeto revelado después",
+          "informacion_retenida": "causa de la reacción",
+          "momento_revelacion": "antes de que la ambigüedad resulte confusa, salvo que se busque incertidumbre"
+        }
+      },
+      "cuando_usar": "Cuando la causa de una reacción merezca descubrirse más tarde y la demora cree curiosidad, sorpresa o descubrimiento compartido.",
+      "cuando_no_usar": "Cuando ocultar la causa produzca confusión innecesaria o el video no necesite un misterio.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "verify-adjacent-inference",
+      "nombre": "verificar inferencia entre tomas",
+      "definicion": "El orden de dos tomas se acepta si su yuxtaposición comunica la relación causal o emocional prevista.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "inferencia_prevista": "especificar qué se deduce porque la toma B sigue a la toma A",
+          "validacion": "comprobar que la relación se entienda sin depender por completo de textos explicativos"
+        }
+      },
+      "cuando_usar": "Antes de fijar dos tomas adyacentes que deban comunicar una relación de percepción, causa o emoción.",
+      "cuando_no_usar": "Cuando las tomas sugieran una reacción de una persona ante algo que nunca vio o un resultado sin evidencia visible.",
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "El significado de una toma depende de las tomas vecinas y del orden en que aparecen.",
+    "La interpretación de una reacción también depende de la actuación, la dirección de mirada, la duración, el sonido y el contexto anterior; la yuxtaposición no garantiza una emoción específica.",
+    "Decidir en cada momento qué sabe la persona y qué sabe el espectador para controlar el momento de la revelación.",
+    "En tomas generadas con IA, mantener consistentes identidad, vestuario, escenario, momento del día y estado de los objetos, y especificar quién mira, hacia dónde y qué cambia tras mirar.",
+    "Si distintas personas interpretan de maneras muy diferentes la causa de una reacción, reforzar la relación entre tomas.",
+    "No usar el montaje para atribuir a una persona una reacción que no ocurrió ni para afirmar un resultado sin mostrar evidencia compatible."
+  ]
+}

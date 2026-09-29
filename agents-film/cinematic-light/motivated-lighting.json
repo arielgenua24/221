@@ -1,0 +1,189 @@
+{
+  "fuente": "motivated-lighting.md",
+  "categoria": "luz",
+  "reglas": [
+    {
+      "id": "fuente-luminosa-plausible",
+      "nombre": "Fuente luminosa plausible",
+      "definicion": "Cada luz significativa parece provenir de una fuente visible o razonablemente inferible en la escena.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "fuente": "identificar qué emite o refleja la luz y dónde está",
+          "evidencia": "luminaria visible, ventana, geografía establecida o indicio ambiental"
+        }
+      },
+      "cuando_usar": "Cuando una luz o efecto luminoso significativo deba integrarse de forma natural a la escena.",
+      "cuando_no_usar": "Cuando el encargo pida una iluminación deliberadamente estilizada y no naturalista.",
+      "combina_bien_con": ["direccion-y-sombras-coherentes", "color-y-fuerza-coherentes"]
+    },
+    {
+      "id": "luz-fuera-de-cuadro-motivada",
+      "nombre": "Luz fuera de cuadro motivada",
+      "definicion": "Una luz ubicada fuera del encuadre reproduce la dirección y el color de una fuente establecida o inferible.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "posición": "compatible con la fuente establecida",
+          "color": "compatible con la fuente establecida"
+        }
+      },
+      "cuando_usar": "Cuando la fuente quede fuera del encuadre o se necesite reforzar su efecto sin perder una causa visible o inferible.",
+      "cuando_no_usar": "Cuando la luz adicional produzca un efecto incompatible con la posición o el color de la fuente que la justifica.",
+      "combina_bien_con": ["fuente-luminosa-plausible"]
+    },
+    {
+      "id": "direccion-y-sombras-coherentes",
+      "nombre": "Dirección y sombras coherentes",
+      "definicion": "Las superficies iluminadas, los reflejos y las sombras respetan la posición aparente de la fuente.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "verificar": "posición de la fuente, dirección de brillos y dirección de sombras"
+        }
+      },
+      "cuando_usar": "Cuando una fuente lateral o localizada ilumine a un sujeto y produzca sombras o reflejos visibles.",
+      "cuando_no_usar": "Cuando la discrepancia sea una excepción estilizada deliberada y consistente.",
+      "combina_bien_con": ["fuente-luminosa-plausible", "continuidad-luminosa-en-movimiento"]
+    },
+    {
+      "id": "color-y-fuerza-coherentes",
+      "nombre": "Color y fuerza coherentes",
+      "definicion": "El color, la calidad y la intensidad aparente de la luz corresponden a sus fuentes y al entorno.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "calidad": "borde duro o suave con causa plausible",
+          "color": "relativo a las demás fuentes",
+          "fuerza": "compatible con la fuente y la ubicación"
+        }
+      },
+      "cuando_usar": "Cuando haya más de una fuente o un efecto luminoso pueda contradecir el color, la calidad o la fuerza esperables de su origen.",
+      "cuando_no_usar": "Cuando el encargo establezca un efecto estilizado intencional y consistente.",
+      "combina_bien_con": ["fuente-luminosa-plausible"]
+    },
+    {
+      "id": "continuidad-luminosa-en-movimiento",
+      "nombre": "Continuidad durante el movimiento",
+      "definicion": "La iluminación cambia de forma compatible con el desplazamiento o giro del sujeto, la cámara o la fuente.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "reflejos": "desplazarse sobre la superficie según la fuente y el material",
+          "atenuación": "la contribución de una fuente pequeña disminuye al alejarse de ella"
+        }
+      },
+      "cuando_usar": "Cuando el sujeto, el producto, la cámara o la fuente se muevan y cambie su relación espacial.",
+      "cuando_no_usar": "Cuando el cambio luminoso no tenga causa en el movimiento ni en otra fuente establecida.",
+      "combina_bien_con": ["direccion-y-sombras-coherentes"]
+    },
+    {
+      "id": "continuidad-luminosa-entre-tomas",
+      "nombre": "Continuidad entre tomas",
+      "definicion": "La posición aparente, la dirección y el color de las fuentes persisten entre planos de una misma escena.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "alcance": "planos de una misma ubicación o montaje",
+          "verificar": "dirección de sombras, color, reflejos y aparición de luces de borde"
+        }
+      },
+      "cuando_usar": "Cuando varios planos muestren la misma ubicación o una secuencia de planos cercanos dependa de fuentes previamente establecidas.",
+      "cuando_no_usar": "Cuando el cambio de iluminación corresponda a otra ubicación, otra fuente o una excepción estilizada definida.",
+      "combina_bien_con": ["fuente-luminosa-plausible"]
+    },
+    {
+      "id": "fuente-dominante-unica",
+      "nombre": "Una fuente dominante",
+      "definicion": "La escena usa una sola fuente principal para simplificar una relación luminosa difícil de sostener.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "cantidad_fuentes_dominantes": "una"
+        }
+      },
+      "cuando_usar": "Cuando el video generado no logre conservar una relación coherente entre fuentes, sujeto y efectos luminosos.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["fuente-luminosa-plausible"]
+    },
+    {
+      "id": "legibilidad-bajo-luz-motivada",
+      "nombre": "Legibilidad de sujeto y producto",
+      "definicion": "La iluminación motivada mantiene visibles las caras, acciones y características del producto que el video necesita mostrar.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "elementos_a_verificar": "caras, acciones y detalles de producto requeridos"
+        }
+      },
+      "cuando_usar": "Cuando una luz plausible deje demasiado oscuras las caras, acciones o características de producto necesarias.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Planificar la escena con ubicación, momento del día, fuentes visibles o inferibles, superficies afectadas, sombras, reflejos y cambios durante el movimiento.",
+    "Una fuente práctica visible puede justificar una luz adicional fuera de cuadro, pero no justifica cualquier efecto luminoso.",
+    "Una fuente no tiene que aparecer en cada plano si la escena ya permite inferirla.",
+    "La emoción asociada a una luz cálida o fría depende de toda la escena y su contexto; no aplicar una correspondencia emocional fija por temperatura de color.",
+    "Describir el origen y efecto visible de la luz en lugar de usar solo una indicación vaga como cinematic lighting.",
+    "Revisar varios fotogramas y planos vecinos; si una toma contradice las fuentes establecidas, ajustar la escena o regenerar la toma.",
+    "Una excepción de luz no naturalista debe responder al propósito del encargo y mantenerse deliberada y consistente."
+  ]
+}

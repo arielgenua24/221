@@ -1,19 +1,20 @@
 import { el, fmt, append, addChips, showError, createSteps, handleCommon, streamEvents, decide, decisionShell } from './shared.js';
-import { openVideo, framesAt, loadReference } from './media.js';
+import { openVideo, framesAt, loadReference, recordSegment } from './media.js';
 import { createMotionPlayer } from './intuition-player.js';
 
 // Flujo 3: ✨ Intuition. Un video + hasta 3 clips (≤ 5 s) con pedido y referencias →
-// el Director de Arte arma un sistema visual y un Motion Designer por clip escribe el motion como código.
+// el Director de Arte arma un sistema visual y, por clip: un Motion Designer escribe el motion como código,
+// el Director de Video IA dirige una toma generada, o el Director de Fotografía lleva el clip real a nivel cine (Cinematic Pro).
 
 const COLORS = ['#ff5a1f', '#3b82f6', '#10b981'];
 const FILMSTRIP = 10;
 
 // ---------- Estudio: elegir el video, marcar los clips y escribir el pedido de cada uno ----------
 export function createStudio({ limits, onChange }) {
-  const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', ...limits };
+  const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', cine: false, refilm: false, ...limits };
   let video = null; // { file, url, name, duration, width, height, el }
   let loading = false;
-  let clips = []; // { key, id, start, end, prompt, notes, mode: 'motion' | 'ai', videoModel, refs: [{ key, kind, name, frames, thumb, status }] }
+  let clips = []; // { key, id, start, end, prompt, notes, mode: 'motion' | 'ai' | 'cine', videoModel, refs: [{ key, kind, name, frames, thumb, status }] }
   let seq = 0;
   let card = null;
 
@@ -221,12 +222,15 @@ export function createStudio({ limits, onChange }) {
       x.onclick = () => { clips = clips.filter((k) => k !== c); renumber(); refreshClips(); onChange(); };
       head.append(el('span', 'motion-dot', c.id.replace('C', '')), el('strong', null, `Clip ${c.id.replace('C', '')}`), el('span', 'muted small clip-time', clipTime(c)), go, x);
 
-      // Técnica del clip: motion como código, o una toma generada por IA con palabras animadas encima.
+      // Técnica del clip: motion como código, una toma generada por IA con palabras encima,
+      // o Cinematic Pro (el clip real llevado a nivel cine por el Director de Fotografía).
       const modeRow = el('div', 'clip-mode');
-      if (lim.aiVideo) {
-        [['motion', 'Motion en código'], ['ai', 'Video IA + texto']].forEach(([m, label]) => {
-          const b = el('button', 'option', label);
+      const modes = modeOptions();
+      if (modes.length > 1) {
+        modes.forEach(([m, label, title]) => {
+          const b = el('button', `option${m === 'cine' ? ' cine-option' : ''}`, label);
           b.type = 'button';
+          b.title = title;
           b.setAttribute('aria-pressed', String(c.mode === m));
           b.onclick = () => { c.mode = m; renderCards(); onChange(); };
           modeRow.append(b);
@@ -243,9 +247,10 @@ export function createStudio({ limits, onChange }) {
 
       const prompt = el('textarea');
       prompt.rows = 2; prompt.value = c.prompt;
-      prompt.placeholder = c.mode === 'ai'
-        ? 'Qué tiene que pasar en la toma y qué palabras van encima. Ej. "la taza gira lento hacia la luz; texto: Nuevo blend"'
-        : '¿Qué pasa en este clip? Ej. "que aparezca el precio: $12.900"';
+      prompt.placeholder = {
+        ai: 'Qué tiene que pasar en la toma y qué palabras van encima. Ej. "la taza gira lento hacia la luz; texto: Nuevo blend"',
+        cine: `Qué tiene que sentirse (opcional). Ej. "más íntimo, luz de atardecer", "que parezca una película de los 70"${lim.refilm ? ', "que afuera llueva" (lo re-filma con IA si hace falta)' : ''}`,
+      }[c.mode] || '¿Qué pasa en este clip? Ej. "que aparezca el precio: $12.900"';
       prompt.oninput = () => { c.prompt = prompt.value; };
       const notes = el('textarea');
       notes.rows = 1; notes.value = c.notes;
@@ -275,9 +280,18 @@ export function createStudio({ limits, onChange }) {
         addRef.append(inp, el('span', null, '+ Referencia'), el('span', 'muted small', 'imagen, video o GIF'));
         refs.append(addRef);
       }
-      box.append(head, ...(lim.aiVideo ? [modeRow] : []), prompt, notes, refs);
+      const cineHint = c.mode === 'cine' ? [el('p', 'muted small cine-hint', `🎞️ El Director de Fotografía mira el clip con la biblioteca de cine (luz, color, cámara, encuadre) y lo mejora sobre tu video real: grade, luz motivada, cámara virtual y textura.${lim.refilm ? ' Si no alcanza, te propone re-filmarlo con IA (vos aprobás).' : ''}`)] : [];
+      box.append(head, ...(modes.length > 1 ? [modeRow] : []), ...cineHint, prompt, notes, refs);
       cardsBox.append(box);
     });
+  }
+
+  function modeOptions() {
+    return [
+      ['motion', 'Motion en código', 'Motion design generado como código encima del video'],
+      ...(lim.aiVideo ? [['ai', 'Video IA + texto', 'Una toma generada por IA a partir de un cuadro del clip, con palabras encima']] : []),
+      ...(lim.cine ? [['cine', '🎞️ Cinematic Pro', 'El Director de Fotografía lleva tu clip real a nivel cine']] : []),
+    ];
   }
 
   async function addRefs(c, files) {
@@ -308,7 +322,7 @@ export function createStudio({ limits, onChange }) {
       const frames = await framesAt(video.reader, Array.from({ length: n }, (_, k) => c.start + ((k + 0.5) / n) * len));
       snap.push({
         id: c.id, start: +c.start.toFixed(3), end: +c.end.toFixed(3), prompt: c.prompt.trim(), notes: c.notes.trim(),
-        mode: lim.aiVideo ? c.mode : 'motion', videoModel: c.videoModel,
+        mode: modeOptions().some(([m]) => m === c.mode) ? c.mode : 'motion', videoModel: c.videoModel,
         frames: frames.map((f) => ({ t: +(f.t - c.start).toFixed(2), url: f.url })),
         refs: c.refs.filter((r) => r.status === 'ready').map((r) => ({ kind: r.kind, name: r.name, frames: r.frames })),
       });
@@ -320,7 +334,7 @@ export function createStudio({ limits, onChange }) {
     };
   }
 
-  const summary = () => (video ? `✨ Intuition · ${video.name} · ${clips.map((c) => `${c.id} ${fmt(c.start)}–${fmt(c.end)}${c.mode === 'ai' ? ' (video IA)' : ''}`).join(' · ')}` : '');
+  const summary = () => (video ? `✨ Intuition · ${video.name} · ${clips.map((c) => `${c.id} ${fmt(c.start)}–${fmt(c.end)}${{ ai: ' (video IA)', cine: ' (Cinematic Pro)' }[c.mode] || ''}`).join(' · ')}` : '');
   const thumbs = () => clips.map((c) => video.strip[Math.min(FILMSTRIP - 1, Math.floor((c.start / video.duration) * FILMSTRIP))].url);
 
   return { setVideo, setLimits, missing, hint, request, summary, thumbs, busy: () => loading, hasVideo: () => !!video };
@@ -341,23 +355,31 @@ export function handleIntuition(ev, steps, ctx) {
       ctx.direction = ev.data;
       ctx.player = createMotionPlayer({ video: ctx.video, clips: ctx.clips, direction: ev.data, onRevise: (id, req) => revise(ctx, id, req) });
       const box = el('section', 'result msg');
-      box.append(el('h3', 'result-title', 'Tu video con motion design'));
+      const allCine = ctx.clips.every((c) => c.mode === 'cine');
+      box.append(el('h3', 'result-title', allCine ? 'Tu video, nivel cine' : 'Tu video con motion design'));
       if (ev.data.nota_para_el_humano) box.append(el('p', 'muted', ev.data.nota_para_el_humano));
       box.append(ctx.player.root);
       append(box);
       return;
     }
     case 'motion': return ctx.player?.setMotion(ev.data);
+    case 'cine': return ctx.player?.setCine(ev.data);
+    case 'cine_video': return ctx.player?.setCineVideo(ev.data);
     case 'ai_plan': return ctx.player?.setPlan(ev.data);
     case 'ai_video': return ctx.player?.setAiVideo(ev.data);
     case 'media_status':
       mediaStatus(steps.get(ev.step), ev);
       if (ev.step.startsWith('video-')) ctx.player?.aiStatus(ev.step.split('-')[1], 'generating', ev.elapsed);
+      if (ev.step.startsWith('refilm-')) ctx.player?.cineStatus(ev.step.split('-')[1], 'generating', ev.elapsed);
       return;
-    case 'decision': if (ev.kind === 'storyboard') append(storyboardCard(ev)); return;
+    case 'decision':
+      if (ev.kind === 'storyboard') append(storyboardCard(ev));
+      if (ev.kind === 'refilm') append(refilmCard(ev, ctx));
+      return;
     case 'step_error': {
       const [kind, id] = ev.step.split('-');
       if (kind === 'video' || kind === 'storyboard') return ctx.player?.failVideo(id, ev.text, kind);
+      if (kind === 'refilm') return ctx.player?.failCineVideo(id, ev.text);
       return ctx.player?.failClip(id, ev.text);
     }
     default:
@@ -432,6 +454,60 @@ function storyboardCard(ev) {
   return card;
 }
 
+// Cinematic Pro: el Director de Fotografía propone re-filmar el clip con IA (video→video).
+// Si el humano aprueba, el navegador graba el tramo y lo manda con la respuesta (el video nunca se sube entero).
+function refilmCard(ev, ctx) {
+  const p = ev.plan;
+  const n = p.id.replace('C', '');
+  const card = decisionShell(ev, `Re-filmar con IA · ${p.model}`);
+  const media = el('div', 'storyboard');
+  const img = el('img', 'storyboard-img');
+  img.src = p.frame; img.alt = `Cuadro del clip ${p.id}`;
+  media.append(img);
+  card.append(media);
+  const facts = el('div', 'facts');
+  const fact = (label, value) => {
+    if (!value || (Array.isArray(value) && !value.length)) return;
+    const f = el('div', 'fact');
+    f.append(el('strong', null, label), document.createTextNode(Array.isArray(value) ? value.join(' · ') : value));
+    facts.append(f);
+  };
+  fact('Por qué', p.por_que);
+  fact('No cambia', p.preservar);
+  fact('Encima de la toma', { textura: 'solo la textura (grano, halation, viñeta)', completo: 'todo el tratamiento', nada: 'nada: la toma tal cual' }[p.sobre_toma]);
+  card.append(facts);
+  const det = el('details', 'motion-code');
+  det.append(el('summary', null, 'Ver y editar el prompt'));
+  const prompt = el('textarea', 'prompt-edit');
+  prompt.rows = 7; prompt.value = p.prompt;
+  det.append(prompt);
+  card.append(det);
+  const status = el('p', 'muted small', `Mientras tanto ya ves el tratamiento aplicado a tu clip real. Re-filmar cuesta (se paga por segundo de entrada + salida) y tarda 1 a 5 min.${p.demo ? ' Modo demo: no se genera nada.' : ''}`);
+  const actions = el('div', 'actions');
+  const go = el('button', 'primary', 'Re-filmar este clip');
+  go.type = 'button';
+  go.onclick = async () => {
+    go.disabled = true; skip.disabled = true;
+    try {
+      status.textContent = 'Grabando el tramo del clip… (dejá esta pestaña visible)';
+      const rec = await recordSegment(ctx.video.url, p.start, p.end, { onProgress: (k) => { status.textContent = `Grabando el tramo del clip… ${Math.round(k * 100)}%`; } });
+      status.textContent = `Enviando el clip (${(rec.size / 1024 / 1024).toFixed(1)} MB)…`;
+      const edited = prompt.value.trim() !== p.prompt.trim() ? prompt.value.trim() : '';
+      ctx.player?.cineStatus(p.id, 'uploading');
+      await decide(card, ev.id, { aprobar: true, prompt: edited, video: rec.dataUrl }, `Clip ${n}: re-filmar con ${p.model}${edited ? ' (con el prompt editado)' : ''}.`);
+    } catch (err) {
+      status.textContent = err.message;
+      go.disabled = false; skip.disabled = false;
+    }
+  };
+  const skip = el('button', 'ghost', 'Quedarme con el tratamiento');
+  skip.type = 'button';
+  skip.onclick = () => decide(card, ev.id, { aprobar: false }, `Clip ${n}: sin re-filmar, me quedo con el tratamiento.`);
+  actions.append(go, skip);
+  card.append(status, actions);
+  return card;
+}
+
 function paintSwatches(s, palette) {
   const chips = s?.node.querySelector('.chips');
   if (!chips) return;
@@ -464,7 +540,9 @@ async function revise(ctx, id, { feedback, error, box, previous }) {
   let failed = null;
   await streamEvents('/api/intuition/revise', body, undefined, (ev) => {
     if (ev.type === 'error') failed = ev.text;
-    if (!handleCommon(ev, steps) && ev.type === 'motion') ctx.player.setMotion(ev.data);
+    if (handleCommon(ev, steps)) return;
+    if (ev.type === 'motion') ctx.player.setMotion(ev.data);
+    if (ev.type === 'cine') ctx.player.setCine(ev.data);
   });
   if (failed) throw new Error(failed);
 }

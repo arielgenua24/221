@@ -8,7 +8,8 @@ import { runEditPipeline, parseEditBody, MAX_MEDIA, MAX_FRAMES } from './edit-pi
 import { runIntuitionPipeline, runIntuitionRevision, parseIntuitionBody, parseRevisionBody, MAX_CLIPS, MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, CLIP_FRAMES, MAX_REFS } from './intuition-pipeline.js';
 import { streamChat } from './openrouter.js';
 import { mockLLM } from './mock.js';
-import { createWaveSpeed, createMockWaveSpeed, VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from './wavespeed.js';
+import { createWaveSpeed, createMockWaveSpeed, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, EDIT_MODEL } from './wavespeed.js';
+import { FILM_GUIDES, FILM_RULES } from './film-knowledge.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -18,6 +19,7 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
 const MAX_BODY = 40 * 1024 * 1024;
 const MAX_EDIT_BODY = 90 * 1024 * 1024; // audio WAV + cuadros de cada video
+const MAX_DECIDE_BODY = 60 * 1024 * 1024; // una decisión puede traer el clip grabado para re-filmar (Cinematic Pro)
 const MAX_PHOTOS = 8;
 
 const apiKey = process.env.OPENROUTER_API_KEY;
@@ -155,7 +157,7 @@ async function handleIntuitionRevise(req, res) {
 
 async function handleDecide(req, res) {
   let body;
-  try { body = await readBody(req); } catch { body = {}; }
+  try { body = await readBody(req, MAX_DECIDE_BODY); } catch { body = {}; }
   const resolve = pending.get(body.id);
   if (!resolve) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -180,6 +182,7 @@ const server = http.createServer(async (req, res) => {
       mock, ...config, ...editConfig, motionModel: intuitionConfig.motionModel, storyboardModel: intuitionConfig.storyboardModel, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
       intuition: {
         maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS,
+        cine: true, refilm: !!ws, refilmModel: EDIT_MODEL.label, filmGuides: FILM_GUIDES.length,
         aiVideo: !!ws, videoModels: Object.entries(VIDEO_MODELS).map(([id, m]) => ({ id, label: m.label })), defaultVideoModel: DEFAULT_VIDEO_MODEL,
       },
     }));
@@ -215,4 +218,5 @@ server.listen(PORT, HOST, () => {
   console.log(ws
     ? `Video IA + texto · storyboard: ${intuitionConfig.storyboardModel} · video: ${Object.values(VIDEO_MODELS).map((m) => m.path()).join(' / ')}${ws.mock ? ' (demo: no se genera nada)' : ''}`
     : 'Video IA + texto: desactivado (falta WAVESPEED_API_KEY).');
+  console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${EDIT_MODEL.path()}${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });

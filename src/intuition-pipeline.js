@@ -5,7 +5,9 @@ import {
   ART_DIRECTOR_SYSTEM, MOTION_SYSTEM, directionPrompt, motionPrompt, revisionPrompt, parseMotion, motionFix,
   VIDEO_DIRECTOR_SYSTEM, videoDirectorPrompt, videoRevisionPrompt, storyboardImagePrompt, finalVideoPrompt, TEXT_LAYER_SYSTEM, textLayerPrompt,
 } from './intuition-prompts.js';
-import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL, videoSeconds, nearestRatio, storyboardLayout, mediaDataUrl } from './wavespeed.js';
+import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL, EDIT_MODEL, videoSeconds, nearestRatio, storyboardLayout, mediaDataUrl } from './wavespeed.js';
+import { CINE_SYSTEM, cinePrompt, cineRevisionPrompt, refilmPrompt } from './cine-prompts.js';
+import { normalizeTreatment } from '../public/cine-lib.js';
 
 export const MAX_CLIPS = 3;
 export const MAX_CLIP_SECONDS = 5;
@@ -20,6 +22,8 @@ export const MAX_STORYBOARD_ROUNDS = 6; // storyboards por clip antes de pedir q
 const num = (x, fallback = 0) => (Number.isFinite(Number(x)) ? Number(x) : fallback);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const isImage = (u) => typeof u === 'string' && u.startsWith('data:image/');
+const MODES = ['motion', 'ai', 'cine'];
+export const MAX_CLIP_VIDEO_BYTES = 30 * 1024 * 1024; // el clip grabado en el navegador para re-filmar (data URL)
 
 // Ventana del overlay en fracciones del cuadro, siempre dentro del cuadro y con un tamaño mínimo.
 export function sanitizeBox(b, fallback = DEFAULT_BOX) {
@@ -57,7 +61,7 @@ function parseClip(c, video) {
     end: Math.min(end, video.duration),
     prompt: String(c.prompt || '').slice(0, 1500),
     notes: String(c.notes || '').slice(0, 800),
-    mode: c.mode === 'ai' ? 'ai' : 'motion',
+    mode: MODES.includes(c.mode) ? c.mode : 'motion',
     videoModel: VIDEO_MODELS[c.videoModel] ? c.videoModel : DEFAULT_VIDEO_MODEL,
     frames,
     refs,
@@ -95,7 +99,9 @@ export function parseRevisionBody(body) {
   const clip = parseClip(body?.clip, video);
   if (!/^C[1-9]$/.test(clip.id)) throw new Error('Clip inválido.');
   const code = String(body?.previous?.code || '');
-  if (!code.trim()) throw new Error('Falta el código anterior.');
+  // Cinematic Pro no tiene código: se rehace el tratamiento anterior.
+  const treatment = clip.mode === 'cine' && body?.previous?.treatment && typeof body.previous.treatment === 'object' ? body.previous.treatment : null;
+  if (clip.mode === 'cine' ? !treatment : !code.trim()) throw new Error(clip.mode === 'cine' ? 'Falta el tratamiento anterior.' : 'Falta el código anterior.');
   const feedback = String(body?.feedback || '').slice(0, 1500).trim();
   const error = String(body?.error || '').slice(0, 800).trim();
   if (!feedback && !error) throw new Error('Contá qué querés cambiar.');
@@ -108,7 +114,7 @@ export function parseRevisionBody(body) {
     box: sanitizeBox(body?.box),
     index: Math.max(0, Math.round(num(body?.index))),
     total: clamp(Math.round(num(body?.total, 1)), 1, MAX_CLIPS),
-    previous: { code: code.slice(0, 60000), meta: body.previous.meta && typeof body.previous.meta === 'object' ? body.previous.meta : {} },
+    previous: { code: code.slice(0, 60000), treatment, meta: body.previous.meta && typeof body.previous.meta === 'object' ? body.previous.meta : {} },
   };
 }
 
@@ -326,6 +332,67 @@ async function runAiClip({ clip, index, total, video, direction, agent, emit, as
   return text;
 }
 
+// ---------- Clips de Cinematic Pro ----------
+const cineView = (clip, t, extra = {}) => ({ id: clip.id, ...t, ...extra });
+
+// El Director de Fotografía que ve el clip, con la biblioteca agents-film como criterio.
+function cineAgent(agent, config, { step, clip, content, history = [], title, temperature = 0.5, meta }) {
+  return agent({ step: step || `cine-${clip.id}`, role: 'Director de Fotografía', title, model: config.motionModel, system: CINE_SYSTEM, temperature, history, content, meta });
+}
+
+// Un clip de Cinematic Pro:
+//   [a] el Director de Fotografía mira el clip, lo diagnostica con agents-film y escribe el tratamiento
+//       (grade, luz motivada, cámara virtual, textura) → el reproductor lo aplica al video real, al instante
+//   [b] si el clip no se salva con eso, propone re-filmarlo con IA (video→video): el humano aprueba,
+//       el navegador graba el tramo y lo manda con su respuesta, y el modelo de edición genera la toma
+async function runCineClip({ clip, index, total, video, direction, agent, emit, ask, ws, config, signal, log }) {
+  const dur = clip.end - clip.start;
+  const raw = await cineAgent(agent, config, {
+    clip,
+    title: `${clip.id} · Director de Fotografía · ${String(clip.prompt || 'nivel cine').slice(0, 60)}`,
+    content: [{ type: 'text', text: cinePrompt({ direction, clip, index, total, video, refilm: !!ws }) }, ...clipParts(clip, CLIP_FRAMES)],
+    meta: { clip, direction, index, total },
+  });
+  const treatment = normalizeTreatment(raw, dur);
+  if (!ws) treatment.refilmar.recomendado = false;
+  const record = (log.cine[clip.id] = { treatment });
+  emit({ type: 'cine', data: cineView(clip, treatment) });
+  if (!treatment.refilmar.recomendado) return cineView(clip, treatment);
+
+  const prompt = refilmPrompt(treatment.refilmar);
+  const answer = await ask({
+    kind: 'refilm', title: `Clip ${index + 1}: ¿lo re-filmamos con IA?`, clip: clip.id,
+    plan: { id: clip.id, start: clip.start, end: clip.end, model: EDIT_MODEL.label, prompt, por_que: treatment.refilmar.por_que, preservar: treatment.refilmar.preservar, sobre_toma: treatment.refilmar.sobre_toma, demo: !!ws.mock, frame: clip.frames[Math.floor(clip.frames.length / 2)].url },
+  });
+  const clipVideo = typeof answer?.video === 'string' && /^data:video\//.test(answer.video) && answer.video.length <= MAX_CLIP_VIDEO_BYTES * 1.4 ? answer.video : null;
+  if (!answer?.aprobar || !clipVideo) {
+    record.refilm = { approved: false, reason: answer?.aprobar ? 'sin video' : 'rechazado' };
+    emit({ type: 'cine_video', data: { id: clip.id, url: null, skipped: true } });
+    return cineView(clip, treatment);
+  }
+  const finalPrompt = String(answer.prompt || '').trim().slice(0, 4000) || prompt;
+  record.refilm = { approved: true, prompt: finalPrompt };
+  const step = `refilm-${clip.id}`;
+  emit({ type: 'step_start', step, role: 'Video IA', title: `${clip.id} · Re-filmando con ${EDIT_MODEL.label}`, model: EDIT_MODEL.path() });
+  try {
+    const url = await ws.upload(clipVideo, signal);
+    const out = await ws.video({
+      model: EDIT_MODEL.path(),
+      body: EDIT_MODEL.body({ prompt: finalPrompt, video: url, resolution: config.videoResolution }),
+      signal,
+      onStatus: ({ status, elapsed }) => emit({ type: 'media_status', step, status, elapsed }),
+    });
+    record.refilm.video = out;
+    emit({ type: 'cine_video', data: { id: clip.id, url: out.file ? `/media/${out.file}` : null, demo: !!ws.mock, prompt: finalPrompt } });
+    emit({ type: 'step_end', step });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    record.refilm.error = err.message;
+    emit({ type: 'step_error', step, text: err.message });
+  }
+  return cineView(clip, treatment);
+}
+
 // Motion design guiado por intuición:
 //   [1] el Director de Arte mira los clips y define UN sistema visual + la idea y la ventana de cada clip
 //   [2] por clip, en paralelo:
@@ -340,6 +407,7 @@ export async function runIntuitionPipeline({ text, video, clips, emit, llm, conf
     input: { text, video, clips: clips.map(({ frames, refs, ...c }) => ({ ...c, frames: frames.length, refs: refs.map((r) => ({ ...r, frames: r.frames.length })) })) },
     steps: {},
     aiVideo: {},
+    cine: {},
   };
   const { agent, totals } = createAgentRunner({ emit, llm, signal, log });
   if (clips.some((c) => c.mode === 'ai') && !ws) throw new Error('Falta WAVESPEED_API_KEY para los clips de video IA.');
@@ -357,6 +425,7 @@ export async function runIntuitionPipeline({ text, video, clips, emit, llm, conf
   // 2. Cada clip, en paralelo
   const settled = await Promise.allSettled(clips.map(async (clip, index) => {
     if (clip.mode === 'ai') return runAiClip({ clip, index, total: clips.length, video, direction, agent, emit, ask, ws, config, signal, log });
+    if (clip.mode === 'cine') return runCineClip({ clip, index, total: clips.length, video, direction, agent, emit, ask, ws, config, signal, log });
     const plan = direction.clips.find((c) => c.id === clip.id);
     const data = await motionAgent(agent, config, {
       clip,
@@ -369,7 +438,7 @@ export async function runIntuitionPipeline({ text, video, clips, emit, llm, conf
     return view;
   }));
   settled.forEach((r, i) => {
-    if (r.status === 'rejected') emit({ type: 'step_error', step: `motion-${clips[i].id}`, text: r.reason.message });
+    if (r.status === 'rejected') emit({ type: 'step_error', step: `${clips[i].mode === 'cine' ? 'cine' : 'motion'}-${clips[i].id}`, text: r.reason.message });
   });
   const motions = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);
   if (!motions.length) throw new Error('Fallaron todos los clips: ' + settled.map((r) => r.reason?.message).join(' | '));
@@ -391,6 +460,22 @@ export async function runIntuitionRevision({ video, clip, direction, box, index,
     steps: {},
   };
   const { agent, totals } = createAgentRunner({ emit, llm, signal, log });
+  if (clip.mode === 'cine') {
+    const first = [{ type: 'text', text: cinePrompt({ direction, clip, index, total, video, refilm: false }) }, ...clipParts(clip, CLIP_FRAMES)];
+    const raw = await cineAgent(agent, config, {
+      step: `recine-${clip.id}`, clip, title: `${clip.id} · Rehaciendo el tratamiento con tu pedido`,
+      history: [{ role: 'user', content: first }, { role: 'assistant', content: `\`\`\`json\n${JSON.stringify(previous.treatment, null, 2)}\n\`\`\`` }],
+      content: cineRevisionPrompt({ feedback }),
+      meta: { clip, direction, index, total, revision: true, feedback },
+    });
+    const treatment = normalizeTreatment(raw, clip.end - clip.start);
+    treatment.refilmar.recomendado = false; // la re-filmación se decide en la primera pasada
+    emit({ type: 'cine', data: cineView(clip, treatment, { revision: true }) });
+    log.finishedAt = new Date().toISOString();
+    log.totals = totals;
+    log.result = { cine: treatment };
+    return log;
+  }
   const brief = clip.mode === 'ai'
     ? textLayerPrompt({ direction, clip, index, total, box, video, plan: plan || {}, generated })
     : motionPrompt({ direction, clip, index, total, box, video });

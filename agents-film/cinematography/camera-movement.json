@@ -1,0 +1,302 @@
+{
+  "fuente": "camera-movement.md",
+  "categoria": "movimiento_camara",
+  "reglas": [
+    {
+      "id": "static",
+      "nombre": "static",
+      "definicion": "La cámara permanece fija mientras la acción puede continuar dentro del encuadre.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "movimiento_camara": "ninguno" }
+      },
+      "cuando_usar": "Cuando la explicación, demostración o lectura de detalles requiera un encuadre estable, o el movimiento no mejore la toma.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "pan",
+      "nombre": "pan",
+      "definicion": "La cámara gira horizontalmente desde una posición fija.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "eje": "horizontal", "desplazamiento_fisico": "ninguno" }
+      },
+      "cuando_usar": "Cuando haya que seguir una acción lateral o revelar información distribuida horizontalmente.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "tilt",
+      "nombre": "tilt",
+      "definicion": "La cámara gira verticalmente desde una posición fija.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "eje": "vertical", "desplazamiento_fisico": "ninguno" }
+      },
+      "cuando_usar": "Cuando haya que revelar altura, seguir una acción vertical o trasladar la atención entre niveles.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["tracking-follow"]
+    },
+    {
+      "id": "roll",
+      "nombre": "roll",
+      "definicion": "La cámara gira sobre el eje del lente e inclina el horizonte.",
+      "triggers": {
+        "emocion": ["desorientación"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "eje": "lente", "efecto_visible": "horizonte inclinado" }
+      },
+      "cuando_usar": "Cuando convenga alterar la orientación aparente del espacio y buscar una sensación de desorientación.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "whip-pan",
+      "nombre": "whip pan",
+      "definicion": "La cámara hace un giro horizontal muy rápido con desenfoque de movimiento marcado.",
+      "triggers": {
+        "emocion": ["energía"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 5,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "eje": "horizontal", "velocidad": "muy rápida", "desenfoque_movimiento": "marcado" }
+      },
+      "cuando_usar": "Cuando un barrido horizontal rápido deba redirigir la atención, conectar dos puntos o producir una transición enérgica.",
+      "cuando_no_usar": "Cuando solo se busca sacudir la cámara sin un barrido horizontal con propósito.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "push-in",
+      "nombre": "push-in",
+      "definicion": "La cámara se desplaza físicamente hacia el sujeto y cambia la perspectiva.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "direccion": "hacia el sujeto", "perspectiva": "cambia" }
+      },
+      "cuando_usar": "Cuando acercarse físicamente a un objeto ayude a dirigir la atención hacia él durante una explicación.",
+      "cuando_no_usar": "Cuando el acercamiento no apoye la explicación o no pueda generarse con claridad.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "pull-out",
+      "nombre": "pull-out",
+      "definicion": "La cámara se aleja físicamente del sujeto y amplía la porción visible del entorno.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "direccion": "lejos del sujeto", "perspectiva": "cambia" }
+      },
+      "cuando_usar": "Cuando revelar más entorno aclare la relación del sujeto con el espacio.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "tracking-follow",
+      "nombre": "tracking / follow",
+      "definicion": "La cámara se desplaza por la escena junto al sujeto o siguiéndolo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "ruta": "especificar", "distancia_al_sujeto": "especificar" }
+      },
+      "cuando_usar": "Cuando acompañar una acción requiera conservar o cambiar deliberadamente la relación entre cámara y sujeto.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["tilt"]
+    },
+    {
+      "id": "truck",
+      "nombre": "truck",
+      "definicion": "La cámara se desplaza físicamente hacia la izquierda o la derecha.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "eje": "horizontal", "desplazamiento_fisico": "lateral" }
+      },
+      "cuando_usar": "Cuando la cámara deba recorrer lateralmente la escena en vez de girar desde un punto fijo.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "arc-orbit",
+      "nombre": "arc / orbit",
+      "definicion": "La cámara recorre una trayectoria curva alrededor del sujeto.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "amplitud_arco": "especificar; puede ser parcial" }
+      },
+      "cuando_usar": "Cuando un recorrido curvo alrededor del sujeto contribuya al objetivo de la toma y se pueda definir su amplitud.",
+      "cuando_no_usar": "Cuando el recorrido solo agregue movimiento sin mejorar la toma.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "boom-crane-jib",
+      "nombre": "boom / crane / jib move",
+      "definicion": "La cámara se desplaza verticalmente y puede incluir movimiento horizontal.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "trayectoria_visible": "especificar", "desplazamiento_vertical": "subir o bajar" }
+      },
+      "cuando_usar": "Cuando subir o bajar la cámara ayude a revelar información o seguir una acción vertical.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "zoom",
+      "nombre": "zoom",
+      "definicion": "El lente cambia la distancia focal y modifica el tamaño aparente del sujeto sin trasladar la cámara.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "posición_camara": "fija", "perspectiva": "sin cambio por desplazamiento" }
+      },
+      "cuando_usar": "Cuando haya que cambiar el tamaño del sujeto en el encuadre sin desplazar físicamente la cámara.",
+      "cuando_no_usar": "Cuando se necesite el cambio de perspectiva producido por un desplazamiento físico.",
+      "combina_bien_con": ["dolly-zoom"]
+    },
+    {
+      "id": "dolly-zoom",
+      "nombre": "dolly zoom",
+      "definicion": "La cámara se desplaza mientras el lente hace zoom en sentido visual contrario para mantener aproximadamente el tamaño del sujeto.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 5,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "tamaño_sujeto": "aproximadamente constante", "escala_fondo": "cambia", "zoom_lente": "opuesto al desplazamiento" }
+      },
+      "cuando_usar": "Cuando se busque una distorsión visible de profundidad manteniendo al sujeto casi del mismo tamaño.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["zoom"]
+    },
+    {
+      "id": "handheld",
+      "nombre": "handheld",
+      "definicion": "La cámara presenta movimientos irregulares de magnitud y ritmo variables.",
+      "triggers": {
+        "emocion": ["inmediatez", "inestabilidad"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "magnitud": "especificar", "ritmo": "especificar", "momento_reacción": "especificar si responde a un evento" }
+      },
+      "cuando_usar": "Cuando un punto de vista inmediato, subjetivo o afectado por la acción justifique movimiento irregular.",
+      "cuando_no_usar": "Cuando la irregularidad o las sacudidas no correspondan a la acción y al punto de vista aparente.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "stabilized-movement",
+      "nombre": "stabilized movement",
+      "definicion": "La cámara recorre una trayectoria con movimiento suave y encuadre relativamente estable.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "trayectoria": "especificar", "ritmo": "especificar" }
+      },
+      "cuando_usar": "Cuando convenga acompañar o revelar algo con una trayectoria suave y un encuadre estable.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Elegir movimiento solo si sirve al objetivo, la acción o la experiencia buscada; considerar una cámara fija si comunica mejor la toma.",
+    "El efecto emocional de un movimiento depende del contenido, el momento, la composición, la actuación, el sonido y las tomas vecinas; ningún movimiento garantiza una emoción.",
+    "Definir para cada movimiento su disparador, inicio y fin, trayectoria, dirección, ritmo, intensidad y relación del sujeto con el encuadre cuando esos datos sean relevantes.",
+    "Mantener el movimiento coherente con la acción, las fuerzas y el punto de vista aparente, salvo que la estilización esté definida deliberadamente.",
+    "Conservar visibles al sujeto y la información importante, excepto cuando ocultarlos sea intencional.",
+    "Para generación con IA, indicar un comportamiento principal claro por toma cuando la coreografía compleja pueda causar errores; combinar movimientos solo si la trayectoria, el tiempo y el encuadre siguen siendo claros.",
+    "Evitar instrucciones simultáneas contradictorias y cambios de velocidad, dirección, escala o estabilidad sin explicación.",
+    "Describir el movimiento visible en lugar de depender del nombre de un equipo; distinguir traslado físico, giro en posición fija y cambio de distancia focal.",
+    "El formato de redes sociales no determina un estilo de cámara ni exige movimiento constante."
+  ]
+}

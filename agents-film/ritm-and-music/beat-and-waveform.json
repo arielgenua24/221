@@ -1,0 +1,172 @@
+{
+  "fuente": "beat-and-waveform.md",
+  "categoria": "ritmo_musica",
+  "reglas": [
+    {
+      "id": "section-change-reveal",
+      "nombre": "revelación en cambio de sección",
+      "definicion": "La revelación visual coincide con un cambio fuerte de sección musical.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "cue_musical": "cambio fuerte de sección",
+          "preparacion_visual": "mantener visible antes de la revelación"
+        }
+      },
+      "cuando_usar": "Cuando un cambio de sección musical refuerce una revelación y haya una preparación visual legible.",
+      "cuando_no_usar": "Cuando la revelación no tenga relación con ese cambio musical o la preparación quede ilegible.",
+      "combina_bien_con": ["action-peak-sync", "hold-through-beat"]
+    },
+    {
+      "id": "action-peak-sync",
+      "nombre": "impacto de acción sincronizado",
+      "definicion": "El punto de mayor impacto perceptivo de una acción coincide con una señal musical elegida.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": ["ropa", "calzado", "bolso"]
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "cue_musical": "señal elegida según el evento",
+          "punto_sincronizado": "impacto, no inicio de preparación",
+          "anticipacion": "suficiente para reconocer el movimiento"
+        }
+      },
+      "cuando_usar": "Cuando el apoyo del tacón, el giro, el pico del movimiento de la tela o el contacto de un bolso pueda alcanzar naturalmente una señal musical relevante.",
+      "cuando_no_usar": "Cuando alcanzar la señal obligue a un movimiento inverosímil o elimine la anticipación necesaria.",
+      "combina_bien_con": ["offbeat-detail-sync", "section-change-reveal"]
+    },
+    {
+      "id": "offbeat-detail-sync",
+      "nombre": "detalle en offbeat",
+      "definicion": "Una acción visual pequeña se sincroniza con un offbeat o una subdivisión audible.",
+      "triggers": {
+        "emocion": ["sorpresa"],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "cue_musical": "offbeat o subdivisión audible",
+          "subdivision": "usar solo si se oye con fiabilidad"
+        }
+      },
+      "cuando_usar": "Cuando un evento breve, como el clic de un broche, encaje mejor entre los beats principales.",
+      "cuando_no_usar": "Cuando la subdivisión no se pueda oír de manera fiable.",
+      "combina_bien_con": ["action-peak-sync"]
+    },
+    {
+      "id": "hold-through-beat",
+      "nombre": "mantener a través del beat",
+      "definicion": "La imagen continúa sin corte sobre un beat esperado para conservar la lectura de la acción o variar el patrón.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "cue_musical": "beat esperado",
+          "tratamiento_visual": "mantener la toma"
+        }
+      },
+      "cuando_usar": "Cuando una explicación, demostración o reacción necesite seguir visible más allá del siguiente beat, o un corte regular se vuelva predecible.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["section-change-reveal"]
+    },
+    {
+      "id": "cue-without-cut",
+      "nombre": "señal musical sin corte",
+      "definicion": "Una señal musical se expresa mediante acción, texto o movimiento de cámara sin cambiar de toma.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "tratamientos_posibles": "acción visible, cambio de texto o movimiento de cámara"
+        }
+      },
+      "cuando_usar": "Cuando una señal musical sea útil para el momento, pero la continuidad de la toma deba conservarse.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["hold-through-beat"]
+    },
+    {
+      "id": "waveform-transient-candidate",
+      "nombre": "ataque de waveform como candidato",
+      "definicion": "Un pico de waveform se considera posible ataque audible y se valida escuchando antes de sincronizar una imagen.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "validacion": "escuchar y contar el pulso",
+          "waveform": "refinar el tiempo del ataque, no determinar el beat por sí sola"
+        }
+      },
+      "cuando_usar": "Cuando un pico ayude a localizar un ataque que pueda servir a una acción, revelación o transición.",
+      "cuando_no_usar": "Cuando el pico no corresponda a una señal audible útil o se esté suponiendo que todo pico es un beat.",
+      "combina_bien_con": ["action-peak-sync", "section-change-reveal", "offbeat-detail-sync"]
+    },
+    {
+      "id": "preserve-reaction-duration",
+      "nombre": "conservar duración de reacción",
+      "definicion": "Una reacción visible continúa hasta que se pueda reconocer, aunque atraviese el siguiente beat.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "prioridad": "legibilidad de la reacción sobre corte en beat"
+        }
+      },
+      "cuando_usar": "Cuando una risa o expresión iniciada cerca de un golpe musical necesite más tiempo para ser comprendida.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["hold-through-beat"]
+    }
+  ],
+  "principios_generales": [
+    "Definir la sensación o progresión del video antes de seleccionar señales musicales.",
+    "Escuchar la estructura de secciones antes de contar compases y beats; inspeccionar ataques o subdivisiones solo cerca de un momento relevante.",
+    "Un tempo más rápido no exige planos más cortos ni un video breve exige sincronizar cada toma con un beat.",
+    "Los picos de waveform son ayudas para ubicar ataques; el audio comprimido puede ocultarlos y un sonido fuerte puede estar fuera del beat.",
+    "No asumir compás 4/4 ni forzar un conteo que se desvíe de la música.",
+    "Seleccionar señales musicales por su relación con la imagen y la historia; variar el patrón cuando los cortes periódicos se vuelvan predecibles.",
+    "Permitir tiempo visible para preparación, impacto y consecuencia de cada acción.",
+    "Tratar marcadores, beats, tempo y límites de secciones detectados automáticamente como estimaciones que deben comprobarse escuchando y viendo a velocidad normal.",
+    "Si el material no llega naturalmente a la señal, elegir otra, ajustar modestamente el tiempo si es aceptable o usar otra toma.",
+    "Sin audio verificable, no inventar BPM ni timestamps exactos; expresar la sincronización con una señal relativa.",
+    "Elegir el tratamiento rítmico según formato, tema, audiencia y experiencia buscada."
+  ]
+}

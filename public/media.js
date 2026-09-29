@@ -167,3 +167,39 @@ async function gifFrames(file) {
   dec.close();
   return frames;
 }
+
+// Graba un tramo del video (para re-filmarlo con IA): se reproduce mudo en un canvas y se captura en tiempo real.
+// Así viaja solo el tramo (≤ 5 s), no el archivo entero. Devuelve un data URL (mp4 si el navegador puede, si no webm).
+export async function recordSegment(url, start, end, { side = 1280, onProgress } = {}) {
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error('Este navegador no puede grabar el clip. Probá con Chrome, Edge o Safari actualizados.');
+  const v = await openVideo(url);
+  v.muted = true;
+  const scale = Math.min(1, side / Math.max(v.videoWidth, v.videoHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round((v.videoWidth * scale) / 2) * 2; c.height = Math.round((v.videoHeight * scale) / 2) * 2;
+  const ctx = c.getContext('2d');
+  v.currentTime = start;
+  await once(v, 'seeked');
+  ctx.drawImage(v, 0, 0, c.width, c.height);
+  const mime = ['video/mp4;codecs=avc1.640028', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
+  const rec = new MediaRecorder(c.captureStream(30), { mimeType: mime || undefined, videoBitsPerSecond: 10_000_000 });
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  const stopped = new Promise((resolve) => { rec.onstop = resolve; });
+  rec.start(250);
+  let raf = 0;
+  const paint = () => {
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    onProgress?.(Math.min(1, (v.currentTime - start) / (end - start)));
+    if (v.currentTime >= end || v.ended) { v.pause(); if (rec.state === 'recording') rec.stop(); return; }
+    raf = requestAnimationFrame(paint);
+  };
+  await v.play();
+  raf = requestAnimationFrame(paint);
+  await stopped;
+  cancelAnimationFrame(raf);
+  v.removeAttribute('src'); v.load();
+  const blob = new Blob(chunks, { type: (rec.mimeType || mime || 'video/webm').split(';')[0] });
+  if (!blob.size) throw new Error('No se pudo grabar el clip.');
+  return { dataUrl: await toDataUrl(blob), size: blob.size, type: blob.type };
+}

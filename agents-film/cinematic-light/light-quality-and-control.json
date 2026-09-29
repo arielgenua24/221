@@ -1,0 +1,253 @@
+{
+  "fuente": "light-quality-and-control.md",
+  "categoria": "luz",
+  "reglas": [
+    {
+      "id": "fuente-plausible",
+      "nombre": "fuente de luz plausible",
+      "definicion": "La luz principal parece provenir de una fuente visible o verosímil dentro o cerca de la escena.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "fuente_aparente": "identificar",
+          "posicion_relativa": "indicar respecto del sujeto y el encuadre"
+        }
+      },
+      "cuando_usar": "Cuando se define la iluminación de una toma, identificar qué elemento emite o refleja la luz principal y desde dónde lo hace.",
+      "cuando_no_usar": "Cuando la fuente propuesta contradiga los reflejos o las sombras visibles.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "hard-light",
+      "nombre": "hard light",
+      "definicion": "La luz produce bordes de sombra definidos y transiciones bruscas entre zonas claras y oscuras.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "borde_sombra": "definido",
+          "transicion_luz_sombra": "brusca",
+          "fuente_posible": "sol directo o fuente aparente pequeña sin difusión"
+        }
+      },
+      "cuando_usar": "Cuando convenga destacar textura, forma o sombras visibles sin perder los detalles necesarios del producto.",
+      "cuando_no_usar": "Cuando las sombras oculten información que el espectador deba leer.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "soft-light",
+      "nombre": "soft light",
+      "definicion": "La luz produce bordes de sombra graduales y transiciones suaves sobre el sujeto.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "borde_sombra": "gradual",
+          "fuente_posible": "fuente aparente grande, diffusion, bounce o cielo cubierto"
+        }
+      },
+      "cuando_usar": "Cuando convenga suavizar las transiciones de luz sobre una cara o producto y conservar el detalle visible.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["bounce"]
+    },
+    {
+      "id": "high-key",
+      "nombre": "high-key",
+      "definicion": "La iluminación mantiene sujeto y fondo relativamente parejos en luminosidad.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "diferencia_sujeto_fondo": "relativamente baja"
+        }
+      },
+      "cuando_usar": "Cuando el sujeto y el fondo deban verse con una luminosidad relativamente uniforme.",
+      "cuando_no_usar": "Cuando esa uniformidad elimine la forma que la toma necesita mostrar.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "low-key",
+      "nombre": "low-key",
+      "definicion": "La iluminación permite diferencias amplias entre zonas claras y oscuras.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "contraste": "amplio",
+          "detalle_critico": "legible"
+        }
+      },
+      "cuando_usar": "Cuando se busque una imagen con mayores diferencias de luminosidad y el detalle importante siga visible.",
+      "cuando_no_usar": "Cuando la cara, el producto, la acción o el texto necesarios desaparezcan en las sombras al tamaño final.",
+      "combina_bien_con": ["bounce"]
+    },
+    {
+      "id": "bounce",
+      "nombre": "bounce",
+      "definicion": "La luz reflejada eleva la luminosidad de las sombras.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "efecto": "levantar sombras"
+        }
+      },
+      "cuando_usar": "Cuando una zona en sombra de la cara, prenda o producto deba recuperar detalle legible.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["soft-light", "low-key"]
+    },
+    {
+      "id": "diffusion",
+      "nombre": "diffusion",
+      "definicion": "La luz se suaviza antes de alcanzar al sujeto.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "efecto": "bordes de sombra más graduales"
+        }
+      },
+      "cuando_usar": "Cuando la fuente elegida produzca sombras más duras de lo deseado.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["soft-light"]
+    },
+    {
+      "id": "negative-fill",
+      "nombre": "negative fill",
+      "definicion": "El bloqueo de luz oscurece un lado de la imagen.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "efecto": "profundizar una zona en sombra"
+        }
+      },
+      "cuando_usar": "Cuando profundizar un lado oscuro ayude a definir la forma o el contraste buscado.",
+      "cuando_no_usar": "Cuando oscurezca un detalle esencial para entender la escena o el producto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "falloff-coherente",
+      "nombre": "falloff coherente",
+      "definicion": "La intensidad de una fuente cercana disminuye al aumentar la distancia respecto de ella.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "relacion_espacial": "más lejos de la fuente, menos luz de esa fuente"
+        }
+      },
+      "cuando_usar": "Cuando una lámpara u otra fuente cercana ilumine sujetos u objetos a distintas distancias.",
+      "cuando_no_usar": "Cuando otra fuente o bounce explique una iluminación más uniforme.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "continuidad-luz",
+      "nombre": "continuidad de luz",
+      "definicion": "Los reflejos, las sombras, el brillo y el color responden de manera consistente a las mismas fuentes entre movimientos y tomas vecinas.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "control": "mantener dirección, calidad, color y brillo coherentes entre fotogramas y tomas"
+        }
+      },
+      "cuando_usar": "Cuando el sujeto gire, la cámara se mueva o haya tomas consecutivas en la misma escena.",
+      "cuando_no_usar": "Cuando un cambio de escena o una nueva fuente aparente justifique el cambio de luz.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "legibilidad-crop-final",
+      "nombre": "legibilidad en el recorte final",
+      "definicion": "La iluminación conserva visibles los detalles esenciales al tamaño y recorte finales del video.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "elementos_a_verificar": "piel, producto, gestos, prendas y texto",
+          "escala_de_revision": "pantalla de teléfono y recorte final"
+        }
+      },
+      "cuando_usar": "Cuando se verifica una toma para redes sociales, revisar que el contenido importante siga legible en pantalla pequeña.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Elegir la iluminación según la acción y la información que el espectador debe leer, no según un estilo cinematográfico predeterminado.",
+    "Describir primero el efecto visible de la luz: fuente aparente, dirección, bordes de sombra, balance de luminosidad, color relativo y continuidad.",
+    "Distinguir dureza de sombra, brillo y contraste; una luz suave puede producir una escena oscura y una luz dura puede aparecer en una escena brillante.",
+    "Mantener consistencia entre la posición de las fuentes, los reflejos y las sombras.",
+    "Expresar las diferencias de color entre fuentes en términos relativos cuando no hay una razón para indicar valores Kelvin.",
+    "Evitar instrucciones de iluminación incompatibles salvo que otra fuente explique la diferencia.",
+    "Revisar las imágenes generadas para detectar sombras desprendidas, direcciones de reflejos contradictorias, bordes luminosos inexplicables, altas luces recortadas y cambios de brillo entre tomas.",
+    "Los nombres de equipos por sí solos no especifican el resultado visual; priorizar descripciones espaciales concretas."
+  ]
+}

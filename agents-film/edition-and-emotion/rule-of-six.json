@@ -1,0 +1,290 @@
+{
+  "fuente": "rule-of-six.md",
+  "categoria": "corte_edicion",
+  "reglas": [
+    {
+      "id": "sostener-plano",
+      "nombre": "Sostener el plano",
+      "definicion": "Prolongar un plano para que se perciba una reacción, un detalle o la espera de una acción.",
+      "triggers": {
+        "emocion": ["anticipación"],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "condicion_de_salida": "cortar después de que la reacción o el detalle se pueda leer"
+        }
+      },
+      "cuando_usar": "Cuando el espectador necesite tiempo para leer una reacción, notar un detalle o anticipar una acción.",
+      "cuando_no_usar": "Cuando el plano solo repita información sin cambiar su significado.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "cortar-por-cambio-de-significado",
+      "nombre": "Cortar por cambio de significado",
+      "definicion": "Pasar a otro plano cuando este cambie la interpretación, responda una pregunta o aumente lo que está en juego.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "informacion_antes_y_despues": "identificar qué sabe el espectador a cada lado del corte"
+        }
+      },
+      "cuando_usar": "Cuando el plano entrante aporte un cambio emocional o información significativa.",
+      "cuando_no_usar": "Cuando el plano entrante interrumpa el sentido emocional sin aportar información nueva.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "cortar-antes-del-fin-de-accion",
+      "nombre": "Cortar antes de completar la acción",
+      "definicion": "Cambiar de plano antes de que termine una acción para retener su resultado.",
+      "triggers": {
+        "emocion": ["tensión", "anticipación"],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "punto_de_corte": "antes de la conclusión visible de la acción"
+        }
+      },
+      "cuando_usar": "Cuando ocultar por un momento el final de una acción genere tensión o impulso útil.",
+      "cuando_no_usar": "Cuando retener el resultado impida entender qué ocurrió.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "cortar-despues-de-consecuencia",
+      "nombre": "Cortar después de la consecuencia",
+      "definicion": "Mantener el plano después de la acción para mostrar su consecuencia o respuesta humana.",
+      "triggers": {
+        "emocion": ["alivio"],
+        "momento_video": ["desarrollo", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "punto_de_corte": "después de que la consecuencia o reacción sea visible"
+        }
+      },
+      "cuando_usar": "Cuando la consecuencia o reacción importe más que la acción que la produjo.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "eliminar-informacion-repetida",
+      "nombre": "Eliminar información repetida",
+      "definicion": "Omitir un plano que repite información ya entendida sin cambiar su significado.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "criterio": "comparar la información conocida antes y después del plano"
+        }
+      },
+      "cuando_usar": "Cuando un plano repita información y no modifique su interpretación.",
+      "cuando_no_usar": "Cuando la repetición cambie el significado de lo mostrado.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "priorizar-emocion-sobre-continuidad-menor",
+      "nombre": "Aceptar una discontinuidad menor",
+      "definicion": "Permitir una pequeña variación de continuidad si el corte conserva la emoción y la acción sigue siendo comprensible.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "continuidad_obligatoria": "identidad, estado del objeto, dirección de la acción y relación de causa y efecto"
+        }
+      },
+      "cuando_usar": "Cuando una pequeña discontinuidad permita un mejor momento emocional sin dificultar la comprensión.",
+      "cuando_no_usar": "Cuando la variación cambie quién actúa, el estado del objeto, la dirección de la acción o su causa y efecto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "pausa-antes-de-revelacion",
+      "nombre": "Pausa antes de la revelación",
+      "definicion": "Demorar el plano que muestra un resultado para aumentar la expectativa.",
+      "triggers": {
+        "emocion": ["anticipación", "curiosidad"],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "orden": "mostrar la expectativa o reacción antes del resultado"
+        }
+      },
+      "cuando_usar": "Cuando ocultar brevemente el resultado haga que el espectador comparta la curiosidad del sujeto.",
+      "cuando_no_usar": "Cuando la demora vuelva ilegible la relación entre acción y resultado.",
+      "combina_bien_con": ["mostrar-reaccion-tras-revelacion"]
+    },
+    {
+      "id": "mostrar-reaccion-tras-revelacion",
+      "nombre": "Mostrar reacción tras la revelación",
+      "definicion": "Mantener o incluir la respuesta del sujeto después de mostrar el resultado de una acción.",
+      "triggers": {
+        "emocion": ["alivio", "alegría"],
+        "momento_video": ["desarrollo", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "coherencia": "la expresión debe corresponder con lo revelado"
+        }
+      },
+      "cuando_usar": "Cuando la respuesta posterior a la revelación ayude a comunicar su consecuencia emocional.",
+      "cuando_no_usar": "Cuando la expresión contradiga el resultado mostrado.",
+      "combina_bien_con": ["pausa-antes-de-revelacion"]
+    },
+    {
+      "id": "cortar-fuera-del-beat-musical",
+      "nombre": "Cortar fuera del beat musical",
+      "definicion": "Situar un corte en una pausa o contra el beat musical para variar un ritmo predecible.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "señal_de_corte": "pausa, acción, diálogo, sonido o contraste deliberado"
+        }
+      },
+      "cuando_usar": "Cuando cortar en cada beat musical resulte predecible y otra señal apoye mejor el momento.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "guiar-mirada-entre-planos",
+      "nombre": "Guiar la mirada entre planos",
+      "definicion": "Ubicar la información crucial del plano entrante donde el espectador pueda encontrarla tras el corte.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["gancho", "desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "atencion": "comparar el punto de atención al final del plano saliente y al inicio del entrante"
+        }
+      },
+      "cuando_usar": "Cuando la velocidad o la claridad exijan localizar de inmediato el sujeto, texto o detalle importante.",
+      "cuando_no_usar": "Cuando se busque deliberadamente una búsqueda visual o sorpresa.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "mantener-orientacion-espacial",
+      "nombre": "Mantener orientación espacial",
+      "definicion": "Conservar relaciones de dirección y posición comprensibles entre planos adyacentes.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "revisar": "dirección en pantalla, geografía, miradas y posición del objeto"
+        }
+      },
+      "cuando_usar": "Cuando una demostración física o comparación antes y después dependa de la orientación del espacio.",
+      "cuando_no_usar": "Cuando los saltos espaciales sean deliberados y no impidan comprender la secuencia.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "abrir-con-pregunta-o-evento",
+      "nombre": "Abrir con una pregunta o evento",
+      "definicion": "Ordenar los primeros planos para establecer pronto una pregunta, sensación o evento significativo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["gancho"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "señal_inicial": "pregunta, emoción o evento significativo"
+        }
+      },
+      "cuando_usar": "Cuando se edite la apertura de un video social.",
+      "cuando_no_usar": "Cuando la decisión dependa solo de una cantidad fija de segundos o cortes.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "resolver-discontinuidad-con-inserto",
+      "nombre": "Resolver discontinuidad con inserto",
+      "definicion": "Intercalar un plano motivado para conectar dos tomas con un problema de continuidad.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "motivo": "mostrar una acción, detalle o punto de vista relevante"
+        }
+      },
+      "cuando_usar": "Cuando un plano inserto con motivo narrativo ayude a reparar un salto de continuidad entre tomas generadas.",
+      "cuando_no_usar": "Cuando la contradicción material siga visible o requiera regenerar la toma.",
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Priorizar emoción, historia, ritmo, dirección de la mirada, dirección en pantalla y espacio tridimensional al evaluar un corte; los porcentajes de la Rule of Six indican prioridad, no una fórmula de puntuación.",
+    "Evaluar la relación entre el plano saliente, el entrante y el instante de transición.",
+    "Nombrar la emoción buscada y el evento visible o audible que puede producirla antes de ajustar el corte.",
+    "La duración, la acción, el habla, el silencio y el sonido contribuyen al ritmo; no establecer una frecuencia universal de cortes.",
+    "Revisar la secuencia con sonido y en silencio para distinguir el sentido visual de la contribución musical.",
+    "Antes de editar videos sociales, identificar propósito, audiencia, tono, duración, relación de aspecto y condiciones de visualización.",
+    "En material generado, planificar las transiciones y solicitar cobertura de acción, consecuencia, reacción y plano orientador cuando haga falta.",
+    "Comprobar identidad, ropa, utilería, luz, dirección de mirada y estado de objetos en cada par de planos adyacentes; la edición por sí sola no vuelve coherente una expresión contradictoria o acción imposible.",
+    "No añadir cortes solo para aumentar el ritmo cuando la acción ya comunica la emoción deseada."
+  ]
+}

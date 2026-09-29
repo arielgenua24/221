@@ -70,13 +70,19 @@ ${CODE_PROTOCOL}`;
 
 const fmtBox = (b) => `x ${b.x.toFixed(2)}, y ${b.y.toFixed(2)}, ancho ${b.w.toFixed(2)}, alto ${b.h.toFixed(2)} (fracciones del cuadro)`;
 
+const TECHNIQUES = {
+  motion: 'motion design como código (Canvas 2D) encima del video original.',
+  ai: 'VIDEO IA + CAPA DE TEXTO — la imagen de este tramo se reemplaza por una toma generada por IA a partir de un cuadro real del clip (la dirige el Director de Video IA); encima solo se animan palabras. La ventana es la de ese texto.',
+  cine: 'CINEMATIC PRO — no lleva motion ni texto: un Director de Fotografía lleva el clip REAL a nivel cine (grade, luz motivada, cámara virtual, textura; y si hace falta, lo re-filma con IA). Tu parte: la paleta del sistema guía su grade, y la idea del clip es qué tiene que sentirse. La ventana no se usa.',
+};
+
 // Texto del encargo de un clip (sus cuadros y referencias van como imágenes aparte).
 function clipBrief(clip, index, total) {
   const refs = clip.refs.length
     ? clip.refs.map((r) => `  - ${r.id}: ${r.kind === 'video' ? `video/GIF de referencia (${r.frames.length} cuadros)` : 'imagen de referencia'}${r.name ? ` "${r.name}"` : ''}`).join('\n')
     : '  (ninguna)';
   return `## ${clip.id} — clip ${index + 1} de ${total} en el tiempo del video (${clip.start.toFixed(2)} s → ${clip.end.toFixed(2)} s del video; dura ${(clip.end - clip.start).toFixed(2)} s)
-- Técnica: ${clip.mode === 'ai' ? 'VIDEO IA + CAPA DE TEXTO — la imagen de este tramo se reemplaza por una toma generada por IA a partir de un cuadro real del clip (la dirige el Director de Video IA); encima solo se animan palabras. La ventana es la de ese texto.' : 'motion design como código (Canvas 2D) encima del video original.'}
+- Técnica: ${TECHNIQUES[clip.mode] || TECHNIQUES.motion}
 - Pedido del humano: ${clip.prompt || '(no escribió nada: decidí vos lo que mejor sirva al video)'}
 - Referencias en texto / notas de estilo: ${clip.notes || '(ninguna)'}
 - Referencias visuales:
@@ -98,7 +104,7 @@ Tu trabajo:
 1. Mirá los cuadros: qué pasa, en qué segundo, dónde está el sujeto, qué luz y qué colores tiene.
 2. Definí UN sistema visual para los tres clips (sección 9 del manual). Paleta de 2 a 4 colores (hex) que pertenezca al video; tipografías SOLO de esta lista: ${Object.keys(FONTS).join(', ')}. Y una familia de sonidos (sección 12 del manual) elegida de este catálogo de efectos sintetizados, que suenan encima del audio original:
 ${SOUND_DOCS}
-3. Para cada clip: su idea en una frase (en los clips de VIDEO IA, la idea es la toma que se va a generar + las palabras encima) (respetando el pedido del humano), su rol en el arco (presenta / desarrolla / remata), el evento del video con el que se sincroniza, y la ventana por defecto.
+3. Para cada clip: su idea en una frase (en los clips de VIDEO IA, la idea es la toma que se va a generar + las palabras encima; en los de CINEMATIC PRO, la sensación que tiene que dar la imagen) (respetando el pedido del humano), su rol en el arco (presenta / desarrolla / remata), el evento del video con el que se sincroniza, y la ventana por defecto.
 
 Esquema JSON exacto:
 {

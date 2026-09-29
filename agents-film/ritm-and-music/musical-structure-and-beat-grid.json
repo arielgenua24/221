@@ -1,0 +1,227 @@
+{
+  "fuente": "musical-structure-and-beat-grid.md",
+  "categoria": "ritmo_musica",
+  "reglas": [
+    {
+      "id": "cambio-escena-en-seccion-musical",
+      "nombre": "Cambio de escena en sección musical",
+      "definicion": "Un cambio de escena se alinea con un cambio estructural perceptible de la música.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "referencia_musical": "límite de sección con cambio observable"
+        }
+      },
+      "cuando_usar": "Cuando un cambio narrativo o visual coincida con una transición real entre secciones musicales.",
+      "cuando_no_usar": "Cuando la sección marcada no tenga un cambio musical perceptible o el cambio de escena perjudique la historia.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "corte-en-limite-de-compas",
+      "nombre": "Corte en límite de compás",
+      "definicion": "Un plano termina en el límite de un compás musical.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "referencia_musical": "límite de compás verificado al escuchar"
+        }
+      },
+      "cuando_usar": "Cuando el final natural del plano quede cerca de un límite de compás y el corte siga funcionando visualmente.",
+      "cuando_no_usar": "Cuando ajustar el corte a la cuadrícula desplace una acción, revelación o frase hablada a un lugar incómodo.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "gesto-en-beat",
+      "nombre": "Gesto en beat",
+      "definicion": "Un gesto visual importante coincide con un beat de la música.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "referencia_musical": "beat verificado al escuchar"
+        }
+      },
+      "cuando_usar": "Cuando un gesto de uso o preparación tenga un instante destacado que pueda coincidir con el pulso sin forzar la acción.",
+      "cuando_no_usar": "Cuando la sincronización desplace el gesto fuera de su momento natural.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "detalle-en-offbeat",
+      "nombre": "Detalle en offbeat",
+      "definicion": "Un detalle visual breve se coloca en una subdivisión u offbeat musical.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "referencia_musical": "subdivisión u offbeat verificado al escuchar"
+        }
+      },
+      "cuando_usar": "Cuando un detalle rápido tenga sentido visual en una posición rítmica menor que el beat principal.",
+      "cuando_no_usar": "Cuando el detalle necesite más tiempo para entenderse.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "revelacion-en-transicion-musical",
+      "nombre": "Revelación en transición musical",
+      "definicion": "La revelación del resultado se alinea con una transición musical marcada.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "referencia_musical": "cambio de sección significativo"
+        }
+      },
+      "cuando_usar": "Cuando el material visual sostenga la revelación del resultado en un cambio musical significativo.",
+      "cuando_no_usar": "Cuando el material visual no sostenga la revelación en ese punto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "corte-fuera-de-cuadricula",
+      "nombre": "Corte fuera de cuadrícula",
+      "definicion": "Un corte se mantiene fuera de la cuadrícula musical para respetar la acción, el habla o la emoción.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "ajuste_a_cuadricula": "desactivado para este corte"
+        }
+      },
+      "cuando_usar": "Cuando ajustar el corte al marcador musical vuelva incómoda una revelación, frase hablada o acción.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "evitar-cortes-en-cada-beat",
+      "nombre": "Evitar cortes en cada beat",
+      "definicion": "Los cortes se reservan para eventos visuales con sentido en vez de repetirse obligatoriamente en cada beat.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "frecuencia_cortes": "determinada por la acción y la historia, no por cada beat"
+        }
+      },
+      "cuando_usar": "Cuando la secuencia muestre preparación o uso mediante acciones que necesitan desarrollarse entre beats.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "union-musical-compatible",
+      "nombre": "Unión musical compatible",
+      "definicion": "Dos fragmentos musicales se unen tras comprobar su continuidad audible.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "comprobaciones": "armonía, melodía, voces, colas de reverberación y dinámica",
+          "ajuste_posible": "crossfade si corresponde"
+        }
+      },
+      "cuando_usar": "Cuando haya que acortar una pista musical para ajustar el video a una duración fija.",
+      "cuando_no_usar": "Cuando la unión suene discontinua aunque los compases o secciones coincidan.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "cierre-en-cadencia-musical",
+      "nombre": "Cierre en cadencia musical",
+      "definicion": "El final del video coincide con una cadencia musical que produce un cierre audible.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "condicion_visual": "dar tiempo para registrar el producto"
+        }
+      },
+      "cuando_usar": "Cuando el video necesite un final completo y el producto requiera tiempo para registrarse.",
+      "cuando_no_usar": "Cuando la cadencia elegida corte prematuramente la comprensión del producto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "musica-subordinada-al-habla",
+      "nombre": "Música subordinada al habla",
+      "definicion": "La posición de los cortes y eventos visuales prioriza la claridad del habla por encima de la cuadrícula musical.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "prioridad": "habla sobre cuadrícula musical"
+        }
+      },
+      "cuando_usar": "Cuando el video contiene explicación hablada y la música cumple una función secundaria.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["corte-fuera-de-cuadricula"]
+    }
+  ],
+  "principios_generales": [
+    "Distinguir secciones musicales, compases, beats, subdivisiones y ataques; cada nivel sirve para decisiones de distinta escala.",
+    "Escuchar la pista completa o el fragmento previsto para detectar cambios de energía, pausas, voces y cadencia final antes de seleccionar puntos de sincronización.",
+    "Verificar al escuchar los marcadores automáticos de pulso y compás, especialmente fuera de música sencilla en 4/4; su confianza es provisional y deben poder corregirse manualmente.",
+    "Priorizar las necesidades narrativas y la acción sobre la cercanía de una línea de la cuadrícula musical.",
+    "La cuadrícula musical ofrece puntos candidatos de sincronización, pero no determina una duración ni una cantidad fija de cortes.",
+    "Con audio analizado, distinguir en el plan los rangos de secciones, compases, beats, ataques, pausas, posibles alineaciones y regiones inciertas.",
+    "Sin audio analizado, dar indicaciones musicales relativas; solicitar la pista solo si hace falta sincronización exacta.",
+    "Describir el análisis automático como disponible únicamente si el flujo real lo ofrece."
+  ]
+}

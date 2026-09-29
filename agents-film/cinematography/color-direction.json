@@ -1,0 +1,214 @@
+{
+  "fuente": "color-direction.md",
+  "categoria": "color",
+  "reglas": [
+    {
+      "id": "paleta-monocromatica",
+      "nombre": "Paleta monocromática",
+      "definicion": "Usa variaciones de un mismo matiz con distintos valores y niveles de saturación.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "matiz": "uno principal",
+          "valor_y_saturacion": "variar según la atmósfera buscada"
+        }
+      },
+      "cuando_usar": "Cuando se busque unidad visual y una atmósfera concentrada.",
+      "cuando_no_usar": "Cuando la variación limitada de matiz impida distinguir sujetos o información importante.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "paleta-complementaria",
+      "nombre": "Paleta complementaria",
+      "definicion": "Usa matices opuestos en el círculo cromático para producir contraste entre ellos.",
+      "triggers": {
+        "emocion": ["energía", "tensión"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "relacion_matices": "opuestos en el círculo cromático",
+          "variables_de_efecto": "brillo, saturación, área y ubicación relativos"
+        }
+      },
+      "cuando_usar": "Cuando el contraste de color deba separar elementos o contribuir a una sensación de energía o tensión.",
+      "cuando_no_usar": "Cuando el contraste o su ubicación resten legibilidad a sujetos o detalles importantes.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "paleta-analoga",
+      "nombre": "Paleta análoga",
+      "definicion": "Usa matices vecinos en el círculo cromático y reduce el contraste entre colores.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "relacion_matices": "vecinos en el círculo cromático"
+        }
+      },
+      "cuando_usar": "Cuando se busque una impresión conectada y menos contraste de color entre las áreas de la imagen.",
+      "cuando_no_usar": "Cuando esa menor separación de color dificulte reconocer elementos importantes.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "paleta-triadica",
+      "nombre": "Paleta triádica",
+      "definicion": "Usa tres matices distribuidos alrededor del círculo cromático para una paleta variada.",
+      "triggers": {
+        "emocion": ["vitalidad"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "relacion_matices": "tres matices distribuidos alrededor del círculo cromático",
+          "proporcion": "un matiz puede dominar y los otros ocupar áreas menores"
+        }
+      },
+      "cuando_usar": "Cuando una paleta variada y viva contribuya al propósito del video.",
+      "cuando_no_usar": "Cuando la variedad de color sobrepase al sujeto o al propósito del video.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "color-de-acento",
+      "nombre": "Color de acento",
+      "definicion": "Un color aparece de forma selectiva o rompe la paleta establecida para destacar un elemento o momento.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "ubicacion": "sobre el objeto o detalle que se quiere destacar",
+          "frecuencia": "selectiva",
+          "contraste_con_paleta": "deliberado y legible"
+        }
+      },
+      "cuando_usar": "Cuando un producto, objeto, sujeto o momento significativo deba atraer la mirada mediante una diferencia de color.",
+      "cuando_no_usar": "Cuando la diferencia no tenga un propósito claro o haga menos legible el elemento destacado.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "contraste-para-atencion",
+      "nombre": "Contraste para dirigir la atención",
+      "definicion": "Ajusta contraste, saturación, brillo o aislamiento de color para que un elemento sobresalga.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "variables": "contraste, saturación, brillo y aislamiento",
+          "objetivo": "mantener legibles sujeto y detalles"
+        }
+      },
+      "cuando_usar": "Cuando un elemento importante deba distinguirse claramente del fondo o de otros elementos.",
+      "cuando_no_usar": "Cuando el tratamiento oculte detalles significativos o desvíe la atención del propósito del video.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "repeticion-de-color",
+      "nombre": "Repetición de color",
+      "definicion": "Repite colores o matices relacionados para conectar visualmente tomas, escenas o secciones.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "alcance": "tomas, escenas o secciones relacionadas",
+          "continuidad": "conservar colores recurrentes cuando deban permanecer constantes"
+        }
+      },
+      "cuando_usar": "Cuando haya que dar continuidad a un sujeto, producto, lugar o sección a través de varias tomas.",
+      "cuando_no_usar": "Cuando un cambio de escena o estado deba comunicarse mediante un cambio deliberado de paleta.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "cambio-de-paleta",
+      "nombre": "Cambio de paleta",
+      "definicion": "Modifica paleta, saturación, valor o balance de color entre partes del video para señalar un cambio.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "variables": "paleta, saturación, valor o balance de color",
+          "inicio_y_fin": "definir en qué toma o escena empieza y termina el cambio"
+        }
+      },
+      "cuando_usar": "Cuando cambien el entorno, la perspectiva, la etapa o el estado emocional y el color pueda ayudar a señalarlo.",
+      "cuando_no_usar": "Cuando la variación parezca una falla de continuidad o no tenga relación con el contenido.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "conservar-colores-requeridos",
+      "nombre": "Conservar colores requeridos",
+      "definicion": "Mantiene fieles los colores de productos, piel, vestuario, texto, marca y referencias cuando son una condición del video.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "elementos_a_preservar": "producto, piel, vestuario, texto, marca y referencias según las restricciones del encargo"
+        }
+      },
+      "cuando_usar": "Cuando el video tenga colores de producto, marca o sujetos que deban reconocerse con fidelidad.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Elegir el color según el propósito, sujeto, tono, audiencia y restricciones del video; una paleta cinematográfica distintiva no es obligatoria.",
+    "El significado emocional de un color depende de la historia, la imagen, los colores vecinos y el contexto del espectador; no asignar significados universales a matices concretos.",
+    "Describir matiz, saturación y valor cuando un nombre de color por sí solo no comunique el resultado visible.",
+    "La proporción, el valor, la saturación, la luz, los materiales y la ubicación de cada color afectan el resultado de una paleta.",
+    "Los roles dominante, de apoyo y de acento son funciones opcionales; no implican una proporción fija ni exigen exactamente tres colores.",
+    "Una secuencia puede mantener una paleta o cambiarla entre escenas según lo que comunique mejor el contenido.",
+    "Describir propiedades visibles y conservar las restricciones críticas entre tomas; evitar indicaciones vagas cuando puedan reemplazarse por color, contraste, saturación, valor, luz o ubicación concretos.",
+    "Verificar en el video generado que sujetos, acciones, texto y detalles importantes sigan legibles y que los cambios de color intencionales se distingan de errores de continuidad.",
+    "La distribución en redes sociales no exige mayor brillo, contraste, saturación ni una sola paleta; considerar tamaño de pantalla, formato y condiciones de visualización cuando se conozcan."
+  ]
+}

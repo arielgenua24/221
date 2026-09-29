@@ -94,6 +94,8 @@ const SCRIPTS = {
   direction: (_, meta) => out(['(demo) No miro de verdad los cuadros.', 'Sistema editorial: Space Grotesk + mono, un solo acento.', 'Ventanas lejos de las zonas de botones.'], mockDirection(meta)),
   revise: (id, meta) => SCRIPTS.motion(id, meta),
   vdirector: (id, meta) => out([`(demo) ${id}: tomo el cuadro del medio como base.`, 'Una sola toma: dolly-in lento, la misma luz del cuadro.', 'Dejo el tercio de arriba limpio para las palabras.'], mockVideoPlan(meta)),
+  cine: (id, meta) => out([`(demo) ${id}: no miro de verdad los cuadros; aplico un look fílmico cálido de ejemplo.`, 'Luz de ventana suave desde la izquierda (cinematic-light/motivated-lighting).', 'Push-in lento de intención (camera-movement/push-in).'], mockTreatment(meta)),
+  recine: (id, meta) => out([`(demo) ${id}: apliqué "${meta.feedback || 'el cambio'}" (en demo, un look más frío).`], mockTreatment(meta)),
   motion: (id, meta) => codeOut([`(demo) ${id}: título que se revela desde una máscara.`, 'Entrada outExpo, salida inQuart, todo termina antes del final.'], mockMotion(meta)),
   montage: (id, meta) => out([`(demo) Versión ${id}: roto el material sobre la grilla con otro ritmo y otro orden.`, 'Las fotos siempre con zoom para que no queden quietas.'], { concepto: `Versión ${id} de demostración: ${meta.version?.nombre || ''}`, ...autoTimeline({ ...meta, ...{ A: { pace: 1, shift: 0 }, B: { pace: 2, shift: 1 }, C: { pace: 0.5, shift: 2 } }[id] }), nota_para_el_humano: 'MODO DEMO: el montaje es automático. Configurá OPENROUTER_API_KEY para que el Oído escuche el tema y el Director mire tu material.' }),
 };
@@ -150,6 +152,41 @@ function mockVideoPlan({ clip, layout, round }) {
     vinetas: Array.from({ length: n }, (_, i) => ({ n: i + 1, t: +((i / n) * dur).toFixed(1), encuadre: 'medium shot', accion: 'slow push-in' })),
     textos: [demoText(clip)],
     nota_para_el_humano: 'MODO DEMO: el storyboard es el cuadro base y no se genera video (se ve el original). Configurá WAVESPEED_API_KEY y OPENROUTER_API_KEY para usarlo de verdad.',
+  };
+}
+
+// Tratamiento de demostración del Director de Fotografía (Cinematic Pro).
+function mockTreatment({ clip, index = 0, revision }) {
+  const dur = clip.end - clip.start;
+  return {
+    lectura: '(demo) No miro de verdad los cuadros: aplico un tratamiento de ejemplo.',
+    diagnostico: [
+      { componente: 'luz', observacion: '(demo) luz plana, sin dirección', decision: 'sumo una luz de ventana suave desde la izquierda' },
+      { componente: 'color', observacion: '(demo) balance neutro', decision: 'split toning: sombras frías, luces cálidas' },
+      { componente: 'movimiento', observacion: '(demo) cámara quieta', decision: 'push-in lento de intención' },
+    ],
+    intencion: revision ? '(demo) Más frío y contenido' : '(demo) Íntimo y cálido, como una película',
+    reglas_aplicadas: [
+      { id: 'motivated-lighting/luz-fuera-de-cuadro-motivada', por_que: '(demo) la luz agregada viene de una ventana' },
+      { id: 'camera-movement/push-in', por_que: '(demo) acerca al sujeto de a poco' },
+    ],
+    grade: {
+      exposicion: 0.05, contraste: 0.18, saturacion: -0.12, temperatura: revision ? -0.35 : 0.18, tinte: 0.02,
+      sombras: { hex: '#1D3B4F', fuerza: 0.35 }, luces: { hex: revision ? '#D8E6F2' : '#F2C48D', fuerza: 0.3 },
+      negros: 0.05, halation: 0.25, vineta: 0.35, grano: 0.25,
+    },
+    luz: { tipo: 'ventana', motivacion: '(demo) una ventana fuera de cuadro a la izquierda', hex: revision ? '#CFE3FF' : '#FFD9A8', radio: 0.75, keyframes: [{ t: 0, x: -0.1, y: 0.3, fuerza: 0.2 }, { t: dur, x: 0.05, y: 0.28, fuerza: 0.35 }] },
+    camara: { movimiento: 'push-in lento', easing: 'inOutSine', handheld: 0.12, keyframes: [{ t: 0, zoom: 1, x: 0, y: 0, rot: 0 }, { t: dur, zoom: 1.08, x: 0, y: -0.2, rot: 0 }] },
+    transicion: { entrada: 0.3, salida: 0.3 },
+    refilmar: {
+      recomendado: index === 0 && !revision,
+      por_que: '(demo) Para probar el flujo: en el primer clip se propone re-filmar.',
+      prompt: 'Keep the exact same person, clothing, gestures and framing. Relight the scene with warm late-afternoon window light coming from the left, soft shadows on the right side of the face, gentle haze in the air. Filmic color, subtle grain.',
+      preservar: ['la persona y su cara', 'la ropa', 'el encuadre'],
+      evitar: ['on-screen text'],
+      sobre_toma: 'textura',
+    },
+    nota_para_el_humano: 'MODO DEMO: el tratamiento es fijo. Probá el control de intensidad y "ver original".',
   };
 }
 
@@ -273,7 +310,7 @@ export async function mockLLM({ step, onDelta, onReasoning, signal, meta }) {
   const [kind, id] = step.split('-');
   const text = (SCRIPTS[kind] || SCRIPTS.final)(id, meta);
   onReasoning?.('(demo) pensando…');
-  const chunk = ['plan', 'ear', 'montage', 'direction', 'motion', 'revise', 'vdirector'].includes(kind) ? 90 : 18; // los JSON de edición son largos
+  const chunk = ['plan', 'ear', 'montage', 'direction', 'motion', 'revise', 'vdirector', 'cine', 'recine'].includes(kind) ? 90 : 18; // los JSON de edición son largos
   for (let i = 0; i < text.length; i += chunk) {
     await sleep(step === 'brief' ? 18 : 10, signal);
     onDelta?.(text.slice(i, i + chunk));

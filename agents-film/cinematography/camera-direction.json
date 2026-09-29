@@ -1,0 +1,419 @@
+{
+  "fuente": "camera-direction.md",
+  "categoria": "estructura_visual",
+  "reglas": [
+    {
+      "id": "extreme-wide-shot",
+      "nombre": "extreme wide shot",
+      "definicion": "El sujeto aparece pequeño dentro de un entorno amplio.",
+      "triggers": {
+        "emocion": ["aislamiento", "exposición"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "escala_sujeto": "pequeño", "entorno_visible": "amplio" }
+      },
+      "cuando_usar": "Cuando la escala, la geografía, la distancia o el aislamiento del sujeto sean información importante.",
+      "cuando_no_usar": "Cuando un detalle del sujeto deba verse con claridad.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "wide-shot",
+      "nombre": "wide shot",
+      "definicion": "Muestra al sujeto junto con una porción sustancial del lugar.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "entorno_visible": "sustancial" }
+      },
+      "cuando_usar": "Cuando el espectador necesite entender dónde ocurre la acción o cómo se relaciona el sujeto con el lugar.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "full-shot",
+      "nombre": "full shot",
+      "definicion": "Muestra el cuerpo completo del sujeto y mantiene legible parte del entorno.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "recorte": "cuerpo completo" }
+      },
+      "cuando_usar": "Cuando importen la postura, la acción física, la vestimenta o el lenguaje corporal de una persona.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "medium-wide-shot",
+      "nombre": "medium-wide shot",
+      "definicion": "Encuadra aproximadamente desde las rodillas o medio muslo hacia arriba.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "recorte": "rodillas o medio muslo hacia arriba" }
+      },
+      "cuando_usar": "Cuando deban verse juntos el lenguaje corporal y un objeto o interacción relevante.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "medium-shot",
+      "nombre": "medium shot",
+      "definicion": "Encuadra habitualmente desde la cintura hacia arriba y conserva algo de contexto.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "recorte": "cintura hacia arriba" }
+      },
+      "cuando_usar": "Cuando el diálogo, los gestos o la interacción deban verse sin perder todo el contexto.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "medium-close-up",
+      "nombre": "medium close-up",
+      "definicion": "Encuadra habitualmente desde el pecho hacia arriba y prioriza el rostro.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "recorte": "pecho hacia arriba" }
+      },
+      "cuando_usar": "Cuando el rostro deba destacar y todavía haga falta mostrar algo de lenguaje corporal o entorno.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "close-up",
+      "nombre": "close-up",
+      "definicion": "Un rostro u objeto importante ocupa gran parte del encuadre.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "escala_sujeto": "ocupa gran parte del cuadro" }
+      },
+      "cuando_usar": "Cuando una emoción, reacción u objeto clave deba volverse prominente.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "extreme-close-up",
+      "nombre": "extreme close-up",
+      "definicion": "Aísla un rasgo pequeño o un detalle de un objeto.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 5,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "escala_sujeto": "detalle aislado" }
+      },
+      "cuando_usar": "Cuando ese detalle específico transmita información o forme parte de la acción.",
+      "cuando_no_usar": "Cuando el detalle no tenga una función narrativa o informativa.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "establishing-shot",
+      "nombre": "establishing shot",
+      "definicion": "Una vista de apertura, normalmente amplia, aclara la ubicación y la disposición espacial.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["gancho"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "tamaño_plano": "normalmente amplio; definido por la función" }
+      },
+      "cuando_usar": "Cuando el espectador necesite orientarse en la ubicación o entender la disposición de la escena.",
+      "cuando_no_usar": "Cuando repita información espacial ya clara sin aportar nada nuevo.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "two-or-group-shot",
+      "nombre": "two-shot / group shot",
+      "definicion": "Dos o más sujetos comparten el encuadre y su relación se expresa mediante su disposición.",
+      "triggers": {
+        "emocion": ["conexión", "conflicto", "distancia"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "relación_espacial": "especificar distancia, postura, escala relativa y dirección de miradas" }
+      },
+      "cuando_usar": "Cuando la relación entre varios sujetos deba leerse dentro de una misma imagen.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "over-the-shoulder",
+      "nombre": "over-the-shoulder",
+      "definicion": "Encuadra un sujeto desde detrás del hombro de otro.",
+      "triggers": {
+        "emocion": ["conexión"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "posición_camara": "detrás del hombro de otro sujeto" }
+      },
+      "cuando_usar": "Cuando una conversación requiera orientar la posición de los interlocutores o conservar su conexión visual.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "point-of-view",
+      "nombre": "point-of-view",
+      "definicion": "La toma muestra lo que ve un personaje identificado.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "personaje_que_mira": "especificar", "objeto_de_atención": "especificar" }
+      },
+      "cuando_usar": "Cuando el espectador deba ver un objeto o una acción desde la perspectiva de un personaje.",
+      "cuando_no_usar": "Cuando no esté claro quién mira o qué debe observarse.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "low-angle",
+      "nombre": "low angle",
+      "definicion": "La cámara mira hacia arriba desde una posición inferior al sujeto.",
+      "triggers": {
+        "emocion": ["dominancia", "amenaza", "grandeza", "vulnerabilidad"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "dirección_mirada_camara": "hacia arriba", "altura_relativa": "por debajo del sujeto" }
+      },
+      "cuando_usar": "Cuando una perspectiva ascendente apoye un efecto definido por el contexto de la escena.",
+      "cuando_no_usar": "Cuando se pretenda atribuirle un significado emocional fijo sin apoyo del contexto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "high-angle",
+      "nombre": "high angle",
+      "definicion": "La cámara mira hacia abajo al sujeto.",
+      "triggers": {
+        "emocion": ["vulnerabilidad", "exposición", "distancia"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "dirección_mirada_camara": "hacia abajo" }
+      },
+      "cuando_usar": "Cuando una perspectiva descendente ayude a mostrar relaciones espaciales o el efecto buscado en la escena.",
+      "cuando_no_usar": "Cuando se pretenda atribuirle un significado emocional fijo sin apoyo del contexto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "overhead-shot",
+      "nombre": "overhead shot",
+      "definicion": "La cámara mira casi verticalmente hacia abajo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "dirección_mirada_camara": "casi vertical hacia abajo" }
+      },
+      "cuando_usar": "Cuando sea necesario aclarar la disposición, los patrones, el movimiento o la relación de un sujeto con su entorno.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "dutch-angle",
+      "nombre": "dutch angle",
+      "definicion": "Inclina deliberadamente el horizonte del encuadre.",
+      "triggers": {
+        "emocion": ["inestabilidad", "desorientación"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "horizonte": "inclinado" }
+      },
+      "cuando_usar": "Cuando la inestabilidad, la desorientación o una estilización deliberada sirvan a la escena.",
+      "cuando_no_usar": "Cuando solo funcione como decoración.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "locked-off-camera",
+      "nombre": "locked-off camera",
+      "definicion": "La cámara permanece fija durante la toma.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "movimiento_camara": "ninguno" }
+      },
+      "cuando_usar": "Cuando el movimiento no contribuya a un propósito narrativo o visual claro.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "shallow-depth-of-field",
+      "nombre": "shallow depth of field",
+      "definicion": "Mantiene nítido al sujeto y suaviza el primer plano o el fondo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "plano_nítido": "sujeto", "primer_plano_o_fondo": "suave" }
+      },
+      "cuando_usar": "Cuando aislar al sujeto de su entorno dirija la atención al dato principal.",
+      "cuando_no_usar": "Cuando el desenfoque oculte una acción, identidad, texto o información del entorno importante.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "deep-focus",
+      "nombre": "deep focus",
+      "definicion": "Mantiene legibles elementos importantes situados a distintas distancias de la cámara.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "planos_nítidos": "elementos importantes a diferentes distancias" }
+      },
+      "cuando_usar": "Cuando las relaciones espaciales o la acción en capas requieran nitidez en varios planos.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "rack-focus",
+      "nombre": "rack focus",
+      "definicion": "Desplaza deliberadamente la nitidez de un sujeto o plano a otro.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "foco_inicial": "especificar", "foco_final": "especificar", "momento_cambio": "especificar" }
+      },
+      "cuando_usar": "Cuando el cambio de nitidez redirija la atención o revele información concreta.",
+      "cuando_no_usar": "Cuando el cambio de foco no tenga función o deje ilegible información importante.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "focus-tracking",
+      "nombre": "focus tracking",
+      "definicion": "Conserva aceptablemente nítido a un sujeto mientras cambia de posición.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": { "sujeto_nítido": "sujeto en movimiento" }
+      },
+      "cuando_usar": "Cuando un sujeto que se mueve deba permanecer claramente visible durante la toma.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Definir primero qué debe entender, notar o sentir el espectador y después elegir las decisiones visuales más simples que expresen esa intención.",
+    "Elegir y especificar, en este orden, propósito, sujeto y acción, tamaño de plano, posición y ángulo, composición, movimiento, foco, continuidad y viabilidad; omitir lo irrelevante.",
+    "Los nombres y límites exactos de cada tamaño de plano pueden variar; describir el recorte visible cuando importe la precisión.",
+    "Cambiar el tamaño de plano solo con una intención: acercarse puede intensificar la atención o mostrar una reacción, y alejarse puede recuperar contexto.",
+    "Indicar el primer punto de atención y mantener legibles las acciones, caras, textos u objetos que deban entenderse; evitar obstrucciones, recortes torpes y puntos focales que compitan.",
+    "Especificar altura y dirección de la cámara cuando afecten lo visible o el efecto buscado; el significado emocional de un ángulo depende del contexto.",
+    "Mantener la cámara fija salvo que el movimiento tenga una función clara; si se mueve, definir tipo, trayectoria, inicio, fin, ritmo y comportamiento del encuadre.",
+    "Distinguir el desplazamiento físico de cámara de un cambio de distancia focal; usar movimientos especiales solo cuando su efecto reconocible sirva al momento.",
+    "Mantener entre tomas la identidad, vestimenta, objetos, disposición, luz, dirección de miradas, dirección en pantalla, lado de la acción y estado de las acciones, salvo transición deliberada.",
+    "Preferir una acción principal y un comportamiento principal de cámara por toma cuando la complejidad vuelva ambigua la generación.",
+    "Resolver instrucciones contradictorias y describir el comportamiento visible en vez de exigir equipo de rodaje innecesario.",
+    "El formato de redes sociales no impone tamaños de plano, frecuencia de cortes, encuadre vertical ni movimiento rápido; elegir según el propósito y las condiciones del video."
+  ]
+}

@@ -1,0 +1,212 @@
+{
+  "fuente": "music-and-visual-actions.md",
+  "categoria": "ritmo_musica",
+  "reglas": [
+    {
+      "id": "cut-on-cue",
+      "nombre": "cut on a cue",
+      "definicion": "Una toma nueva comienza en un evento musical audible.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "evento_audio": "acento o cambio musical identificable",
+          "evento_visual": "inicio de una toma nueva"
+        }
+      },
+      "cuando_usar": "Cuando el cambio de punto de vista o de información merezca coincidir con un evento musical.",
+      "cuando_no_usar": "Cuando repetir cortes en pulsos consecutivos haga más visible el patrón de edición que el contenido.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "action-on-cue",
+      "nombre": "action on a cue",
+      "definicion": "Una fase identificable del movimiento coincide con un evento musical dentro de una toma continua.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "comportamiento_toma": "continua",
+          "fase_movimiento": "especificar el instante visible que coincide con el evento musical",
+          "preparacion_y_continuacion": "conservar cuando la accion las necesite"
+        }
+      },
+      "cuando_usar": "Cuando importe experimentar el movimiento del sujeto en una toma continua más que notar un corte.",
+      "cuando_no_usar": "Cuando la accion visible no tenga una fase identificable o el metraje no permita sincronizarla con el evento musical.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "contrast-with-cue",
+      "nombre": "contrast with a cue",
+      "definicion": "La imagen se sostiene durante un acento o el corte ocurre antes de él para crear un tiempo menos esperado.",
+      "triggers": {
+        "emocion": ["anticipación", "sorpresa", "humor"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "relacion_con_evento_audio": "sostener imagen durante el acento o cortar antes"
+        }
+      },
+      "cuando_usar": "Cuando la anticipación, la sorpresa, el humor o una pausa emocional requieran evitar la coincidencia esperada entre corte y acento.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "music-variation-transition",
+      "nombre": "cambio de textura o energía",
+      "definicion": "Un cambio audible en la textura o energía musical acompaña un cambio visual.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "cambio_audio": "cambio audible de textura o energía",
+          "cambio_visual": "escena, capitulo o escala visual"
+        }
+      },
+      "cuando_usar": "Cuando exista un cambio real en la música que pueda acompañar un cambio de escena, capítulo o escala visual.",
+      "cuando_no_usar": "Cuando la sección musical solo tenga una etiqueta diferente pero no presente un cambio audible.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "brief-music-drop",
+      "nombre": "brief music drop",
+      "definicion": "La música se detiene brevemente para dejar expuesto un evento sonoro o visual.",
+      "triggers": {
+        "emocion": ["sorpresa"],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "duracion": "breve",
+          "contenido_expuesto": "dialogo, sonido ambiente, broma o evento dramatico"
+        }
+      },
+      "cuando_usar": "Cuando una pausa musical ayude a destacar diálogo, sonido del lugar, una broma o un evento dramático.",
+      "cuando_no_usar": "Cuando las pausas ya se hayan repetido tanto que pierdan su efecto de sorpresa.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "small-musical-detail",
+      "nombre": "detalle musical pequeño",
+      "definicion": "Un acento musical secundario acompaña una expresión o acción menor.",
+      "triggers": {
+        "emocion": ["humor"],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "evento_audio": "synth flourish, fill o acento inusual",
+          "evento_visual": "expresion ludica o accion menor"
+        }
+      },
+      "cuando_usar": "Cuando un detalle musical identificable pueda subrayar una expresión lúdica o una acción menor.",
+      "cuando_no_usar": "Cuando sincronizar cada sonido convierta todos los detalles musicales en efectos.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "j-cut",
+      "nombre": "J-cut",
+      "definicion": "El sonido entrante comienza antes de que aparezca su imagen asociada.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "orden": "sonido entrante antes de imagen asociada"
+        }
+      },
+      "cuando_usar": "Cuando anticipar el sonido de la siguiente imagen vuelva más intencional la transición de escena o la continuidad de voz.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "l-cut",
+      "nombre": "L-cut",
+      "definicion": "El sonido saliente continúa después de que cambia la imagen.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "orden": "imagen nueva antes del final del sonido saliente"
+        }
+      },
+      "cuando_usar": "Cuando prolongar el sonido de la toma anterior vuelva más intencional la transición de escena o la continuidad de voz.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "protect-speech-and-step-reading",
+      "nombre": "preservar voz y lectura",
+      "definicion": "La sincronización musical deja audible el habla y visible cada paso el tiempo necesario para comprenderlo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "voz": "inteligible",
+          "pasos": "tiempo suficiente para leerlos"
+        }
+      },
+      "cuando_usar": "Cuando el video explique, demuestre o muestre pasos que deban leerse mientras suena música.",
+      "cuando_no_usar": "Cuando la sincronización tape el habla esencial o reduzca el tiempo necesario para leer un paso.",
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Seleccionar primero el evento principal que debe percibir el espectador y decidir si la música debe subrayarlo, prepararlo o dejarle espacio.",
+    "La música comprende pulso, melodía, instrumentación, densidad, dinámica, pausas y cambios de sección; ninguno tiene un significado emocional garantizado fuera de la escena.",
+    "Identificar el evento de audio, el evento visual y su relación temporal: durante, antes, después o sostenido a través del evento musical.",
+    "Sincronizar una fase visible y específica de la acción, como el inicio, la culminación o el asentamiento, según lo que deba destacar.",
+    "Dejar preparación y continuación suficientes para que el movimiento se entienda y la imagen posterior permita leer el resultado cuando haga falta.",
+    "Variar la duración de las tomas y reemplazar cortes repetidos sobre pulsos consecutivos si el patrón de edición distrae del contenido.",
+    "Comprobar que la secuencia visual comunique la acción básica con la música baja o apagada, y que la mezcla final deje espacio a voz, efectos y música.",
+    "En metraje generado con IA, describir la acción observable y el evento musical concreto; verificar la sincronización en el video renderizado si la generación no puede fijar el movimiento a un tiempo exacto."
+  ]
+}

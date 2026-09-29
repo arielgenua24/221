@@ -1,0 +1,237 @@
+{
+  "fuente": "shot-framing.md",
+  "categoria": "encuadre",
+  "reglas": [
+    {
+      "id": "single",
+      "nombre": "single",
+      "definicion": "Encuadre que presenta a un solo sujeto como protagonista, aunque otros elementos puedan aparecer parcialmente.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "sujetos_destacados": "uno",
+          "variantes": "limpio o dirty single"
+        }
+      },
+      "cuando_usar": "Cuando la expresión, acción o respuesta de un solo sujeto sea el foco de la toma.",
+      "cuando_no_usar": "Cuando la interacción o acción compartida entre varios sujetos necesite verse en el mismo encuadre.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "dirty-single",
+      "nombre": "dirty single",
+      "definicion": "Single que conserva un elemento parcial o desenfocado de otra persona u objeto en primer plano.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "sujetos_destacados": "uno",
+          "primer_plano": "parcial o desenfocado"
+        }
+      },
+      "cuando_usar": "Cuando convenga mantener visible la presencia o relación con otro elemento sin convertirlo en un segundo sujeto destacado.",
+      "cuando_no_usar": "Cuando el elemento de primer plano tape al sujeto o la información esencial.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "two-shot",
+      "nombre": "two-shot",
+      "definicion": "Encuadre que presenta a dos sujetos destacados juntos.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "sujetos_destacados": "dos",
+          "relacion_espacial": "definir ubicación y separación"
+        }
+      },
+      "cuando_usar": "Cuando la interacción o el espacio entre dos sujetos deba verse sin alternar planos individuales.",
+      "cuando_no_usar": "Cuando el recorte del formato corte rostros o gestos necesarios.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "three-shot",
+      "nombre": "three-shot",
+      "definicion": "Encuadre que presenta a tres sujetos destacados juntos y permite leer sus relaciones.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "sujetos_destacados": "tres",
+          "agrupacion": "mantener legibles las relaciones individuales"
+        }
+      },
+      "cuando_usar": "Cuando la acción compartida o dinámica de tres sujetos se entienda mejor al verlos juntos.",
+      "cuando_no_usar": "Cuando el formato impida mostrar con claridad sus rostros, gestos o relaciones.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "group-shot",
+      "nombre": "group shot",
+      "definicion": "Encuadre que presenta a más de tres sujetos destacados o trata a un grupo como sujeto colectivo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "sujetos_destacados": "más de tres o un colectivo",
+          "disposicion": "especificar integrantes o arreglo importantes"
+        }
+      },
+      "cuando_usar": "Cuando importen la conducta colectiva, las posiciones relativas o la relación del grupo con el entorno.",
+      "cuando_no_usar": "Cuando el recorte impida distinguir a los integrantes o la acción relevante.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "over-the-shoulder",
+      "nombre": "over-the-shoulder (OTS)",
+      "definicion": "Encuadre que muestra al sujeto u objetivo más allá de un hombro o parte de una cabeza en primer plano.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "primer_plano": "indicar a quién pertenece el hombro o la cabeza",
+          "objetivo": "indicar qué se ve más allá del primer plano"
+        }
+      },
+      "cuando_usar": "Cuando un hombro en primer plano ayude a orientar la mirada hacia una persona, objeto, acción o espacio.",
+      "cuando_no_usar": "Cuando el primer plano obstruya al sujeto u objetivo destacado.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "over-the-hip",
+      "nombre": "over-the-hip (OTH)",
+      "definicion": "Encuadre que muestra al sujeto u objetivo más allá de una cadera o parte inferior del cuerpo en primer plano.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "primer_plano": "indicar a quién pertenece la cadera o parte inferior del cuerpo",
+          "objetivo": "indicar qué se ve más allá del primer plano"
+        }
+      },
+      "cuando_usar": "Cuando una cadera en primer plano ayude a mostrar la relación espacial entre el punto de vista y una persona, objeto o lugar.",
+      "cuando_no_usar": "Cuando el primer plano obstruya al sujeto u objetivo destacado.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "point-of-view",
+      "nombre": "point-of-view (POV)",
+      "definicion": "Encuadre que muestra lo que ve un personaje u otra fuente de punto de vista identificada.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "fuente_mirada": "identificar",
+          "contenido_visible": "especificar",
+          "manos_o_cuerpo": "incluir solo si son intencionales"
+        }
+      },
+      "cuando_usar": "Cuando sea útil conectar una acción u objeto con la percepción de un personaje o fuente definida.",
+      "cuando_no_usar": "Cuando la imagen no pueda leerse como la vista de la fuente indicada.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "insert-shot",
+      "nombre": "insert shot",
+      "definicion": "Encuadre que aísla un objeto, detalle, acción o dato específico para dirigir la atención hacia él.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "detalle": "nombrar el objeto, gesto, acción o dato exacto",
+          "continuidad": "preservar apariencia y estado del objeto"
+        }
+      },
+      "cuando_usar": "Cuando un detalle concreto aporte información relevante que el espectador deba notar.",
+      "cuando_no_usar": "Cuando el detalle no aporte información y solo agregue un plano cercano.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "encuadre-desequilibrado",
+      "nombre": "encuadre desequilibrado",
+      "definicion": "Composición que distribuye el peso visual de forma desigual para crear énfasis, tensión o espacio abierto.",
+      "triggers": {
+        "emocion": ["tensión"],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": null,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "peso_visual": "describir la distribución intencional",
+          "efecto_buscado": "especificar en el contexto de la escena"
+        }
+      },
+      "cuando_usar": "Cuando una distribución desigual de los elementos apoye un énfasis, tensión o espacio abierto buscados.",
+      "cuando_no_usar": "Cuando la asimetría o el espacio abierto oculten información esencial o no respondan al propósito de la toma.",
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Elegir el encuadre según el propósito del video, la acción, los sujetos relevantes y la experiencia buscada, sin aplicar una secuencia fija de planos.",
+    "Contar como sujetos destacados solo los protagonistas del encuadre; las personas parciales o de fondo se describen por separado.",
+    "La interpretación emocional de un encuadre depende del contexto, la actuación, la acción, la distancia de cámara, el foco, el movimiento y la edición.",
+    "Cuando una etiqueta de encuadre sea ambigua para generar video con IA, describir sujetos destacados, primer plano, objetivo, ubicación, distancias, miradas y gestos visibles.",
+    "Mantener visibles y legibles los rostros, manos, objetos, acciones y textos esenciales según relación de aspecto, recorte, tamaño de pantalla, subtítulos y gráficos.",
+    "Mantener coherentes identidad, dirección en pantalla, miradas, posiciones y estado de los objetos entre tomas contiguas de la misma escena.",
+    "Evitar personas adicionales, partes del cuerpo duplicadas, obstrucciones y objetivos visuales ambiguos que no sean intencionales.",
+    "Un encuadre parcial, asimétrico u obstruido es válido si es deliberado y conserva legible la información relevante."
+  ]
+}

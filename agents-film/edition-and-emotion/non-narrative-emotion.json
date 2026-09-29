@@ -1,0 +1,231 @@
+{
+  "fuente": "non-narrative-emotion.md",
+  "categoria": "corte_edicion",
+  "reglas": [
+    {
+      "id": "reconocimiento-concreto",
+      "nombre": "Reconocimiento concreto",
+      "definicion": "Un detalle, pregunta o situación observable establece por qué el espectador debería interesarse.",
+      "triggers": {
+        "emocion": ["curiosidad", "identificación"],
+        "momento_video": ["gancho"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "evidencia": "detalle, pregunta o situación visible"
+        }
+      },
+      "cuando_usar": "Cuando la apertura necesite dar una razón concreta para atender al problema o la promesa del video.",
+      "cuando_no_usar": "Cuando el detalle inicial no tenga relación comprobable con el desarrollo y el resultado.",
+      "combina_bien_con": ["desarrollo-observable", "payoff-visible"]
+    },
+    {
+      "id": "desarrollo-observable",
+      "nombre": "Desarrollo observable",
+      "definicion": "Acciones, contrastes o testimonios muestran el proceso o profundizan el problema.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "material": "acciones, contrastes o testimonio verificables"
+        }
+      },
+      "cuando_usar": "Cuando el espectador deba comprender cómo cambia una situación antes de ver el resultado.",
+      "cuando_no_usar": "Cuando las tomas solo agreguen relleno atractivo sin aportar información sobre el proceso.",
+      "combina_bien_con": ["reconocimiento-concreto", "payoff-visible"]
+    },
+    {
+      "id": "payoff-visible",
+      "nombre": "Payoff visible",
+      "definicion": "Una consecuencia, respuesta o reacción observable completa la idea planteada al comienzo.",
+      "triggers": {
+        "emocion": ["alivio", "confianza", "comprensión"],
+        "momento_video": ["cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "resultado": "debe ser observable",
+          "tiempo_lectura": "suficiente para reconocer la consecuencia y la reacción"
+        }
+      },
+      "cuando_usar": "Cuando el cierre pueda mostrar una respuesta a lo que el inicio pidió al espectador que observara.",
+      "cuando_no_usar": "Cuando la imagen no sostenga el resultado que el montaje o el texto afirma.",
+      "combina_bien_con": ["reconocimiento-concreto", "desarrollo-observable"]
+    },
+    {
+      "id": "priorizar-accion-especifica",
+      "nombre": "Priorizar acción específica",
+      "definicion": "Seleccionar tomas con acciones y detalles observables que expresen la idea o emoción buscada.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["gancho", "desarrollo", "detalle_producto", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "criterio_seleccion": "acción o detalle relevante y observable"
+        }
+      },
+      "cuando_usar": "Cuando haya que elegir entre material que muestra algo significativo y tomas genéricas o decorativas.",
+      "cuando_no_usar": "Cuando la acción seleccionada no corresponda al mensaje que se le atribuye.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "preservar-testimonio",
+      "nombre": "Preservar testimonio",
+      "definicion": "Mantener el sentido y el tiempo de las palabras y reacciones del hablante.",
+      "triggers": {
+        "emocion": ["confianza", "identificación"],
+        "momento_video": ["desarrollo", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "integridad": "conservar el sentido y la secuencia real de palabras y reacciones"
+        }
+      },
+      "cuando_usar": "Cuando el video incluya un testimonio o una reacción real.",
+      "cuando_no_usar": "Cuando el reordenamiento implique una recomendación, un resultado o una causalidad que no ocurrió.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "comparar-acciones-equivalentes",
+      "nombre": "Comparar acciones equivalentes",
+      "definicion": "Mostrar el problema y la solución sobre la misma acción desde puntos de vista comparables.",
+      "triggers": {
+        "emocion": ["comprensión", "confianza"],
+        "momento_video": ["desarrollo", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "accion": "misma acción antes y después",
+          "punto_de_vista": "comparable",
+          "paso_clave": "visible"
+        }
+      },
+      "cuando_usar": "Cuando una demostración rápida prometa resolver una dificultad mostrada al inicio.",
+      "cuando_no_usar": "Cuando los intentos no sean comparables o el paso que produce el cambio quede oculto.",
+      "combina_bien_con": ["payoff-visible"]
+    },
+    {
+      "id": "cortar-al-completar-idea",
+      "nombre": "Cortar al completar la idea",
+      "definicion": "Acortar una toma después de que su información ya sea clara.",
+      "triggers": {
+        "emocion": ["energía"],
+        "momento_video": ["gancho", "desarrollo", "detalle_producto", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "criterio_de_corte": "información principal ya reconocible"
+        }
+      },
+      "cuando_usar": "Cuando el espectador ya pueda identificar el punto principal de la toma.",
+      "cuando_no_usar": "Cuando el corte borre un paso del producto, la preparación de un chiste o una reacción emocional.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "sostener-toma-necesaria",
+      "nombre": "Sostener toma necesaria",
+      "definicion": "Mantener la toma hasta que se pueda reconocer, comparar o sentir su consecuencia.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": ["desarrollo", "detalle_producto", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "criterio_de_salida": "acción, comparación o reacción legible"
+        }
+      },
+      "cuando_usar": "Cuando el espectador necesite tiempo para leer una acción, comparar estados o percibir una reacción.",
+      "cuando_no_usar": "Cuando el punto de la toma ya esté claro y la duración adicional no aporte información o emoción.",
+      "combina_bien_con": ["payoff-visible"]
+    },
+    {
+      "id": "dar-tiempo-a-texto",
+      "nombre": "Dar tiempo al texto",
+      "definicion": "Ajustar la duración del plano al tiempo necesario para leer captions y etiquetas.",
+      "triggers": {
+        "emocion": ["comprensión"],
+        "momento_video": ["gancho", "desarrollo", "detalle_producto", "cierre"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "posición_texto": "predecible y legible",
+          "duracion": "según tiempo real de lectura"
+        }
+      },
+      "cuando_usar": "Cuando un caption o etiqueta sea necesario para entender la toma.",
+      "cuando_no_usar": "Cuando la velocidad del montaje impida leer el texto.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "preservar-continuidad-relevante",
+      "nombre": "Preservar continuidad relevante",
+      "definicion": "Conservar entre cortes las relaciones espaciales y de acción necesarias para entender lo mostrado.",
+      "triggers": {
+        "emocion": ["comprensión"],
+        "momento_video": ["desarrollo", "detalle_producto"],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "detalles_a_conservar": "uso del objeto, dirección de mirada y cambio entre antes y después cuando importen"
+        }
+      },
+      "cuando_usar": "Cuando el espectador deba entender cómo se usa un objeto, hacia dónde mira alguien o qué cambió.",
+      "cuando_no_usar": null,
+      "combina_bien_con": ["comparar-acciones-equivalentes"]
+    }
+  ],
+  "principios_generales": [
+    "Definir el cambio buscado entre el estado inicial y final del espectador y vincularlo con evidencia observable.",
+    "El ritmo, la música y el texto pueden pesar más que la continuidad espacial en un montaje no narrativo, pero la continuidad sigue siendo esencial cuando explica la acción o una comparación.",
+    "No atribuir a las imágenes resultados que el material no puede sostener; revisar el concepto o generar nueva evidencia si falta mostrar el resultado.",
+    "La música debe acompañar el tono y los puntos de inflexión; probar primero si la secuencia visual comunica su idea sin música.",
+    "Considerar voz, sonido ambiente, respiración, efectos puntuales y silencio antes de añadir una pista musical; un sound bridge puede conectar tomas y una caída repentina del sonido puede concentrar la atención.",
+    "Probar la comprensión con el sonido apagado y captions visibles cuando sea probable que el público vea el video sin audio.",
+    "No imponer una misma velocidad de edición a todos los videos sociales; ajustar ritmo y legibilidad al formato, al contenido y al contexto de visualización.",
+    "En video generado con IA, pedir acciones con inicio y fin claros, detalles consistentes del sujeto y los objetos, y tomas separadas de reacción o inserto cuando ocurra el cambio emocional.",
+    "La cantidad de tomas debe responder a lo que el espectador necesita notar, no a una cifra fija."
+  ]
+}

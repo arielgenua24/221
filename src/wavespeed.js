@@ -29,6 +29,15 @@ export const VIDEO_MODELS = {
 };
 export const DEFAULT_VIDEO_MODEL = VIDEO_MODELS[process.env.VIDEO_MODEL] ? process.env.VIDEO_MODEL : 'seedance';
 
+// Edición de video (video→video) para "Cinematic Pro": re-genera el clip real manteniendo movimiento,
+// composición e identidad, y reescribe luz, atmósfera o estilo según el prompt. Sale con la duración del clip
+// (los clips de menos de 4 s los rellena el modelo: se usa el principio).
+export const EDIT_MODEL = {
+  label: 'Seedance 2.5 Video Edit',
+  path: () => process.env.CINE_EDIT_MODEL || 'bytedance/seedance-2.5/video-edit',
+  body: ({ prompt, video, resolution }) => ({ prompt, video, resolution, generate_audio: false }),
+};
+
 // Duración que se le pide al modelo: entera, dentro de su rango, y nunca más corta que el clip.
 export function videoSeconds(model, clipSeconds) {
   const m = VIDEO_MODELS[model] || VIDEO_MODELS[DEFAULT_VIDEO_MODEL];
@@ -83,7 +92,7 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
     if (/^https?:\/\//.test(dataUrl)) return dataUrl;
     const { blob, ext } = dataUrlToBlob(dataUrl);
     const form = new FormData();
-    form.append('file', blob, `cuadro.${ext}`);
+    form.append('file', blob, `${blob.type.startsWith('video/') ? 'clip' : 'cuadro'}.${ext}`);
     const res = await fetchImpl(`${base()}/api/v3/media/upload/binary`, { method: 'POST', headers: auth, body: form, signal });
     if (!res.ok) throw new Error(`WaveSpeed no aceptó la imagen (${res.status}): ${await errorDetail(res)}`);
     const url = (await res.json())?.data?.download_url;
