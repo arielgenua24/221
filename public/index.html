@@ -49,6 +49,7 @@
               <button id="raw-close" type="button" class="raw-round" title="Salir de la carpeta" aria-label="Salir de la carpeta">
                 <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></svg>
               </button>
+              <select id="raw-image-generator" class="image-generator" aria-label="Generador de imágenes en RAW"><option value="gpt-image">GPT Image 2.5</option><option value="seedream">Seedream 5 Pro</option></select>
               <label class="raw-style">
                 <span class="sr-only">Estilo</span>
                 <select id="raw-style">
@@ -96,6 +97,7 @@
               <span id="raw-phase" class="raw-phase">Listo</span>
               <span id="raw-caption" class="raw-caption"></span>
             </div>
+            <select class="voice-mode" data-voice-mode aria-label="Arquitectura de voz en RAW"><option value="gemini">gemini</option><option value="gpt-audio">gpt audio</option></select>
           </div>
           <p id="raw-error" class="error" hidden></p>
           <div id="raw-choice" class="raw-choice" hidden></div>
@@ -143,14 +145,14 @@
 
           <p id="story-source" class="muted small"></p>
           <form id="story-form" class="raw-card story-compose" aria-label="Conversación con el Guionista">
-            <div class="raw-card-top"><span class="story-mode">Historia · Guionista</span><span class="muted small">Guion + video</span></div>
+            <div class="raw-card-top"><span class="story-mode">Historia · Guionista</span><select id="story-image-generator" class="image-generator" aria-label="Generador de imágenes en Historia"><option value="gpt-image">GPT Image 2.5</option><option value="seedream">Seedream 5 Pro</option></select></div>
             <div class="raw-prompt"><textarea id="story-text" rows="2" placeholder="¿Qué historia querés contar?" aria-label="Mensaje al Guionista"></textarea></div>
             <div class="raw-card-bottom">
               <span class="story-add-pair"><label class="raw-icon story-add" title="Agregar referencias o videos"><input type="file" id="story-file" accept="image/*,video/*" multiple hidden><span aria-hidden="true">▣</span><span class="sr-only">Agregar referencias o videos</span></label><label class="raw-icon story-add" title="Agregar personas"><input type="file" id="story-person-file" accept="image/*" multiple hidden><span aria-hidden="true">♙</span><span class="sr-only">Agregar personas</span></label></span>
               <span class="story-compose-actions"><button id="story-mic" type="button" class="raw-round raw-mic" aria-pressed="false" title="Hablar" aria-label="Hablar"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg></button><button id="story-send" class="raw-round raw-send" type="submit" title="Enviar" aria-label="Enviar"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg></button></span>
             </div>
           </form>
-          <div class="raw-voice" aria-live="polite"><span id="story-orb" class="raw-orb" data-phase="idle"></span><div class="raw-voice-text"><span id="story-phase" class="raw-phase">Listo</span><span id="story-caption" class="raw-caption"></span></div></div>
+          <div class="raw-voice" aria-live="polite"><span id="story-orb" class="raw-orb" data-phase="idle"></span><div class="raw-voice-text"><span id="story-phase" class="raw-phase">Listo</span><span id="story-caption" class="raw-caption"></span></div><select class="voice-mode" data-voice-mode aria-label="Arquitectura de voz en Historia"><option value="gemini">gemini</option><option value="gpt-audio">gpt audio</option></select></div>
           <div id="story-live" class="story-live" hidden></div>
           <p id="story-error" class="error" hidden></p>
           <section class="story-conversation" aria-label="Conversación"><h2 class="raw-section">Conversación</h2><div id="story-chat" class="story-chat" aria-live="polite"></div></section>

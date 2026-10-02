@@ -3,6 +3,7 @@ import { STORY_SYSTEM, DP_SYSTEM, storyTurnPrompt, frameFixPrompt, frameImagePro
 import { finalVideoPrompt } from './intuition-prompts.js';
 import { VIDEO_MODELS } from './wavespeed.js';
 import { SHOT_SECONDS, MAX_SHOTS, emptyJob } from './story-store.js';
+import { parseImageGenerator, imageRequest } from './image-models.js';
 
 // Historia: el humano conversa con el Guionista (turnos con streaming); todo lo que tarda (dibujar cuadros,
 // dirigir y generar cada toma) corre en segundo plano, una tarea por toma, en paralelo. El estado vive en el
@@ -99,7 +100,7 @@ async function assetParts(store, assets, codes) {
 }
 
 // ---------- Un turno de conversación con el Guionista ----------
-export async function runStoryTurn({ store, jobs, input, config, emit, llm, signal }) {
+export async function runStoryTurn({ store, jobs, input, config, emit, llm, signal, remember = true }) {
   const project = await store.get(input.projectId);
   const log = { startedAt: new Date().toISOString(), projectId: project.id, input: { text: input.text, answers: input.answers }, steps: {} };
   const { agent, totals } = createAgentRunner({ emit, llm, signal, log });
@@ -131,7 +132,7 @@ export async function runStoryTurn({ store, jobs, input, config, emit, llm, sign
     }
     p.ready = !!data.listo_para_storyboard && p.shots.length > 0;
     p.cost = (p.cost || 0) + totals.cost;
-    p.chat.push(
+    if (remember) p.chat.push(
       { role: 'user', text: userText, at: log.startedAt },
       { role: 'assistant', text: decir, preguntas, at: new Date().toISOString() },
     );
@@ -206,7 +207,7 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
 
   // Dibuja el primer cuadro de una toma. `anchor`: un cuadro ya dibujado que sirve de referencia de
   // continuidad cuando el humano no subió material (mismos personajes y mundo en todas las tomas).
-  async function drawFrame(pid, sid, { signal, note, anchor }) {
+  async function drawFrame(pid, sid, { signal, note, anchor, imageGenerator }) {
     const project = await store.get(pid);
     const shot = project.shots.find((s) => s.id === sid);
     if (!shot) return;
@@ -220,17 +221,16 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
     }
     note(files.length ? `Dibujando con ${files.length} referencia${files.length > 1 ? 's' : ''}…` : 'Dibujando…');
     const images = await Promise.all(files.map((f) => upload(f, signal)));
-    const model = images.length ? config.frameEditModel : config.frameModel;
+    const request = imageRequest({ generator: imageGenerator, model: images.length ? config.frameEditModel : config.frameModel, prompt, images, aspect: project.aspect, quality: config.frameQuality });
     const out = await ws.image({
-      model, signal,
-      body: { prompt, ...(images.length ? { images } : {}), aspect_ratio: project.aspect, quality: config.frameQuality, output_format: 'jpeg' },
-      onStatus: ({ status, elapsed }) => note(`${model} · ${status} · ${Math.round(elapsed)} s`),
+      ...request, signal,
+      onStatus: ({ status, elapsed }) => note(`${request.model} · ${status} · ${Math.round(elapsed)} s`),
     });
     // En demo el "cuadro" es una copia de la referencia (o una tarjeta con el título si no hay).
     const file = ws.mock && !/\.(jpe?g|png|webp)$/i.test(out.file || '') ? await placeholder(project, shot) : out.file;
     if (!file) throw new Error('El modelo de imagen no devolvió el cuadro.');
     await setShot(pid, sid, (s) => {
-      s.frame = { status: 'done', file, prompt, model, round: (s.frame?.round || 0) + 1, error: null };
+      s.frame = { status: 'done', file, prompt, model: request.model, round: (s.frame?.round || 0) + 1, error: null };
       s.storyboard = { ...emptyJob(), status: 'queued' };
       s.approved = false;
       s.video = emptyJob();
@@ -246,12 +246,12 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
         const image = await upload(file, signal);
         const beats = (shot.vinetas || []).map((v, i) => `${i + 1}. ${v}`).join('\n');
         const sheetPrompt = `Create ONE cinematic storyboard contact sheet with EXACTLY six distinct panels arranged in TWO ROWS and THREE COLUMNS, read left to right, top to bottom. The reference image is the exact opening composition and character identity. Show the action evolving across the next five seconds in one continuous shot, no scene cuts. Moments:\n${beats}\nPreserve face, clothing, setting, camera direction and lighting. Crisp panel borders, no letters, no captions, no logos. Each panel has the same aspect ratio as the opening frame. Style: ${project.story?.estilo_visual?.look || 'cinematic film still'}.`;
-        const sheet = await ws.image({ model: config.frameEditModel, signal,
-          body: { prompt: sheetPrompt, images: [image], aspect_ratio: '16:9', quality: config.frameQuality, output_format: 'jpeg' },
+        const sheetRequest = imageRequest({ generator: imageGenerator, model: config.frameEditModel, prompt: sheetPrompt, images: [image], aspect: '16:9', quality: config.frameQuality });
+        const sheet = await ws.image({ ...sheetRequest, signal,
           onStatus: ({ status, elapsed }) => note(`Storyboard · ${status} · ${Math.round(elapsed)} s`),
         });
         if (!sheet.file) throw new Error('El modelo no devolvió la plancha.');
-        await setShot(pid, sid, (s) => { s.storyboard = { status: 'done', file: sheet.file, error: null }; });
+        await setShot(pid, sid, (s) => { s.storyboard = { status: 'done', file: sheet.file, model: sheetRequest.model, error: null }; });
       } catch (err) {
         if (signal.aborted) throw err;
         await setShot(pid, sid, (s) => { s.storyboard = { status: 'error', file: null, error: err.message.slice(0, 400) }; });
@@ -285,6 +285,7 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
     // Storyboard: dibuja los cuadros de las tomas pedidas (o de todas las que no tienen), en paralelo.
     async frames(pid, sids) {
       const p = await store.get(pid);
+      const imageGenerator = parseImageGenerator(p.imageGenerator);
       if (!p.shots.length) throw new Error('Todavía no hay tomas: conversá primero con el Guionista.');
       const targets = (sids?.length ? p.shots.filter((s) => sids.includes(s.id)) : p.shots.filter((s) => s.frame?.status !== 'done'))
         .filter((s) => !running.has(key(pid, s.id, 'frame')));
@@ -295,12 +296,12 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
       if (noRefs && !existing && targets.length > 1) {
         const [first, ...rest] = targets;
         start(pid, first.id, 'frame', async (ctx) => {
-          await drawFrame(pid, first.id, ctx);
+          await drawFrame(pid, first.id, { ...ctx, imageGenerator });
           const anchor = (await store.get(pid)).shots.find((s) => s.id === first.id)?.frame?.file;
-          rest.forEach((s) => start(pid, s.id, 'frame', (c) => drawFrame(pid, s.id, { ...c, anchor })));
+          rest.forEach((s) => start(pid, s.id, 'frame', (c) => drawFrame(pid, s.id, { ...c, anchor, imageGenerator })));
         });
       } else {
-        targets.forEach((s) => start(pid, s.id, 'frame', (ctx) => drawFrame(pid, s.id, { ...ctx, anchor: noRefs ? existing : null })));
+        targets.forEach((s) => start(pid, s.id, 'frame', (ctx) => drawFrame(pid, s.id, { ...ctx, anchor: noRefs ? existing : null, imageGenerator })));
       }
       return { started: targets.map((s) => s.id) };
     },
@@ -308,6 +309,7 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
     // El humano pide cambios sobre un cuadro: el Guionista lo mira y corrige la toma (o se usa su prompt editado a mano).
     async reviseFrame(pid, sid, { feedback, prompt }) {
       const p = await store.get(pid);
+      const imageGenerator = parseImageGenerator(p.imageGenerator);
       const shot = p.shots.find((s) => s.id === sid);
       if (!shot) throw new Error('Esa toma no existe.');
       if (!feedback && !prompt) throw new Error('Contá qué querés cambiar.');
@@ -334,7 +336,7 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
           await setShot(pid, sid, (s) => { Object.assign(s, fixed, { id: sid }); s.lastChange = str(data.cambios, 300); });
         }
         const anchor = (await store.get(pid)).shots.find((s) => s.id !== sid && s.frame?.status === 'done')?.frame.file;
-        await drawFrame(pid, sid, { ...ctx, anchor: p.assets.length ? null : anchor });
+        await drawFrame(pid, sid, { ...ctx, anchor: p.assets.length ? null : anchor, imageGenerator });
       });
       return { started: [sid] };
     },

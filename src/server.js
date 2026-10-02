@@ -11,11 +11,15 @@ import { mockLLM } from './mock.js';
 import { createWaveSpeed, createMockWaveSpeed, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, EDIT_MODEL } from './wavespeed.js';
 import { FILM_GUIDES, FILM_RULES } from './film-knowledge.js';
 import { createRawStore, KINDS } from './raw-store.js';
-import { runRawTurn, parseRawTurnBody } from './raw-agent.js';
+import { runRawTurn, runRawGeneration, parseRawTurnBody } from './raw-agent.js';
+import { createRawApprovals, hasRawFeedback } from './raw-approvals.js';
 import { createSpeaker } from './raw-voice.js';
 import { GREETING } from './raw-prompts.js';
 import { createStoryStore, ASPECTS as STORY_ASPECTS, SHOT_SECONDS, MAX_SHOTS, MAX_ASSETS as STORY_MAX_ASSETS } from './story-store.js';
 import { createStoryJobs, runStoryTurn, parseStoryTurnBody } from './story-pipeline.js';
+import { streamAudioChat } from './gpt-audio.js';
+import { createVoiceSessions, parseVoiceBody } from './voice-session.js';
+import { IMAGE_GENERATORS, parseImageGenerator } from './image-models.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -213,6 +217,14 @@ function sendJson(res, status, data) {
 
 // Operaciones cortas de Raw (carpetas e imágenes): JSON de ida y vuelta.
 const RAW_ACTIONS = {
+  '/api/raw/proposals/seen': async (b) => {
+    await rawStore.lineage(String(b.folderId));
+    return rawApprovals.seen(String(b.folderId), String(b.proposalId), String(b.viewerId));
+  },
+  '/api/raw/proposals/decide': async (b) => {
+    await rawStore.lineage(String(b.folderId));
+    return rawApprovals.decide({ folderId: String(b.folderId), proposalId: String(b.proposalId), viewerId: String(b.viewerId), action: b.action, feedback: String(b.feedback || '').slice(0, 2000), voiceMode: b.voiceMode });
+  },
   '/api/raw/folders': async (b) => ({ folder: await rawStore.createFolder({ name: b.name, parentId: b.parentId }) }),
   '/api/raw/folders/rename': async (b) => ({ folder: await rawStore.renameFolder(String(b.id), b.name) }),
   '/api/raw/folders/delete': async (b) => rawStore.deleteFolder(String(b.id)),
@@ -239,6 +251,7 @@ async function handleRawGet(res, url) {
   try {
     if (url.pathname === '/api/raw/folders') return sendJson(res, 200, { folders: await rawStore.tree() });
     const id = url.searchParams.get('id') || '';
+    if (url.pathname === '/api/raw/proposals') { await rawStore.lineage(id); return sendJson(res, 200, await rawApprovals.list(id)); }
     const [lineage, assets, history, tree] = await Promise.all([rawStore.lineage(id), rawStore.assetsFor(id), rawStore.history(id), rawStore.tree()]);
     return sendJson(res, 200, { lineage, assets, history: history.filter((h) => !h.note), children: tree.filter((f) => f.parentId === id) });
   } catch (err) {
@@ -255,13 +268,109 @@ async function handleRawTurn(req, res) {
     return badRequest(res, err.message);
   }
   const { ttsStyle, ...runConfig } = rawConfig;
-  return streamFlow(res, { prefix: 'raw-', runConfig, run: (ctx) => runRawTurn({ store: rawStore, input, config: rawConfig, ws: rawWs, speak, ...ctx }) });
+  return streamFlow(res, { prefix: 'raw-', runConfig, run: (ctx) => runRawConversation(input, { speak, ...ctx }) });
+}
+
+const rawApprovals = createRawApprovals({
+  dir: path.join(RUNS, 'raw-approvals'),
+  generate: (plan, emit) => runRawGeneration({ store: rawStore, plan, ws: rawWs, emit, signal: new AbortController().signal }),
+  revise: async (plan, feedback) => {
+    if (plan.voiceMode !== 'gpt') await rawStore.appendHistory(plan.folderId, [{ role: 'user', text: feedback }]);
+    const events = [];
+    const log = await runRawConversation(parseRawTurnBody({ folderId: plan.folderId, text: feedback, style: plan.style, aspect: plan.aspect, imageGenerator: plan.imageGenerator }), {
+      llm, emit: (e) => events.push(e), signal: new AbortController().signal, remember: false, proposal: { ...plan, codes: plan.inputs.map((a) => a.code) },
+    });
+    // GPT announces the revised plan (or the clarification needed), without
+    // running another project task or treating this result as human approval.
+    if (plan.voiceMode === 'gpt') await voiceSessions.publish({ kind: 'raw', id: plan.folderId }, JSON.stringify({ reply: log.reply, proposal: log.proposal, awaitingApproval: true }));
+    return log;
+  },
+  completed: async (plan, asset) => {
+    if (plan.voiceMode === 'gpt') await voiceSessions.publish({ kind: 'raw', id: plan.folderId }, JSON.stringify(asset ? { generated: asset.code, summary: plan.summary } : { error: plan.error }));
+  },
+});
+
+async function runRawConversation(input, options) {
+  const proposal = options.proposal || await rawApprovals.pending(input.folderId);
+  // Invalidate the old plan as soon as feedback arrives, before the visual
+  // model finishes thinking; a concurrent button cannot approve stale work.
+  if (proposal?.status === 'pending' && hasRawFeedback(input.text)) await rawApprovals.beginRevision(input.folderId, proposal.id);
+  return runRawTurn({ store: rawStore, input, config: rawConfig, ...options, proposal,
+    propose: (plan) => rawApprovals.propose(plan, proposal?.id),
+    decide: (action) => rawApprovals.decide({ folderId: input.folderId, proposalId: input.proposalId, viewerId: input.viewerId, action, source: 'voice', text: input.text, voiceMode: options.remember === false ? 'gpt' : 'gemini' }),
+  });
 }
 
 // ---------- Historia ----------
 const storyJobs = storyWs ? createStoryJobs({ store: storyStore, ws: storyWs, llm, config: storyConfig }) : null;
 const needWs = () => { if (!storyJobs) throw new Error('Los cuadros y los videos necesitan WAVESPEED_API_KEY en el .env del servidor.'); return storyJobs; };
 const view = (id) => (storyJobs ? storyJobs.view(id) : storyStore.get(id));
+const gptAudioConfig = { model: process.env.GPT_AUDIO_MODEL || 'openai/gpt-audio-mini', voice: process.env.GPT_AUDIO_VOICE || 'alloy', available: !!apiKey && !mock };
+const voiceSessions = createVoiceSessions({
+  dir: path.join(RUNS, 'voice'),
+  chat: (opts) => {
+    if (!gptAudioConfig.available) throw new Error('GPT Audio necesita OPENROUTER_API_KEY y el modo demo desactivado.');
+    return streamAudioChat({ apiKey, ...gptAudioConfig, ...opts });
+  },
+  context: async ({ kind, id }) => {
+    if (kind === 'raw') {
+      const [lineage, assets, history] = await Promise.all([rawStore.lineage(id), rawStore.assetsFor(id), rawStore.history(id)]);
+      return { info: { kind, name: lineage.map((f) => f.name).join(' / '), proposal: await rawApprovals.pending(id), shown: [...history].reverse().find((h) => h.shown)?.shown || null, assets: assets.map(({ code, name, kind, description }) => ({ code, name, kind, description })) }, history };
+    }
+    const p = await storyStore.get(id);
+    return { info: { kind, name: p.title, aspect: p.aspect, story: p.story, shots: p.shots.map(({ id, titulo, accion, frame, video }) => ({ id, titulo, accion, frame: frame?.status, video: video?.status })), assets: p.assets.map(({ code, rawCode, name, note }) => ({ code, rawCode, name, note })) }, history: p.chat };
+  },
+  remember: async ({ kind, id }, entry) => {
+    if (kind === 'raw') return rawStore.appendHistory(id, [entry]);
+    return storyStore.mutate(id, (p) => { p.chat.push({ ...entry, at: new Date().toISOString() }); p.chat = p.chat.slice(-60); });
+  },
+  work: async (input, emit, signal) => {
+    if (input.kind === 'raw') {
+      const log = await runRawConversation(parseRawTurnBody({ ...input, folderId: input.id }), { llm, signal, emit, remember: false });
+      const failed = log.generation?.error;
+      return JSON.stringify({ reply: log.reply, proposal: log.proposal, awaitingApproval: !!log.proposal, generation: log.generation, error: failed });
+    }
+    const p = await storyStore.get(input.id);
+    if (p.rawFolderId) {
+      const assets = await rawStore.assetsFor(p.rawFolderId, { inherit: false });
+      const names = new Map(assets.map((a) => [a.code, a.name]));
+      await storyStore.mutate(p.id, (d) => { d.assets = d.assets.filter((a) => !a.rawCode || names.has(a.rawCode)); d.assets.forEach((a) => { if (a.rawCode) a.name = names.get(a.rawCode) || null; }); });
+    }
+    let reply;
+    await runStoryTurn({ store: storyStore, jobs: storyJobs || { cancel() {}, view: (id) => storyStore.get(id) }, input: parseStoryTurnBody({ projectId: input.id, text: input.text }), config: storyConfig, llm, signal, remember: false,
+      emit: (ev) => { if (ev.type === 'story_reply') reply = ev; emit(ev); },
+    });
+    return JSON.stringify(reply);
+  },
+  decide: (input, decision) => rawApprovals.decide({ folderId: input.id, proposalId: input.proposalId, viewerId: input.viewerId, source: 'voice', voiceMode: 'gpt', ...decision }),
+});
+
+async function handleVoice(req, res, url) {
+  try {
+    if (req.method === 'GET' && url.pathname === '/api/voice/jobs') {
+      const input = parseVoiceBody({ kind: url.searchParams.get('kind'), id: url.searchParams.get('id'), greeting: true });
+      return sendJson(res, 200, { jobs: await voiceSessions.jobs(input) });
+    }
+    const body = await readBody(req, 3 * 1024 * 1024);
+    if (url.pathname === '/api/voice/played') {
+      const input = parseVoiceBody({ kind: body.kind, id: body.id, greeting: true });
+      await voiceSessions.played(input, String(body.turnId || ''), body.played);
+      return sendJson(res, 200, { ok: true });
+    }
+    const input = parseVoiceBody(body);
+    if (!gptAudioConfig.available) throw new Error('GPT Audio necesita OPENROUTER_API_KEY y el modo demo desactivado.');
+    // Validate the real project before opening the stream or creating session files.
+    if (input.kind === 'raw') await rawStore.lineage(input.id); else await storyStore.get(input.id);
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
+    const controller = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) controller.abort(); });
+    const emit = (event) => { if (!res.destroyed && !res.writableEnded) res.write(JSON.stringify(event) + '\n'); };
+    const ping = setInterval(() => emit({ type: 'ping' }), 15000);
+    try { await voiceSessions.turn(input, emit, controller.signal); }
+    catch (err) { if (!controller.signal.aborted) emit({ type: 'error', text: err.message }); }
+    finally { clearInterval(ping); res.end(); }
+  } catch (err) { return badRequest(res, err.message); }
+}
 async function folderAsset(projectId, rawCode) {
   const p = await storyStore.get(projectId);
   if (!p.rawFolderId) throw new Error('Esta historia no está vinculada a una carpeta Raw.');
@@ -274,7 +383,7 @@ const STORY_ACTIONS = {
   '/api/story/projects': async (b) => {
     const rawFolderId = String(b.rawFolderId || '');
     if (rawFolderId) await rawStore.lineage(rawFolderId);
-    const project = await storyStore.create({ title: b.title, aspect: b.aspect, rawFolderId: rawFolderId || null });
+    const project = await storyStore.create({ title: b.title, aspect: b.aspect, rawFolderId: rawFolderId || null, imageGenerator: b.imageGenerator });
     if (rawFolderId) {
       const assets = await rawStore.assetsFor(rawFolderId, { inherit: false });
       for (const asset of assets.filter((a) => a.kind === 'persona' || a.kind === 'referencia').slice(0, STORY_MAX_ASSETS)) {
@@ -303,8 +412,14 @@ const STORY_ACTIONS = {
     return { asset: await storyStore.renameAsset(id, code, b.name) };
   },
   '/api/story/assets/delete': async (b) => storyStore.deleteAsset(String(b.projectId), String(b.code)),
-  '/api/story/frames': async (b) => needWs().frames(String(b.projectId), Array.isArray(b.shotIds) ? b.shotIds.map(String) : null),
-  '/api/story/shots/revise': async (b) => needWs().reviseFrame(String(b.projectId), String(b.shotId), { feedback: String(b.feedback || '').slice(0, 1500).trim(), prompt: String(b.prompt || '').slice(0, 2000).trim() }),
+  '/api/story/frames': async (b) => {
+    if (b.imageGenerator !== undefined) await storyStore.update(String(b.projectId), { imageGenerator: parseImageGenerator(b.imageGenerator) });
+    return needWs().frames(String(b.projectId), Array.isArray(b.shotIds) ? b.shotIds.map(String) : null);
+  },
+  '/api/story/shots/revise': async (b) => {
+    if (b.imageGenerator !== undefined) await storyStore.update(String(b.projectId), { imageGenerator: parseImageGenerator(b.imageGenerator) });
+    return needWs().reviseFrame(String(b.projectId), String(b.shotId), { feedback: String(b.feedback || '').slice(0, 1500).trim(), prompt: String(b.prompt || '').slice(0, 2000).trim() });
+  },
   '/api/story/shots/approve': async (b) => needWs().approve(String(b.projectId), String(b.shotId), { feedback: b.feedback }),
   '/api/story/shots/cancel': async (b) => { storyJobs?.cancel(String(b.projectId), String(b.shotId)); return { ok: true }; },
   '/api/story/music': async (b) => { await storyStore.setMusic(String(b.projectId), { dataUrl: b.dataUrl, name: b.name }); return { project: await view(String(b.projectId)) }; },
@@ -342,12 +457,13 @@ async function handleStoryGet(res, url) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  if ((req.method === 'POST' && ['/api/voice/turn', '/api/voice/played'].includes(url.pathname)) || (req.method === 'GET' && url.pathname === '/api/voice/jobs')) return handleVoice(req, res, url);
   if (req.method === 'POST' && url.pathname === '/api/story/turn') return handleStoryTurn(req, res);
   if (req.method === 'POST' && STORY_ACTIONS[url.pathname]) return handleRawAction(req, res, STORY_ACTIONS[url.pathname]);
   if (req.method === 'GET' && (url.pathname === '/api/story/projects' || url.pathname === '/api/story/project')) return handleStoryGet(res, url);
   if (req.method === 'POST' && url.pathname === '/api/raw/turn') return handleRawTurn(req, res);
   if (req.method === 'POST' && RAW_ACTIONS[url.pathname]) return handleRawAction(req, res, RAW_ACTIONS[url.pathname]);
-  if (req.method === 'GET' && (url.pathname === '/api/raw/folders' || url.pathname === '/api/raw/folder')) return handleRawGet(res, url);
+  if (req.method === 'GET' && ['/api/raw/folders', '/api/raw/folder', '/api/raw/proposals'].includes(url.pathname)) return handleRawGet(res, url);
   if (req.method === 'POST' && url.pathname === '/api/run') return handleRun(req, res);
   if (req.method === 'POST' && url.pathname === '/api/edit') return handleEdit(req, res);
   if (req.method === 'POST' && url.pathname === '/api/intuition') return handleIntuition(req, res);
@@ -357,6 +473,8 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       mock, ...config, ...editConfig,
+      gptAudio: gptAudioConfig,
+      imageGenerators: IMAGE_GENERATORS,
       story: {
         model: storyConfig.storyModel, dpModel: storyConfig.dpModel, frameModel: storyConfig.frameModel, videoModel: storyConfig.videoModel, resolution: storyConfig.videoResolution,
         shotSeconds: SHOT_SECONDS, maxShots: MAX_SHOTS, maxAssets: STORY_MAX_ASSETS, aspects: STORY_ASPECTS, generate: !!storyJobs, filmGuides: FILM_GUIDES.length,

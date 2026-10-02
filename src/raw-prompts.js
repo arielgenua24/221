@@ -13,6 +13,8 @@ Todo lo que pones en "decir" se convierte en audio y suena en voz alta: habla co
 - En español, cálido y directo. Frases cortas: 1 o 2 oraciones, máximo ~30 palabras.
 - Nada de listas, markdown, emojis ni códigos raros en "decir" (se leen en voz alta). Para señalar imágenes, usa "la primera", "la de la izquierda", o su nombre corto; los códigos (P1, R3…) son para el JSON.
 - Confirma en voz alta lo que entendiste antes de generar ("Okay: esta persona con este estilo de referencia").
+- Pregunta antes de generar una accion
+- Pregunta lo que no entiendes
 
 ## Las imágenes del proyecto
 - Cada imagen tiene un código: P = persona, R = referencia, G = generada antes. Las ves más abajo, cada una con su código justo antes.
@@ -24,13 +26,15 @@ Todo lo que pones en "decir" se convierte en audio y suena en voz alta: habla co
 - Si la persona dice "esta imagen", "la última referencia", "esa persona" y hay más de una candidata razonable, NO generes: usa "mostrar" con las candidatas (máx. 4, las más probables) y pregunta cuál. Ej.: "A ver, espera: estas tres son las últimas referencias. ¿A cuál te refieres?"
 - Si falta algo esencial (quién, qué estilo, qué quiere lograr), pregunta UNA cosa concreta.
 - Si la persona tocó una imagen o dijo cuál es ("a esta", "la segunda"), resuélvelo con lo que mostraste en el turno anterior y sigue.
-- Si solo hay una candidata obvia, no preguntes: confirma en voz alta y genera.
+- Si solo hay una candidata obvia, prepara la propuesta para el modal.
 
 ## Generar
 - Cuando estés seguro, completa "generar": los códigos de las imágenes de entrada (primero la persona o el sujeto, después las referencias de estilo) y un prompt EN INGLÉS para el modelo de edición de imagen.
 - El prompt dice qué tomar de cada imagen por posición ("Image 1: the person — keep their face, identity and features. Image 2: style reference — match its rendering, palette and linework."), qué resultado se quiere (composición, pose, fondo, encuadre, luz) y qué NO cambiar. Concreto y visual; nunca pidas texto escrito dentro de la imagen salvo que lo pidan.
 - "proporcion": una de ${ASPECTS.join(', ')}. Usa la preferida por la persona si no pidió otra.
-- Mientras se genera, "decir" confirma lo que vas a hacer (la generación tarda un poco).
+- "generar" SOLO prepara una propuesta: se muestran las referencias y el resumen en un modal. NO genera ni gasta créditos hasta una confirmación posterior del humano mirando ese modal. "decir" invita a revisar y confirmar; nunca digas que ya estás generando.
+- "resumen" explica EN ESPAÑOL qué tomarás de CADA referencia, los cambios y qué conservarás. Debe permitir revisar lo que hará el prompt, sin jerga técnica.
+- Si hay una propuesta pendiente y el humano aprueba explícitamente ese plan sin cambios, devuelve "confirmar": "approve" y "generar": null. Si lo rechaza, "confirmar": "reject". Una pregunta NO es aprobación. Si da correcciones, prepara una NUEVA propuesta completa en "generar", conservando todo lo ya acordado; jamás apruebes el plan anterior cuando dice "sí, pero...". Puedes seguir conversando mientras el modal está abierto.
 - No combines "mostrar" y "generar" en el mismo turno.
 - Si piden cambios sobre una generada (G…), úsala como entrada junto con lo necesario.
 
@@ -41,7 +45,8 @@ Primero, como máximo una línea de nota para ti (qué entendiste). Después, SI
   "decir": "lo que dices en voz alta",
   "etiquetas": [{ "codigo": "R3", "tipo": "referencia", "categoria": "estilo", "nombre": "Estilo PES 13", "descripcion": "Render de videojuego 2013, piel brillante, luz de estadio" }],
   "mostrar": { "codigos": ["R1", "R2", "R3"], "pregunta": "¿Cuál de estas?" },
-  "generar": { "entradas": ["P1", "R3"], "prompt": "Image 1: ... Image 2: ...", "proporcion": "3:4", "resumen": "P1 al estilo de R3" }
+  "generar": { "entradas": ["P1", "R3"], "prompt": "Image 1: ... Image 2: ...", "proporcion": "3:4", "resumen": "Conservaré el rostro de P1 y usaré la paleta y el acabado de R3. El retrato tendrá luz de estadio y fondo oscuro." },
+  "confirmar": null
 }
 \`\`\`
 "etiquetas" puede ser []; "mostrar" y "generar" van en null cuando no aplican.`;
@@ -68,7 +73,7 @@ export function assetLine(a, { now = Date.now(), fresh = false, folderName } = {
 
 // El mensaje de un turno: contexto del proyecto + imágenes (cada una precedida por su código) + lo que dijo la persona.
 // `images`: [{ asset, url }] con las que se le muestran al modelo (las demás van solo como texto).
-export function rawTurnContent({ lineage, assets, images, freshCodes = [], text, selected = [], style, aspect, lastShown, now = Date.now() }) {
+export function rawTurnContent({ lineage, assets, images, freshCodes = [], text, selected = [], style, aspect, lastShown, proposal, now = Date.now() }) {
   const names = new Map(lineage.map((f) => [f.id, f.name]));
   const here = lineage.at(-1)?.id;
   const fresh = new Set(freshCodes);
@@ -80,6 +85,7 @@ export function rawTurnContent({ lineage, assets, images, freshCodes = [], text,
     ...assets.map((a) => assetLine(a, { now, fresh: fresh.has(a.code), folderName: a.folderId !== here ? names.get(a.folderId) : undefined })),
   ];
   if (lastShown?.codigos?.length) lines.push('', `En tu turno anterior mostraste: ${lastShown.codigos.join(', ')} (en ese orden, de izquierda a derecha) y preguntaste: "${lastShown.pregunta || ''}".`);
+  if (proposal) lines.push('', `Propuesta pendiente de aprobación (NO generada): ${JSON.stringify(proposal)}. Si corrige el plan, conserva las demás decisiones y devuelve una propuesta completa nueva.`);
   const content = [{ type: 'text', text: lines.join('\n') }];
   images.forEach(({ asset, url }) => {
     content.push({ type: 'text', text: `${asset.code}:` });
@@ -97,7 +103,7 @@ export function rawTurnContent({ lineage, assets, images, freshCodes = [], text,
 export function assistantMemory(data) {
   const parts = [`Dije: "${data.decir || ''}"`];
   if (data.mostrar?.codigos?.length) parts.push(`[Mostré ${data.mostrar.codigos.join(', ')} y pregunté: ${data.mostrar.pregunta || ''}]`);
-  if (data.generar?.entradas?.length) parts.push(`[Generé con ${data.generar.entradas.join(' + ')}: ${data.generar.resumen || data.generar.prompt}]`);
+  if (data.generar?.entradas?.length) parts.push(`[Propuse, pendiente de aprobación, ${data.generar.entradas.join(' + ')}: ${data.generar.resumen || data.generar.prompt}]`);
   return parts.join(' ');
 }
 

@@ -1,3 +1,4 @@
+import { explicitApproval } from './raw-approvals.js';
 // Modo demo: simula a los modelos (sin API key) para probar la interfaz y el flujo.
 import { autoTimeline } from './timeline.js';
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -311,12 +312,16 @@ function mockMap(a) {
 }
 
 // Raw (demo): pregunta cuál referencia si hay varias, y genera con la última persona + la elegida.
-function mockRaw({ text = '', selected = [], assets = [], lastShown }) {
+function mockRaw({ text = '', selected = [], assets = [], lastShown, proposal }) {
   const etiquetas = assets.filter((a) => !a.category && a.kind !== 'generada')
     .map((a) => ({ codigo: a.code, tipo: a.kind, categoria: a.kind === 'persona' ? 'personaje' : 'estilo', nombre: `${a.kind} ${a.code} (demo)`, descripcion: '(demo) sin mirar la imagen' }));
   const people = assets.filter((a) => a.kind === 'persona');
   const refs = assets.filter((a) => a.kind === 'referencia');
   const base = { etiquetas, mostrar: null, generar: null };
+  if (proposal && explicitApproval(text)) return { ...base, decir: 'Dale.', confirmar: 'approve' };
+  if (proposal && /^(no|cancel|rechaz)/i.test(text)) return { ...base, decir: 'Cancelado.', confirmar: 'reject' };
+  if (proposal && /cambi|corr|fondo|luz|pero|agreg|quit/i.test(text)) return { ...base, decir: 'Revisá la nueva propuesta.', generar: { entradas: proposal.codes, prompt: `${proposal.prompt}\nFeedback: ${text}`, proporcion: proposal.aspect, resumen: `Conservaré las referencias ${proposal.codes.join(' + ')} y aplicaré este cambio: ${text} (demo)` } };
+
   if (!assets.length) return { ...base, decir: 'Todavía no hay imágenes en este proyecto. Súbeme una persona y una referencia de estilo.' };
   const picked = selected[0] || (lastShown && /primer|izquierda/i.test(text) ? lastShown.codigos[0] : null);
   const wants = picked || /convi|conver|genera|haz|hac|dibuj|transform|estilo|crea/i.test(text);

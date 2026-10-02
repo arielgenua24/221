@@ -92,6 +92,18 @@ test('parseStoryTurnBody valida el pedido', () => {
   assert.equal(parseStoryTurnBody({ projectId: 'x', text: ' hola ' }).text, 'hola');
 });
 
+test('como herramienta de GPT Audio, Historia guarda guion y tomas sin duplicar su conversación', () => withStore(async (store) => {
+  const p = await store.create({ title: 'Voz', aspect: '9:16' });
+  await store.addAsset(p.id, { dataUrl: PNG, name: 'Ana', source: 'foto' });
+  await store.pushChat(p.id, { role: 'user', text: 'Una historia de amanecer', voice: true });
+  const events = [];
+  await runStoryTurn({ store, jobs: { cancel() {}, view: store.get }, input: { projectId: p.id, text: 'Una historia de amanecer', answers: [] }, config: CONFIG, emit: (e) => events.push(e), llm: mockLLM, remember: false });
+  const current = await store.get(p.id);
+  assert.equal(current.shots.length, 4); assert.ok(current.story);
+  assert.equal(current.chat.length, 1); assert.equal(current.chat[0].voice, true);
+  assert.ok(events.some((e) => e.type === 'story_reply'));
+}));
+
 test('el prompt del cuadro nombra las referencias y fija el look y el formato', () => {
   const project = { aspect: '9:16', assets: [{ code: 'M1', note: 'la protagonista' }], story: { estilo_visual: { look: 'warm grade' }, personajes: [{ nombre: 'Ana', material: ['M1'], descripcion_visual: 'short red hair' }] } };
   const p = frameImagePrompt({ project, shot: { prompt_cuadro: 'Close-up of Ana', accion: '' }, refCodes: ['M1'] });

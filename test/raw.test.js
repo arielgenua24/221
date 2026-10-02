@@ -4,7 +4,7 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRawStore } from '../src/raw-store.js';
-import { runRawTurn, parseRawTurnBody, sanitizeReply, pickVision, historyMessages } from '../src/raw-agent.js';
+import { runRawTurn, runRawGeneration, parseRawTurnBody, sanitizeReply, pickVision, historyMessages } from '../src/raw-agent.js';
 import { rawTurnContent, imagePrompt, RAW_SYSTEM } from '../src/raw-prompts.js';
 import { createSpeaker } from '../src/raw-voice.js';
 import { createMockWaveSpeed } from '../src/wavespeed.js';
@@ -20,11 +20,13 @@ async function withStore(fn) {
 
 async function turn(store, input, extra = {}) {
   const events = [];
+  let plan;
   const log = await runRawTurn({
     store, input: parseRawTurnBody(input), config, ws: createMockWaveSpeed({ mediaDir: store.filesDir }),
-    speak: async () => null, emit: (e) => events.push(e), llm: mockLLM, ...extra,
+    speak: async () => null, emit: (e) => events.push(e), llm: mockLLM,
+    propose: async (p) => { plan = { ...p, id: 'proposal-123' }; return { id: plan.id, codes: p.inputs.map((a) => a.code), summary: p.summary }; }, ...extra,
   });
-  return { events, log, of: (type) => events.filter((e) => e.type === type) };
+  return { events, log, plan, of: (type) => events.filter((e) => e.type === type) };
 }
 
 test('carpetas y subcarpetas: la subcarpeta hereda las imágenes del proyecto; borrar se lleva todo', () => withStore(async (store) => {
@@ -99,7 +101,7 @@ test('lo que ve el modelo: imágenes con su código, las tocadas siempre, histor
   assert.match(RAW_SYSTEM, /NO generes/);
 });
 
-test('flujo completo: con varias referencias pregunta cuál; al elegir, genera y la imagen queda en el proyecto', () => withStore(async (store) => {
+test('flujo completo: pregunta cuál y prepara el modal; la generación separada usa exactamente el plan', () => withStore(async (store) => {
   const f = await store.createFolder({ name: 'pes13' });
   await store.addAsset({ folderId: f.id, kind: 'persona', dataUrl: PNG });
   for (let i = 0; i < 3; i++) await store.addAsset({ folderId: f.id, kind: 'referencia', dataUrl: PNG });
@@ -112,11 +114,14 @@ test('flujo completo: con varias referencias pregunta cuál; al elegir, genera y
   assert.equal((await store.assetsFor(f.id))[1].category, 'estilo');
 
   const second = await turn(store, { folderId: f.id, text: 'a esta', selected: ['R3'] });
-  assert.deepEqual(second.of('raw_generating')[0].inputs, ['P1', 'R3']);
+  assert.deepEqual(second.of('raw_proposal')[0].proposal.codes, ['P1', 'R3']);
+  assert.equal(second.of('raw_generating').length, 0);
+  assert.equal((await store.assetsFor(f.id)).filter((a) => a.kind === 'generada').length, 0);
+  await runRawGeneration({ store, plan: second.plan, ws: createMockWaveSpeed({ mediaDir: store.filesDir }), emit: (e) => second.events.push(e) });
   const gen = second.of('raw_generated')[0].asset;
   assert.equal(gen.code, 'G1');
   assert.deepEqual(gen.inputs, ['P1', 'R3']);
-  assert.equal(second.of('raw_say').length, 2, 'confirma y avisa cuando termina');
+  assert.equal(second.of('raw_say').length, 1, 'invita a revisar el modal sin esperar generación');
   assert.ok(second.events.findIndex((e) => e.type === 'raw_listen') < second.events.findIndex((e) => e.type === 'raw_generated'), 'se puede volver a hablar mientras genera');
   const hist = await store.history(f.id);
   assert.equal(hist.length, 5);
@@ -129,7 +134,23 @@ test('sin WaveSpeed la generación falla con un mensaje claro y el turno termina
   await store.addAsset({ folderId: f.id, kind: 'persona', dataUrl: PNG });
   await store.addAsset({ folderId: f.id, kind: 'referencia', dataUrl: PNG });
   const r = await turn(store, { folderId: f.id, text: 'hazme esta persona con este estilo' }, { ws: null });
-  assert.match(r.of('raw_gen_error')[0].text, /WAVESPEED_API_KEY/);
+  assert.equal(r.of('raw_proposal').length, 1);
+  await assert.rejects(runRawGeneration({ store, plan: r.plan, ws: null, emit() {} }), /WAVESPEED_API_KEY/);
+}));
+
+test('como herramienta de GPT Audio, RAW propone conservando el historial nativo sin duplicar la respuesta hablada', () => withStore(async (store) => {
+  const f = await store.createFolder({ name: 'Audio' });
+  await store.addAsset({ folderId: f.id, kind: 'persona', dataUrl: PNG });
+  await store.addAsset({ folderId: f.id, kind: 'referencia', dataUrl: PNG });
+  await store.appendHistory(f.id, [{ role: 'user', text: 'hazme esta persona con este estilo', voice: true }]);
+  const out = await turn(store, { folderId: f.id, text: 'hazme esta persona con este estilo' }, { remember: false });
+  assert.equal(out.log.proposal.id, 'proposal-123');
+  assert.equal(out.log.generation, undefined);
+  assert.equal(out.of('raw_proposal').length, 1);
+  const history = await store.history(f.id);
+  assert.equal(history.filter((h) => h.role === 'user').length, 1);
+  assert.ok(history.filter((h) => h.role === 'assistant').every((h) => h.note));
+  assert.equal((await store.assetsFor(f.id)).filter((a) => a.kind === 'generada').length, 0);
 }));
 
 test('la voz se cachea por texto: la misma frase no se genera dos veces', () => withStore(async (store) => {

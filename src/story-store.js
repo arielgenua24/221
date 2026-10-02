@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { parseImageGenerator } from './image-models.js';
 
 // Historia guarda cada proyecto en disco (runs/story/): un JSON por proyecto con el material que subió
 // el humano, la conversación con el Guionista, la historia, las tomas (cuadro, aprobación, video) y la
@@ -96,11 +97,12 @@ export function createStoryStore(dir, { rawFilesDir = null } = {}) {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     },
 
-    async create({ title, aspect, rawFolderId = null }) {
+    async create({ title, aspect, rawFolderId = null, imageGenerator }) {
       const now = new Date().toISOString();
       const p = {
         id: randomUUID(), title: cleanTitle(title) || 'Historia sin título', aspect: ASPECTS.includes(aspect) ? aspect : '9:16',
         createdAt: now, updatedAt: now, counter: 0, rawFolderId,
+        imageGenerator: parseImageGenerator(imageGenerator),
         assets: [], chat: [], story: null, shots: [],
         timeline: { order: [], music: null },
       };
@@ -116,7 +118,8 @@ export function createStoryStore(dir, { rawFilesDir = null } = {}) {
       return { deleted: id };
     },
 
-    update: (id, { title, aspect }) => mutate(id, (p) => {
+    update: (id, { title, aspect, imageGenerator }) => mutate(id, (p) => {
+      if (imageGenerator !== undefined) p.imageGenerator = parseImageGenerator(imageGenerator);
       if (title !== undefined) p.title = cleanTitle(title) || p.title;
       if (aspect !== undefined && ASPECTS.includes(aspect)) p.aspect = aspect;
     }),

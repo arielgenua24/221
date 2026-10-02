@@ -1,5 +1,6 @@
 import { createAgentRunner } from './agent.js';
-import { RAW_SYSTEM, ASPECTS, DONE_LINES, rawTurnContent, assistantMemory, imagePrompt } from './raw-prompts.js';
+import { RAW_SYSTEM, ASPECTS, rawTurnContent, assistantMemory, imagePrompt } from './raw-prompts.js';
+import { parseImageGenerator, imageRequest } from './image-models.js';
 
 export const MAX_TEXT = 2000;
 export const MAX_VISION = 20; // imágenes que el agente ve por turno (las demás, solo como texto)
@@ -16,6 +17,8 @@ export function parseRawTurnBody(body) {
     folderId, text, selected,
     style: String(body.style || 'Any Style').slice(0, 60),
     aspect: ASPECTS.includes(body.aspect) ? body.aspect : '1:1',
+    imageGenerator: parseImageGenerator(body.imageGenerator),
+    proposalId: String(body.proposalId || '').slice(0, 64), viewerId: String(body.viewerId || '').slice(0, 64),
   };
 }
 
@@ -64,14 +67,14 @@ export function sanitizeReply(data, assets) {
       entradas: inputs,
       prompt: String(data.generar.prompt).trim().slice(0, 4000),
       proporcion: ASPECTS.includes(data.generar.proporcion) ? data.generar.proporcion : null,
-      resumen: String(data.generar.resumen || '').slice(0, 200),
+      resumen: String(data.generar.resumen || '').slice(0, 1200),
     };
   }
-  return { decir, etiquetas, mostrar, generar, pidioGenerarSinImagenes: !mostrar && !inputs.length && !!data?.generar };
+  return { decir, etiquetas, mostrar, generar, confirmar: ['approve', 'reject'].includes(data?.confirmar) ? data.confirmar : null, pidioGenerarSinImagenes: !mostrar && !inputs.length && !!data?.generar };
 }
 
 // Un turno de conversación. `speak(text)` devuelve la URL del audio (o null); `ws` genera la imagen.
-export async function runRawTurn({ store, input, config, ws, speak, emit, llm, signal }) {
+export async function runRawTurn({ store, input, config, ws, speak, emit, llm, signal, remember = true, propose, proposal = null, decide }) {
   const log = { startedAt: new Date().toISOString(), input: { ...input }, steps: {} };
   const { agent, totals } = createAgentRunner({ emit, llm, signal, log });
   const { folderId, text, selected, style, aspect } = input;
@@ -81,7 +84,7 @@ export async function runRawTurn({ store, input, config, ws, speak, emit, llm, s
   const lastShown = lastAssistant?.shown || null;
   const since = history.at(-1)?.at;
   const freshCodes = assets.filter((a) => a.kind !== 'generada' && (!since || a.createdAt > since)).map((a) => a.code);
-  const vision = pickVision(assets, { must: [...selected, ...(lastShown?.codigos || [])] });
+  const vision = pickVision(assets, { must: [...selected, ...(lastShown?.codigos || []), ...(proposal?.codes || [])] });
   const images = await Promise.all(vision.map(async (asset) => ({ asset, url: await store.dataUrl(asset) })));
 
   const said = (t) => {
@@ -100,9 +103,9 @@ export async function runRawTurn({ store, input, config, ws, speak, emit, llm, s
     model: config.rawModel,
     system: RAW_SYSTEM,
     history: historyMessages(history),
-    content: rawTurnContent({ lineage, assets, images, freshCodes, text, selected, style, aspect, lastShown }),
+    content: rawTurnContent({ lineage, assets, images, freshCodes, text, selected, style, aspect, lastShown, proposal }),
     reasoning: config.rawReasoning ? { effort: config.rawReasoning } : undefined,
-    meta: { text, selected, assets, freshCodes, lastShown, aspect },
+    meta: { text, selected, assets, freshCodes, lastShown, aspect, proposal },
   });
   const reply = sanitizeReply(data, assets);
   log.reply = reply;
@@ -113,54 +116,59 @@ export async function runRawTurn({ store, input, config, ws, speak, emit, llm, s
     emit({ type: 'raw_asset', asset: a });
   }
 
-  let decir = reply.decir;
+  let decir = reply.generar ? 'Te muestro lo que entendí. Revisá las referencias y decime si lo aprobás o qué cambiamos.' : reply.decir;
   if (reply.pidioGenerarSinImagenes) decir ||= 'Para generar necesito al menos una imagen del proyecto. ¿Me subes una?';
   if (!decir) decir = reply.mostrar ? '¿Cuál de estas?' : 'Te escucho.';
 
-  const userText = [text, selected.length ? `(tocó ${selected.join(', ')})` : ''].filter(Boolean).join(' ');
-  await store.appendHistory(folderId, [
-    { role: 'user', text: userText },
-    { role: 'assistant', text: assistantMemory({ ...reply, decir }), shown: reply.mostrar },
-  ]);
-
-  const speech = said(decir);
-  if (reply.mostrar) emit({ type: 'raw_show', codes: reply.mostrar.codigos, question: reply.mostrar.pregunta });
-  // A partir de acá la persona ya puede volver a hablar: la generación sigue sola.
-  emit({ type: 'raw_listen' });
-
   if (reply.generar) {
+    if (!propose) throw new Error('La generación requiere una propuesta y aprobación previa.');
     const gen = reply.generar;
     const inputs = gen.entradas.map((c) => assets.find((a) => a.code === c));
     const ratio = gen.proporcion || aspect;
-    const jobId = `gen-${Date.now().toString(36)}`;
-    emit({ type: 'raw_generating', id: jobId, inputs: gen.entradas, summary: gen.resumen, aspect: ratio });
+    const prompt = imagePrompt({ prompt: gen.prompt, inputs, style });
+    const request = imageRequest({ generator: input.imageGenerator, model: config.imageModel, prompt, images: inputs.map((a) => a.file), aspect: ratio, quality: config.imageQuality });
+    log.proposal = await propose({ folderId, inputs, summary: gen.resumen || reply.decir || 'Usaré estas referencias para realizar los cambios que conversamos.', prompt: gen.prompt, style, aspect: ratio, imageGenerator: input.imageGenerator, request });
+    emit({ type: 'raw_proposal', proposal: log.proposal });
+  } else if (reply.confirmar && proposal && decide) {
     try {
-      if (!ws) throw new Error('Para generar imágenes falta WAVESPEED_API_KEY en el .env del servidor.');
-      const urls = await Promise.all(inputs.map(async (a) => ws.upload(await store.dataUrl(a), signal)));
-      const prompt = imagePrompt({ prompt: gen.prompt, inputs, style });
-      log.generation = { model: config.imageModel, prompt, inputs: gen.entradas, aspect: ratio };
-      const out = await ws.image({
-        model: config.imageModel,
-        body: { prompt, images: urls, aspect_ratio: ratio, quality: config.imageQuality, output_format: 'jpeg' },
-        signal,
-        onStatus: ({ status, elapsed }) => emit({ type: 'raw_gen_status', id: jobId, status, elapsed }),
-      });
-      if (!out.file) throw new Error('El modelo no devolvió ninguna imagen.');
-      const asset = await store.addAsset({ folderId, kind: 'generada', file: out.file, prompt, inputs: gen.entradas });
-      log.generation.result = asset.code;
-      emit({ type: 'raw_generated', id: jobId, asset });
-      await store.appendHistory(folderId, [{ role: 'assistant', note: true, text: `[La imagen ${asset.code} quedó lista (${gen.resumen || 'generada'}).]` }]);
-      await speech;
-      await said(DONE_LINES[asset.seq % DONE_LINES.length]);
-    } catch (err) {
-      if (signal?.aborted) throw err;
-      emit({ type: 'raw_gen_error', id: jobId, text: err.message });
-      await speech;
-      await said('Uy, la generación falló. Te dejo el detalle en pantalla.');
-    }
-  } else {
-    await speech;
+      log.decision = await decide(reply.confirmar);
+      decir = reply.confirmar === 'reject' ? 'Cancelé la propuesta. Decime qué querés hacer.' : 'Perfecto, el plan está aprobado. Estoy generando la imagen y podemos seguir hablando.';
+      emit({ type: 'raw_proposal_decision', ...log.decision });
+    } catch (err) { decir = err.message; log.decision = { error: err.message }; }
   }
+  reply.decir = decir;
+  const userText = [text, selected.length ? `(tocó ${selected.join(', ')})` : ''].filter(Boolean).join(' ');
+  if (remember) await store.appendHistory(folderId, [
+    { role: 'user', text: userText },
+    { role: 'assistant', text: assistantMemory(reply), shown: reply.mostrar },
+  ]);
+  else if (reply.mostrar) await store.appendHistory(folderId, [{ role: 'assistant', text: `[Referencias mostradas: ${reply.mostrar.codigos.join(', ')}]`, shown: reply.mostrar }]);
+
+  const speech = said(decir);
+  if (reply.mostrar) emit({ type: 'raw_show', codes: reply.mostrar.codigos, question: reply.mostrar.pregunta });
+  // The conversation ends this turn immediately; reviewing a proposal and any
+  // approved generation continue separately without holding the mic hostage.
+  emit({ type: 'raw_listen' });
+  await speech;
 
   return { ...log, totals };
+}
+
+// Only the approval service calls this with a frozen, explicitly approved plan.
+// Read ALL references before uploading; deleted references fail without paying.
+export async function runRawGeneration({ store, plan, ws, emit, signal }) {
+  const id = plan.id, codes = plan.inputs.map((a) => a.code);
+  emit({ type: 'raw_generating', id, inputs: codes, summary: plan.summary, aspect: plan.aspect });
+  if (!ws) throw new Error('Para generar imágenes falta WAVESPEED_API_KEY en el .env del servidor.');
+  const assets = await store.assetsFor(plan.folderId);
+  for (const ref of plan.inputs) if (!assets.some((a) => a.code === ref.code && a.file === ref.file)) throw new Error(`La referencia ${ref.code} ya no está disponible. Prepará una nueva propuesta.`);
+  const data = await Promise.all(plan.inputs.map((a) => store.dataUrl(a)));
+  const urls = await Promise.all(data.map((url) => ws.upload(url, signal)));
+  const request = { model: plan.request.model, body: { ...plan.request.body, images: urls } };
+  const out = await ws.image({ ...request, signal, onStatus: ({ status, elapsed }) => emit({ type: 'raw_gen_status', id, status, elapsed }) });
+  if (!out.file) throw new Error('El modelo no devolvió ninguna imagen.');
+  const asset = await store.addAsset({ folderId: plan.folderId, kind: 'generada', file: out.file, prompt: request.body.prompt, inputs: codes });
+  await store.appendHistory(plan.folderId, [{ role: 'assistant', note: true, text: `[La imagen ${asset.code} quedó lista (${plan.summary}).]` }]);
+  emit({ type: 'raw_generated', id, asset });
+  return asset;
 }

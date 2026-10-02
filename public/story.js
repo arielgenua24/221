@@ -1,4 +1,6 @@
 import { $, el, streamEvents } from './shared.js';
+import { isGptAudio } from './voice-mode.js';
+import { createGptVoice } from './gpt-voice.js';
 import { kindOf, loadVideo } from './media.js';
 import { createStoryEditor } from './story-timeline.js';
 
@@ -30,6 +32,7 @@ let storySpeechToken = 0;
 const storyPlayer = new Audio();
 let storyAudioUnlocked = false;
 function unlockStoryAudio() {
+  if (isGptAudio()) return;
   if (storyAudioUnlocked) return;
   storyAudioUnlocked = true;
   storyPlayer.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
@@ -39,6 +42,7 @@ function unlockStoryAudio() {
 window.addEventListener('pointerdown', unlockStoryAudio, { once: true });
 const drafts = new Map(); // textos que el humano está escribiendo en cada toma (sobreviven a los redibujos)
 const cards = new Map(); // id → { node, sig }
+const voiceQuestions = new Map();
 
 fetch('/api/config').then((r) => r.json()).then((c) => { cfg = { ...cfg, ...c, story: { ...cfg.story, ...(c.story || {}) } }; }).catch(() => {});
 
@@ -103,6 +107,7 @@ $('story-new').addEventListener('submit', async (e) => {
 });
 
 async function openProject(id) {
+  stopStoryVoice(); turn?.abort(); turn = null; stopPolling();
   try {
     const { project: p } = await api(`/api/story/project?id=${encodeURIComponent(id)}`);
     project = p;
@@ -153,6 +158,7 @@ function render() {
   if (!project) return;
   if (document.activeElement !== $('story-title')) $('story-title').value = project.title;
   $('story-aspect').textContent = project.aspect;
+  if (!imageSaving) $('story-image-generator').value = project.imageGenerator || 'gpt-image';
   $('story-cost').textContent = project.cost ? `US$ ${project.cost.toFixed(3)}` : '';
   $('story-source').textContent = folderName ? `Carpeta Raw / ${folderName}` : 'Historia sin carpeta Raw';
   renderMaterial();
@@ -249,7 +255,7 @@ function renderScript() {
 
 function renderChat() {
   const box = $('story-chat');
-  if (turn) return; // durante el turno el chat se escribe en vivo
+  if (turn || gpt.busy()) return; // durante el turno el chat se escribe en vivo
   box.replaceChildren();
   if (!project.chat.length) greet();
   project.chat.forEach((m, i) => {
@@ -259,6 +265,7 @@ function renderChat() {
     // Las preguntas del último mensaje se pueden responder tocando.
     if (m.role !== 'user' && i === project.chat.length - 1 && m.preguntas?.length) box.append(questionCard(m.preguntas));
   });
+  if (isGptAudio() && voiceQuestions.get(project.id)?.length && !project.chat.at(-1)?.preguntas?.length) box.append(questionCard(voiceQuestions.get(project.id)));
   box.scrollTop = box.scrollHeight;
 }
 
@@ -300,24 +307,64 @@ function questionCard(questions) {
 
 // ---------- Conversación ----------
 const input = $('story-text');
+let imageSaving = false;
+$('story-image-generator').addEventListener('change', async (e) => {
+  if (!project) return;
+  const id = project.id, select = e.target;
+  imageSaving = true; select.disabled = true;
+  try {
+    const { project: p } = await api('/api/story/projects/update', { id, imageGenerator: select.value });
+    if (project?.id === id) { project = p; render(); }
+  } catch (err) { showError(err.message); }
+  finally { imageSaving = false; select.disabled = false; if (project) select.value = project.imageGenerator || 'gpt-image'; }
+});
+const gpt = createGptVoice({
+  context: () => project && ({ kind: 'story', id: project.id }),
+  enabled: () => isGptAudio() && document.body.dataset.tab === 'story',
+  mic: () => storyMicOn,
+  inputAllowed: () => document.activeElement !== input,
+  phase: storyPhase,
+  user: (text, node) => { if (!node && project) { voiceQuestions.delete(project.id); $('story-chat').querySelectorAll('.story-questions button').forEach((b) => { b.disabled = true; }); } return voiceBubble('me', text, node); },
+  reply: (text, node) => voiceBubble('bot', text, node),
+  error: (text) => { showError(text); if (text) $('story-live').hidden = true; },
+  event: (ev) => {
+    if (ev.type === 'voice_job') { $('story-live').hidden = false; $('story-live').textContent = 'El Guionista trabaja en segundo plano…'; }
+    if (ev.type === 'story_reply') { $('story-live').hidden = true; voiceQuestions.set(project.id, ev.preguntas || []); if (ev.preguntas?.length) $('story-chat').append(questionCard(ev.preguntas)); }
+  },
+  refresh: refreshProject,
+});
+function voiceBubble(who, text, node) {
+  if (node) { node.textContent = text; return node; }
+  const msg = el('div', `story-msg ${who}`), bubble = el('div', 'bubble', text);
+  msg.append(bubble); $('story-chat').append(msg); $('story-chat').scrollTop = $('story-chat').scrollHeight;
+  return bubble;
+}
+window.addEventListener('voice-mode', () => {
+  turn?.abort(); turn = null; stopStoryVoice();
+  $('story-live').hidden = true; $('story-send').classList.remove('stop');
+  if (project) resumeStoryVoice();
+});
 function storyPhase(phase, caption = '') {
   $('story-orb').dataset.phase = phase;
   $('story-phase').textContent = ({ idle: 'Listo', listening: 'Te escucho…', thinking: 'Pensando…', speaking: 'Hablando', muted: 'Micrófono apagado' })[phase] || phase;
   $('story-caption').textContent = caption;
 }
 function stopStoryListening() {
+  gpt.pauseInput();
   clearTimeout(storySilenceTimer);
   if (storyRecognition) { storyRecognition.onend = null; storyRecognition.onresult = null; try { storyRecognition.abort(); } catch {} }
   storyRecognition = null; storyHeard = '';
 }
 function stopStoryVoice() {
+  gpt.stop();
   stopStoryListening(); storySpeechToken++; storySpeaking = false; storyPlayer.pause();
   try { speechSynthesis.cancel(); } catch {}
   storyPhase('idle');
 }
 function resumeStoryVoice() {
   $('story-mic').setAttribute('aria-pressed', String(storyMicOn));
-  $('story-mic').classList.toggle('off', !storyMicOn || !SpeechRecognition);
+  $('story-mic').classList.toggle('off', !storyMicOn || (isGptAudio() ? !navigator.mediaDevices?.getUserMedia : !SpeechRecognition));
+  if (isGptAudio()) { gpt.resume(); return; }
   if (!SpeechRecognition || !storyMicOn || !project || turn || storySpeaking || storyRecognition || document.hidden || document.body.dataset.tab !== 'story') {
     if (!turn && !storySpeaking) storyPhase(storyMicOn ? 'idle' : 'muted');
     return;
@@ -375,13 +422,13 @@ async function speakStory(text) {
 }
 $('story-mic').onclick = () => {
   unlockStoryAudio();
-  if (!SpeechRecognition) return showError('Este navegador no reconoce voz. Podés escribir en la caja.');
+  if (!isGptAudio() && !SpeechRecognition) return showError('Este navegador no reconoce voz. Podés escribir en la caja.');
   storyMicExplicit = true;
   storyMicOn = !storyMicOn;
   try { localStorage.setItem('story-mic', storyMicOn ? '1' : '0'); } catch {}
   if (storyMicOn) resumeStoryVoice(); else { stopStoryVoice(); storyPhase('muted'); resumeStoryVoice(); }
 };
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopStoryListening(); else resumeStoryVoice(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { stopStoryListening(); if (isGptAudio()) gpt.stop(); } else resumeStoryVoice(); });
 input.addEventListener('focus', stopStoryListening);
 input.addEventListener('blur', () => setTimeout(resumeStoryVoice, 200));
 function autosize() { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 160)}px`; }
@@ -398,6 +445,11 @@ $('story-form').addEventListener('submit', (e) => {
 });
 
 async function send({ text = '', answers = [] }) {
+  if (project && isGptAudio()) {
+    input.value = ''; autosize();
+    await gpt.send({ text: [text, ...answers.map((a) => `${a.pregunta}: ${a.respuesta}`)].filter(Boolean).join('\n') });
+    return;
+  }
   if (!project || turn) return;
   stopStoryListening();
   storyPhase('thinking');
@@ -414,12 +466,14 @@ async function send({ text = '', answers = [] }) {
   box.scrollTop = box.scrollHeight;
   input.value = ''; autosize();
   turn = new AbortController();
+  const controller = turn, projectId = project.id;
   $('story-send').classList.add('stop');
   const live = $('story-live');
   live.hidden = false; live.textContent = 'El Guionista lee tu mensaje y mira el material…';
   let noteText = '';
   try {
-    await streamEvents('/api/story/turn', JSON.stringify({ projectId: project.id, text, answers }), turn.signal, (ev) => {
+    await streamEvents('/api/story/turn', JSON.stringify({ projectId, text, answers }), controller.signal, (ev) => {
+      if (controller.signal.aborted || turn !== controller || project?.id !== projectId || isGptAudio()) return;
       if (ev.type === 'delta') { noteText += ev.text; notes.textContent = noteText.trim(); box.scrollTop = box.scrollHeight; }
       else if (ev.type === 'reasoning') live.textContent = `Pensando… ${ev.text.replace(/\s+/g, ' ').slice(-120)}`;
       else if (ev.type === 'progress') live.textContent = `Escribiendo las tomas… ${ev.chars.toLocaleString('es')} caracteres`;
@@ -429,13 +483,15 @@ async function send({ text = '', answers = [] }) {
       else if (ev.type === 'error') showError(ev.text);
     });
   } catch (err) {
-    if (err.name !== 'AbortError') showError(err.message);
+    if (!controller.signal.aborted && project?.id === projectId) showError(err.message);
   } finally {
-    turn = null;
-    live.hidden = true;
-    $('story-send').classList.remove('stop');
-    render();
-    resumeStoryVoice();
+    if (turn === controller) {
+      turn = null;
+      live.hidden = true;
+      $('story-send').classList.remove('stop');
+      render();
+      resumeStoryVoice();
+    }
   }
 }
 
@@ -626,11 +682,11 @@ function shotCard(s, i) {
     actions.append(b);
     return b;
   };
-  const call = (url, extra = {}) => api(url, { projectId: project.id, shotId: s.id, ...extra });
+  const call = (url, extra = {}) => api(url, { projectId: project.id, shotId: s.id, ...(url === '/api/story/shots/revise' ? { imageGenerator: $('story-image-generator').value } : {}), ...extra });
 
   const frameBusy = busyStatus(s.frame);
   const videoBusy = busyStatus(s.video);
-  if (!s.frame?.file && !frameBusy) btn('Dibujar cuadro', 'primary', () => api('/api/story/frames', { projectId: project.id, shotIds: [s.id] }));
+  if (!s.frame?.file && !frameBusy) btn('Dibujar cuadro', 'primary', () => api('/api/story/frames', { projectId: project.id, shotIds: [s.id], imageGenerator: $('story-image-generator').value }));
   if (s.frame?.file && !frameBusy && !s.approved && !videoBusy) btn('Aprobar y generar', 'primary', () => call('/api/story/shots/approve'));
   if (videoBusy || frameBusy) btn('Cancelar', 'small-btn', () => call('/api/story/shots/cancel'));
   if (s.video?.status === 'error' && s.frame?.file) btn('Reintentar video', 'primary', () => call('/api/story/shots/approve'));
@@ -691,7 +747,7 @@ function shotCard(s, i) {
 }
 
 $('story-draw').onclick = async () => {
-  try { await api('/api/story/frames', { projectId: project.id }); await refreshProject(); } catch (e) { showError(e.message); }
+  try { await api('/api/story/frames', { projectId: project.id, imageGenerator: $('story-image-generator').value }); await refreshProject(); } catch (e) { showError(e.message); }
 };
 $('story-approve-all').onclick = async () => {
   const list = project.shots.filter((s) => s.frame?.file && s.frame.status === 'done' && !s.approved);

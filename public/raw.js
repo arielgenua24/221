@@ -1,4 +1,7 @@
 import { $, el, streamEvents } from './shared.js';
+import { isGptAudio } from './voice-mode.js';
+import { createGptVoice } from './gpt-voice.js';
+import { createRawProposal } from './raw-proposal.js';
 
 // Raw: la pestaña principal. Carpetas (proyectos) con subcarpetas; adentro, una conversación POR VOZ con el agente:
 // la persona habla (reconocimiento de voz del navegador), el agente razona, contesta con voz (TTS) y genera imágenes.
@@ -22,6 +25,48 @@ let aspect = ASPECTS.includes(store.get('raw-aspect')) ? store.get('raw-aspect')
 let thinking = false;
 let selected = new Set(); // imágenes que la persona tocó: viajan con el próximo mensaje
 const streams = new Set();
+const proposalUI = createRawProposal({
+  context: () => current,
+  active: () => !!current && document.body.dataset.tab === 'raw',
+  api, error: showError, voiceMode: () => isGptAudio() ? 'gpt' : 'gemini',
+  event: (ev) => onEvent(ev, () => !!current && document.body.dataset.tab === 'raw'),
+  feedbackFocus: stopListening, feedbackBlur: () => setTimeout(resumeListening, 200),
+  completion: (job) => {
+    const key = `raw-proposal-announced-${job.id}`;
+    if (store.get(key)) return;
+    store.set(key, '1');
+    if (!isGptAudio() && job.status === 'done') say('Listo, aquí la tenés. ¿Qué te parece?');
+  },
+});
+const gpt = createGptVoice({
+  context: () => current && ({ kind: 'raw', id: current.id, selected: [...selected], style: styleSel.value, aspect, imageGenerator: imageSel.value, ...proposalUI.context() }),
+  enabled: () => isGptAudio() && document.body.dataset.tab === 'raw',
+  mic: () => micOn,
+  inputAllowed: () => document.activeElement !== $('raw-text') && !proposalUI.typing(),
+  phase: (phase, text = '') => { setPhase(phase); caption(text); },
+  user: (text, node) => {
+    if (node) { node.textContent = text; return node; }
+    const images = [...selected].map((code) => current?.assets.find((a) => a.code === code)).filter(Boolean);
+    const line = logLine('user', text, images);
+    selected.clear(); renderLibrary(); renderGrid(); $('raw-choice').hidden = true;
+    return line?.querySelector('span');
+  },
+  reply: (text, node) => { if (node) { node.textContent = text; return node; } return logLine('agent', text)?.querySelector('span'); },
+  event: (ev) => onEvent(ev, () => !!current && isGptAudio() && document.body.dataset.tab === 'raw'),
+  error: showError,
+  refresh: async () => {
+    const id = current?.id;
+    if (!id) return;
+    const data = await api(`/api/raw/folder?id=${encodeURIComponent(id)}`);
+    if (current?.id === id && isGptAudio()) { current = { id, ...data }; renderLibrary(); renderGrid(); }
+  },
+});
+window.addEventListener('voice-mode', () => {
+  streams.forEach((controller) => controller.abort());
+  stopListening(); stopSpeaking(); thinking = false; renderMic();
+  proposalUI.sync();
+  if (current) resumeListening();
+});
 
 fetch('/api/config').then((r) => r.json()).then((c) => { cfg = { ...cfg, ...c, raw: { ...cfg.raw, ...(c.raw || {}) } }; }).catch(() => {});
 
@@ -42,6 +87,7 @@ function setTab(tab) {
   $('view-studio').hidden = tab !== 'studio';
   $('view-story').hidden = tab !== 'story';
   window.dispatchEvent(new CustomEvent('tab', { detail: tab }));
+  proposalUI.sync();
   if (tab !== 'raw') { stopListening(); stopSpeaking(); } else if (current) resumeListening();
 }
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
@@ -88,6 +134,7 @@ $('raw-new-folder').addEventListener('submit', async (e) => {
 async function openFolder(id, { greet = false } = {}) {
   unlockAudio();
   stopListening(); stopSpeaking();
+  streams.forEach((controller) => controller.abort()); thinking = false;
   showError('');
   let data;
   try { data = await api(`/api/raw/folder?id=${encodeURIComponent(id)}`); } catch (err) {
@@ -100,15 +147,20 @@ async function openFolder(id, { greet = false } = {}) {
   $('raw-work').hidden = false;
   $('raw-choice').hidden = true;
   $('raw-log').replaceChildren();
+  $('raw-grid').replaceChildren();
   current.history.slice(-12).forEach((h) => logLine(h.role === 'user' ? 'user' : 'agent', h.role === 'user' ? h.text : (/^Dije: "([\s\S]*?)"(?=\s\[|$)/.exec(h.text)?.[1] || h.text)));
   renderWork();
+  proposalUI.sync();
   if (greet) say(cfg.raw.greeting);
   else resumeListening();
 }
 
 function showHome() {
   stopListening(); stopSpeaking();
+  streams.forEach((controller) => controller.abort()); thinking = false;
   current = null;
+  proposalUI.sync();
+  $('raw-grid').replaceChildren();
   $('raw-work').hidden = true;
   $('raw-home').hidden = false;
   history.replaceState(null, '', '#raw');
@@ -361,6 +413,10 @@ $('raw-aspect').addEventListener('click', () => {
   $('raw-aspect').setAttribute('aria-expanded', String(!box.hidden));
 });
 const styleSel = $('raw-style');
+const imageSel = $('raw-image-generator');
+imageSel.value = store.get('raw-image-generator', 'gpt-image');
+if (!imageSel.value) imageSel.value = 'gpt-image';
+imageSel.addEventListener('change', () => store.set('raw-image-generator', imageSel.value));
 styleSel.value = store.get('raw-style', 'Any Style');
 if (!styleSel.value) styleSel.value = 'Any Style';
 styleSel.addEventListener('change', () => store.set('raw-style', styleSel.value));
@@ -383,6 +439,7 @@ function logLine(who, text, imgs = []) {
   if (text) line.append(el('span', null, text));
   imgs.forEach((a) => { const i = el('img'); i.src = fileUrl(a); i.alt = a.code; line.append(i); });
   $('raw-log').append(line);
+  return line;
 }
 
 // ---------- Hablar: una cola de frases; cada una con su audio (TTS) o, si no hay, la voz del navegador ----------
@@ -391,6 +448,7 @@ player.preload = 'auto';
 let unlocked = false;
 // iOS/Safari solo deja reproducir audio si antes hubo un toque: "desbloqueamos" el reproductor en el primer toque.
 function unlockAudio() {
+  if (isGptAudio()) return;
   if (unlocked) return;
   unlocked = true;
   player.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
@@ -453,6 +511,7 @@ function speakLocal(text) {
 }
 
 function stopSpeaking() {
+  gpt.stop();
   speakGen++;
   queue.length = 0;
   waiting.clear();
@@ -468,6 +527,7 @@ function sayWithId(id, text) {
   enqueue(text, urlPromise);
 }
 function say(text) {
+  if (isGptAudio()) { gpt.resume(); gpt.send({ greeting: true }); return; }
   logLine('agent', text);
   enqueue(text, api('/api/raw/speak', { text }).then((r) => r.url).catch(() => null));
 }
@@ -479,15 +539,16 @@ let heard = '';
 let sendTimer = null;
 
 function renderMic() {
+  const supported = isGptAudio() ? !!navigator.mediaDevices?.getUserMedia : !!SR;
   const b = $('raw-mic');
   b.setAttribute('aria-pressed', String(micOn));
-  b.title = !SR ? 'Este navegador no reconoce voz: escribí en la caja' : micOn ? 'Micrófono encendido (tocá para apagarlo)' : 'Micrófono apagado (tocá para encenderlo)';
-  b.classList.toggle('off', !micOn || !SR);
+  b.title = !supported ? 'Este navegador no admite voz: escribí en la caja' : micOn ? 'Micrófono encendido (tocá para apagarlo)' : 'Micrófono apagado (tocá para encenderlo)';
+  b.classList.toggle('off', !micOn || !supported);
   if (!speaking && !thinking) setPhase('idle');
 }
 $('raw-mic').addEventListener('click', () => {
   unlockAudio();
-  if (!SR) return showError('Este navegador no tiene reconocimiento de voz (probá Chrome o Safari). Podés escribir en la caja.');
+  if (!isGptAudio() && !SR) return showError('Este navegador no tiene reconocimiento de voz (probá Chrome o Safari). Podés escribir en la caja.');
   micOn = !micOn;
   store.set('raw-mic', micOn ? '1' : '0');
   renderMic();
@@ -495,7 +556,8 @@ $('raw-mic').addEventListener('click', () => {
 });
 
 function resumeListening() {
-  if (!SR || !micOn || !current || speaking || thinking || recOn || document.body.dataset.tab !== 'raw' || document.hidden) return;
+  if (isGptAudio()) { gpt.resume(); return; }
+  if (!SR || !micOn || !current || speaking || thinking || recOn || document.body.dataset.tab !== 'raw' || document.hidden || document.activeElement === $('raw-text') || proposalUI.typing()) return;
   rec = new SR();
   rec.lang = navigator.language?.toLowerCase().startsWith('es') ? navigator.language : 'es-ES';
   rec.continuous = true;
@@ -531,6 +593,7 @@ function resumeListening() {
 }
 
 function stopListening() {
+  gpt.pauseInput();
   clearTimeout(sendTimer);
   if (rec) { rec.onend = null; rec.onresult = null; try { rec.abort(); } catch { /* ya estaba parado */ } }
   rec = null;
@@ -543,7 +606,7 @@ function flushHeard() {
   stopListening();
   if (text) sendTurn(text);
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopListening(); else resumeListening(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { stopListening(); if (isGptAudio()) gpt.stop(); } else resumeListening(); });
 
 // ---------- Un turno con el agente ----------
 $('raw-form').addEventListener('submit', (e) => {
@@ -563,6 +626,12 @@ $('raw-text').addEventListener('blur', () => setTimeout(resumeListening, 200));
 
 async function sendTurn(text, picked) {
   if (!current) return;
+  if (isGptAudio()) {
+    const selection = picked || [...selected];
+    showError('');
+    await gpt.send({ text: text || `Selecciono ${selection.join(', ')}`, selected: selection });
+    return;
+  }
   if (thinking) return showError('Esperá a que Raw termine de pensar.');
   const folderId = current.id;
   const sel = picked || [...selected];
@@ -578,12 +647,12 @@ async function sendTurn(text, picked) {
   setPhase('thinking');
   const controller = new AbortController();
   streams.add(controller);
-  const body = JSON.stringify({ folderId, text, selected: sel, style: styleSel.value, aspect });
-  const here = () => current?.id === folderId;
+  const body = JSON.stringify({ folderId, text, selected: sel, style: styleSel.value, aspect, imageGenerator: imageSel.value, ...proposalUI.context() });
+  const here = () => current?.id === folderId && !isGptAudio() && document.body.dataset.tab === 'raw';
   try {
-    await streamEvents('/api/raw/turn', body, controller.signal, (ev) => onEvent(ev, here));
+    await streamEvents('/api/raw/turn', body, controller.signal, (ev) => { if (!controller.signal.aborted) onEvent(ev, here); });
   } catch (err) {
-    if (err.name !== 'AbortError') showError(err.message);
+    if (!controller.signal.aborted && here()) showError(err.message);
   } finally {
     streams.delete(controller);
     if (thinking && here()) { thinking = false; setPhase(speaking ? 'speaking' : 'idle'); resumeListening(); }
@@ -592,6 +661,9 @@ async function sendTurn(text, picked) {
 
 function onEvent(ev, here) {
   switch (ev.type) {
+    case 'raw_proposal': if (here()) proposalUI.show(ev.proposal); break;
+    case 'raw_proposal_decision': if (here()) proposalUI.changed(); break;
+    case 'raw_revision_reply': if (here() && !isGptAudio()) say(ev.text); break;
     case 'reasoning': if (here() && thinking) caption('…'); break;
     case 'notice': if (here()) caption(ev.text); break;
     case 'raw_asset':
@@ -612,7 +684,7 @@ function onEvent(ev, here) {
     }
     case 'raw_generated':
       document.querySelector(`[data-job="${ev.id}"]`)?.remove();
-      if (here()) { current.assets.push(ev.asset); renderGrid(); }
+      if (here()) { if (!current.assets.some((a) => a.code === ev.asset.code)) current.assets.push(ev.asset); renderGrid(); }
       break;
     case 'raw_gen_error': {
       const t = document.querySelector(`[data-job="${ev.id}"]`);
@@ -643,6 +715,7 @@ function showChoice(codes, question) {
 
 function pendingTile(ev) {
   const grid = $('raw-grid');
+  if (grid.querySelector(`[data-job="${ev.id}"]`)) return;
   grid.querySelector('.raw-empty')?.remove();
   const t = el('div', 'raw-tile pending');
   t.dataset.job = ev.id;

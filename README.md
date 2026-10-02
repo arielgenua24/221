@@ -21,16 +21,23 @@ Hablás: "convierteme a esta persona en un dibujo estilo PES 13 con la última r
 Raw (RAW_MODEL, ve las imágenes con su código P1, R3, G2…) → categoriza las nuevas (estilo, personaje, pose…)
   ├─ ¿duda? → "A ver, espera: estas 3 son las últimas referencias. ¿A cuál te refieres?" + te las muestra
   │           ✋ VOS: tocás una o decís "a esta" / "la segunda"
-  └─ ¿seguro? → "Okay: esta persona con este estilo" → GPT Image 2.5 Flare Edit (WaveSpeed) genera
+  └─ ¿seguro? → modal "¿Te parece si hago esto?": referencias + resumen del plan
+                ✋ VOS: aprobás por voz o botón → el generador elegido lo ejecuta
+                ↳ si corregís: nueva propuesta, sin generar hasta que la apruebes
   ▼
 La imagen aparece en "Generadas antes" (y también queda en el proyecto para seguir editándola)
 ```
 
-- **Voz de Raw**: Gemini 3.8 Flash TTS en WaveSpeed (`RAW_TTS_MODEL`, voz `RAW_TTS_VOICE`). Cada frase se cachea en disco, así el saludo suena al instante. Sin `WAVESPEED_API_KEY` (o si falla) habla la voz del navegador.
-- **Tu voz**: el reconocimiento de voz del navegador (Chrome, Edge, Safari). En Chrome el audio lo procesa Google. Mientras Raw habla, el micrófono se pausa para no escucharse a sí mismo. Siempre podés escribir en la caja.
+- **Selector de voz en Raw e Historia**: `gemini` conserva la arquitectura anterior y es la opción inicial. `gpt audio` usa `openai/gpt-audio-mini` vía OpenRouter para escuchar audio directamente y responder con audio. La elección se guarda en el navegador y se comparte entre ambas pestañas.
+- **Voz en modo gemini**: Gemini 3.8 Flash TTS en WaveSpeed (`RAW_TTS_MODEL`, voz `RAW_TTS_VOICE`). Cada frase se cachea en disco. Sin `WAVESPEED_API_KEY` (o si falla) habla la voz del navegador. La entrada usa reconocimiento de voz del navegador; en Chrome lo procesa Google. Mientras el agente piensa o habla, la escucha se pausa.
+- **Voz en modo gpt audio**: el navegador captura WAV PCM16 mono a 24 kHz y detecta el fin de cada frase por silencio. GPT recibe `input_audio` y devuelve su propio audio PCM16 por streaming; su transcripción se muestra en la conversación. La entrada se transcribe mediante una herramienta del mismo modelo para conservar el historial, sin Web Speech API ni un servicio STT separado. El micrófono permanece disponible durante la respuesta para interrumpirla (se recomienda auriculares para reducir el eco). Es audio a audio **por turnos REST**, no una sesión WebRTC de OpenAI Realtime. Requiere `OPENROUTER_API_KEY`, modo demo desactivado y HTTPS o localhost para el micrófono; ante un error lo muestra y no cambia de arquitectura automáticamente.
+- **Trabajo visual en gpt audio**: GPT Audio Mini no recibe imágenes. Consulta a los agentes visuales existentes mediante `work_on_project`; las tareas corren en el servidor y sus resultados vuelven a GPT para que los explique por voz. En Historia se conservan los botones de dibujo y aprobación de videos. Cambiar de modo/pestaña/proyecto corta la voz y libera el micrófono; los trabajos ya aceptados continúan. El historial sólo confirma como oídas las respuestas reproducidas completamente.
+- **Configuración y registros**: `GPT_AUDIO_MODEL` (por defecto `openai/gpt-audio-mini`) y `GPT_AUDIO_VOICE` (por defecto `alloy`). Los recibos/resultados están en `runs/voice/`; las conversaciones se guardan en los proyectos habituales. Al reiniciar el servidor, los trabajos de voz inconclusos se marcan como error y no se vuelven a enviar automáticamente. [Documentación de audio de OpenRouter](https://openrouter.ai/docs/guides/overview/multimodal/audio).
 - **Carpetas**: una subcarpeta ve las personas y referencias de sus carpetas padre. Todo se guarda en `runs/raw/` (`index.json` + `files/`).
+- **Generador opcional en Raw e Historia**: el selector `GPT Image 2.5` / `Seedream 5 Pro` funciona con ambas opciones de voz. GPT Image conserva su configuración actual. [Seedream 5 Pro](https://wavespeed.ai/models/bytedance/seedream-v5.0-pro/edit) usa la misma clave WaveSpeed y `SEEDREAM_RESOLUTION` (`1k` por defecto; también `1.5k` o `2k`). Raw recuerda la elección en el navegador; Historia la guarda en cada proyecto para sus cuadros, revisiones y planchas. Los trabajos ya iniciados mantienen el generador elegido al pedirlos. Sin referencias, Historia usa la variante text-to-image de Seedream.
 - **Tocar una imagen** la "señala": viaja con tu próximo mensaje ("esta").
 - Mientras se genera una imagen podés seguir hablando.
+- **Confirmación antes de generar, solo en RAW**: funciona con ambas voces y ambos generadores. El modal muestra las referencias reales en orden, el resumen, la proporción y el generador. Podés aprobar, rechazar o dar feedback por voz o con sus controles, conservando la conversación. El servidor espera la aprobación explícita de esa revisión después de mostrar todas sus referencias; «sí, pero…» requiere una propuesta nueva. Una confirmación repetida no vuelve a enviar la imagen. Las propuestas se guardan en `runs/raw-approvals/`; reiniciar no reintenta generaciones pendientes. Preparar/corregir el plan utiliza el modelo conversacional, pero no solicita imágenes a WaveSpeed hasta aprobar.
 
 ## Historia (pestaña)
 
