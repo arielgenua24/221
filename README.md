@@ -34,16 +34,16 @@ La imagen aparece en "Generadas antes" (y también queda en el proyecto para seg
 
 ## Historia (pestaña)
 
-Contás una historia con tu material y el equipo la arma en **tomas de 5 segundos**, la dibuja, la genera con **Wan 3.0** y la montás sobre tu música.
+Entrás a una carpeta de Raw y abrís Historia desde esa carpeta. Historia comparte **solo las personas, referencias e imágenes generadas de esa carpeta**. Contás la historia por voz o texto, y el equipo la arma en **tomas de 5 segundos**, la dibuja, la genera con **Wan 3.0** y la montás sobre tu música.
 
 ```
-Creás una historia (9:16, 16:9 o 1:1) + subís tu material (fotos; de los videos se toman 3 cuadros) → M1, M2…
+Elegís carpeta Raw y creás una historia (9:16, 16:9 o 1:1). Sus personas y referencias se incorporan; tocás las imágenes generadas que quieras usar. También podés agregar fotos a la carpeta o cuadros de video a la historia → M1, M2…
   ▼
 [1] Guionista (STORY_MODEL, ve el material) ⇄ VOS, en una conversación
-    → historia (emoción, arco, estilo visual, personajes fijos) + tomas: acción, encuadre, cámara, luz, refs, prompt del cuadro
+    → historia (emoción, arco, estilo visual, personajes con nombre) + tomas: acción, seis viñetas, encuadre, cámara, luz, refs, prompt del cuadro
     → si le falta algo, pregunta con opciones para tocar; si pedís un cambio, toca SOLO esa toma
   ▼
-[2] Storyboard: GPT Image 2.5 dibuja el PRIMER CUADRO de cada toma, en paralelo (con tu material como referencia;
+[2] Storyboard: GPT Image 2.5 dibuja el PRIMER CUADRO y una plancha de seis momentos (2 filas × 3 columnas) para cada toma, en paralelo (con tu material como referencia;
     sin material, el primer cuadro fija el mundo y los demás lo usan para mantener personajes y look)
   ├─ ✋ VOS, toma por toma: "Pedir cambios" (el Guionista mira el cuadro y lo corrige) · editar el prompt a mano
   └─ ✋ VOS: "Aprobar y generar" (o "Aprobar todas")
@@ -59,7 +59,7 @@ Creás una historia (9:16, 16:9 o 1:1) + subís tu material (fotos; de los video
 - **El cuadro aprobado ES el primer cuadro del video**: lo que aprobás es lo que se anima.
 - **Todo lo largo corre en el servidor** ([src/story-pipeline.js](src/story-pipeline.js)): podés cerrar la pestaña mientras se generan las tomas. Si el servidor se reinicia con una toma ya enviada a WaveSpeed, la retoma sin volver a pagarla.
 - Las tomas que todavía no tienen video se ven en el montaje como su cuadro (y así se exportan, si querés).
-- Cada proyecto se guarda en `runs/story/projects/<id>.json`; los archivos, en `runs/story/files/` (se sirven en `/story-files/…`).
+- Cada proyecto se guarda en `runs/story/projects/<id>.json`; los nuevos archivos de Historia, en `runs/story/files/`. Las imágenes vinculadas conservan su archivo en `runs/raw/files/` y su nombre de Raw se actualiza antes de conversar con el modelo.
 
 ## Cómo correrlo
 

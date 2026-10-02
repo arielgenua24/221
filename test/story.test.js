@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createStoryStore } from '../src/story-store.js';
+import { createRawStore } from '../src/raw-store.js';
 import { createStoryJobs, runStoryTurn, parseStoryTurnBody, mergeShots, sanitizeShot } from '../src/story-pipeline.js';
 import { frameImagePrompt, STORY_SYSTEM, DP_SYSTEM } from '../src/story-prompts.js';
 import { createMockWaveSpeed, VIDEO_MODELS } from '../src/wavespeed.js';
@@ -48,6 +49,7 @@ test('sanitizeShot y mergeShots: refs reales, ids únicos, lo que no cambia cons
   const s = sanitizeShot({ id: 'S1', refs: ['m1', 'M9', 'M1'], intensidad: 9, prompt_cuadro: 'a' }, codes);
   assert.deepEqual(s.refs, ['M1']);
   assert.equal(s.intensidad, 5);
+  assert.equal(s.vinetas.length, 6);
 
   const done = { status: 'done', file: 'f.jpg' };
   const existing = [
@@ -64,6 +66,25 @@ test('sanitizeShot y mergeShots: refs reales, ids únicos, lo que no cambia cons
   assert.equal(shots[0].video.file, 'f.jpg', 'la toma que no cambió conserva su video');
   assert.equal(shots[1].frame.status, 'idle', 'la que cambió vuelve a dibujarse');
   assert.deepEqual(reset, ['S2']);
+  const changedBeat = mergeShots([existing[0]], [{ id: 'S1', prompt_cuadro: 'uno', vinetas: ['salta', 'gira', 'patea', 'vuela', 'cae', 'gol'] }], codes);
+  assert.equal(changedBeat.shots[0].frame.status, 'idle', 'cambiar la secuencia invalida el storyboard anterior');
+});
+
+test('Historia vincula imágenes de la carpeta Raw y conserva sus nombres para el modelo', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'story-raw-'));
+  try {
+    const raw = createRawStore(path.join(dir, 'raw'));
+    const folder = await raw.createFolder({ name: 'PES 3' });
+    const person = await raw.addAsset({ folderId: folder.id, kind: 'persona', dataUrl: PNG, name: 'Pablo' });
+    const story = createStoryStore(path.join(dir, 'story'), { rawFilesDir: raw.filesDir });
+    const project = await story.create({ title: 'La volea', aspect: '9:16', rawFolderId: folder.id });
+    const linked = await story.linkRawAsset(project.id, person);
+    assert.equal(linked.name, 'Pablo');
+    assert.equal(linked.rawCode, person.code);
+    assert.equal((await story.dataUrl(linked.file)).startsWith('data:image/png;base64,'), true);
+    assert.equal((await story.list())[0].rawFolderId, folder.id);
+    assert.equal((await story.linkRawAsset(project.id, person)).code, linked.code, 'no duplica la misma imagen');
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
 test('parseStoryTurnBody valida el pedido', () => {

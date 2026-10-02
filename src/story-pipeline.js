@@ -15,6 +15,9 @@ const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 // ---------- Tomas: validar lo que devuelve el Guionista y fusionarlo con lo que ya existe ----------
 export function sanitizeShot(raw, assetCodes) {
   const refs = [...new Set((Array.isArray(raw?.refs) ? raw.refs : []).map((r) => String(r).trim().toUpperCase()))].filter((c) => assetCodes.has(c)).slice(0, MAX_REFS);
+  const beats = (Array.isArray(raw?.vinetas) ? raw.vinetas : []).map((v) => str(v, 220)).filter(Boolean).slice(0, 6);
+  const fallback = str(raw?.accion, 220) || 'La acción de la toma';
+  while (beats.length < 6) beats.push(`${fallback} · momento ${beats.length + 1}`);
   return {
     id: /^S\d{1,3}$/.test(String(raw?.id || '')) ? String(raw.id) : null,
     titulo: str(raw?.titulo, 80) || 'Toma',
@@ -26,6 +29,7 @@ export function sanitizeShot(raw, assetCodes) {
     camara: str(raw?.camara, 200),
     luz: str(raw?.luz, 300),
     refs,
+    vinetas: beats,
     prompt_cuadro: str(raw?.prompt_cuadro, 2000),
     reglas: (Array.isArray(raw?.reglas) ? raw.reglas : []).map((r) => str(r, 80)).filter(Boolean).slice(0, 8),
   };
@@ -45,11 +49,12 @@ export function mergeShots(existing, incoming, assetCodes) {
     else next = Math.max(next, Number(s.id.slice(1)));
     used.add(s.id);
     const old = before.get(s.id);
-    const same = old && old.prompt_cuadro === s.prompt_cuadro && old.refs.join() === s.refs.join();
-    if (same) shots.push({ ...old, ...s, frame: old.frame, approved: old.approved, video: old.video });
+    const same = old && old.prompt_cuadro === s.prompt_cuadro && old.refs.join() === s.refs.join()
+      && (old.vinetas || []).join() === s.vinetas.join();
+    if (same) shots.push({ ...old, ...s, frame: old.frame, storyboard: old.storyboard, approved: old.approved, video: old.video });
     else {
       if (old) reset.push(s.id);
-      shots.push({ ...s, frame: emptyJob(), approved: false, video: emptyJob() });
+      shots.push({ ...s, frame: emptyJob(), storyboard: emptyJob(), approved: false, video: emptyJob() });
     }
   }
   for (const id of before.keys()) if (!used.has(id)) reset.push(id);
@@ -226,13 +231,37 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
     if (!file) throw new Error('El modelo de imagen no devolvió el cuadro.');
     await setShot(pid, sid, (s) => {
       s.frame = { status: 'done', file, prompt, model, round: (s.frame?.round || 0) + 1, error: null };
+      s.storyboard = { ...emptyJob(), status: 'queued' };
       s.approved = false;
       s.video = emptyJob();
     });
+    // La plancha visual muestra seis momentos de una misma toma. El cuadro aprobado sigue
+    // siendo una imagen aparte y es el punto de partida exacto del video.
+    if (ws.mock) {
+      await setShot(pid, sid, (s) => { s.storyboard = { ...emptyJob(), status: 'done', demo: true }; });
+    } else {
+      try {
+        await setShot(pid, sid, (s) => { s.storyboard.status = 'running'; });
+        note('Dibujando las seis viñetas de la toma…');
+        const image = await upload(file, signal);
+        const beats = (shot.vinetas || []).map((v, i) => `${i + 1}. ${v}`).join('\n');
+        const sheetPrompt = `Create ONE cinematic storyboard contact sheet with EXACTLY six distinct panels arranged in TWO ROWS and THREE COLUMNS, read left to right, top to bottom. The reference image is the exact opening composition and character identity. Show the action evolving across the next five seconds in one continuous shot, no scene cuts. Moments:\n${beats}\nPreserve face, clothing, setting, camera direction and lighting. Crisp panel borders, no letters, no captions, no logos. Each panel has the same aspect ratio as the opening frame. Style: ${project.story?.estilo_visual?.look || 'cinematic film still'}.`;
+        const sheet = await ws.image({ model: config.frameEditModel, signal,
+          body: { prompt: sheetPrompt, images: [image], aspect_ratio: '16:9', quality: config.frameQuality, output_format: 'jpeg' },
+          onStatus: ({ status, elapsed }) => note(`Storyboard · ${status} · ${Math.round(elapsed)} s`),
+        });
+        if (!sheet.file) throw new Error('El modelo no devolvió la plancha.');
+        await setShot(pid, sid, (s) => { s.storyboard = { status: 'done', file: sheet.file, error: null }; });
+      } catch (err) {
+        if (signal.aborted) throw err;
+        await setShot(pid, sid, (s) => { s.storyboard = { status: 'error', file: null, error: err.message.slice(0, 400) }; });
+      }
+    }
   }
 
   const queueFrame = (pid, sid, extra = {}) => setShot(pid, sid, (s) => {
     s.frame = { ...s.frame, status: 'queued', error: null };
+    s.storyboard = emptyJob();
     s.approved = false;
     running.get(key(pid, sid, 'video'))?.abort();
     s.video = emptyJob();
@@ -245,7 +274,7 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
       return {
         ...p,
         shots: p.shots.map((s) => ({ ...s, live: { frame: live.get(key(pid, s.id, 'frame')) || null, video: live.get(key(pid, s.id, 'video')) || null } })),
-        busy: p.shots.some((s) => ['queued', 'running'].includes(s.frame?.status) || ['queued', 'running'].includes(s.video?.status)),
+        busy: p.shots.some((s) => ['queued', 'running'].includes(s.frame?.status) || ['queued', 'running'].includes(s.storyboard?.status) || ['queued', 'running'].includes(s.video?.status)),
       };
     },
 
@@ -329,6 +358,7 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
         const content = [
           { type: 'text', text: shotVideoPrompt({ project, shot: cur, prev: byId(order[idx - 1]), next: byId(order[idx + 1]), feedback: str(feedback, 800) }) },
           { type: 'image_url', image_url: { url: await store.dataUrl(cur.frame.file) } },
+          ...(cur.storyboard?.file ? [{ type: 'text', text: 'Storyboard: seis momentos de esta toma, en orden de lectura.' }, { type: 'image_url', image_url: { url: await store.dataUrl(cur.storyboard.file) } }] : []),
         ];
         const { data: plan } = await runAgent(pid, {
           step: `shotdp-${sid}`, role: 'Director de Fotografía', title: `${sid} · Dirigiendo la toma`, model: config.dpModel, system: DP_SYSTEM,

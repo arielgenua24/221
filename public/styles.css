@@ -561,3 +561,55 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 @media (min-width: 900px) {
   .story-chat { max-height: 38dvh; }
 }
+
+/* Historia comparte la escala y la lectura vertical de Raw, incluso en pantallas grandes. */
+.story-inner { max-width: 560px; gap: 14px; }
+.story-folder-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+#story-folder { width: 100%; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 14px; padding: 12px; font-size: 16px; }
+#story-new { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+#story-new input { grid-column: 1 / -1; }
+#story-new select { min-width: 0; }
+.story-projects { grid-template-columns: 1fr; }
+.story-project { flex-direction: row; align-items: center; }
+.story-cover { width: 64px; height: 64px; flex: 0 0 64px; }
+.story-head { gap: 4px; }
+.story-head .small-round { width: 38px; height: 38px; }
+.story-title { font-size: 18px; }
+#story-cost { display: none; }
+#story-source { margin: -8px 0 0 44px; }
+.story-compose { gap: 8px; }
+.story-mode { color: var(--accent); font-size: 13px; font-weight: 750; }
+.story-compose .raw-prompt { padding: 15px 4px 8px; }
+.story-compose textarea { width: 100%; border: 0; background: transparent; resize: none; outline: none; text-align: center; font-size: 24px; font-weight: 700; line-height: 1.25; color: var(--text); }
+.story-compose textarea::placeholder { color: color-mix(in srgb, var(--muted) 60%, transparent); }
+.story-add-pair { display: flex; border: 1px solid var(--border); border-radius: 99px; padding: 4px 10px; }
+.story-add { font-size: 24px; line-height: 1; }
+.story-compose-actions { display: flex; gap: 8px; margin-left: auto; }
+.story-conversation, .story-library-wrap, .story-script { display: flex; flex-direction: column; gap: 8px; }
+.story-conversation .raw-section, .story-library-wrap .raw-section, .story-script .raw-section { margin: 0; }
+.story-chat { max-height: 225px; padding: 2px; }
+.story-library-wrap > p { margin: 0; }
+.story-library-row { display: flex; flex-direction: column; gap: 3px; }
+.story-library-row .raw-row-head { font-size: 12px; font-weight: 700; color: var(--muted); }
+.story-asset { width: 80px; }
+.story-asset img { width: 80px; height: 80px; border-radius: 15px; }
+.story-asset figcaption { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.story-asset-rename { position: absolute; right: 2px; bottom: 18px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(0,0,0,.72); color: white; cursor: pointer; }
+.story-asset-x { opacity: .9; }
+.story-script { border: 1px solid var(--border); background: var(--surface); border-radius: 18px; padding: 14px; }
+.story-script h3 { margin: 0 0 4px; font-size: 16px; }
+.story-script p { margin: 4px 0; }
+.story-panel { border-radius: 18px; }
+.story-board { display: block; }
+.story-shot-nav { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.story-shot-tab { flex: 0 0 auto; max-width: 170px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 99px; padding: 8px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; cursor: pointer; }
+.story-shot-tab[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 700; }
+.story-sequence { display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--surface-2); }
+.story-sequence-title { margin: 0; font-size: 12px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.story-sequence-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.story-beat { min-width: 0; overflow: hidden; border-radius: 7px; background: var(--surface); }
+.story-beat-image { aspect-ratio: 4 / 3; background-color: #292724; background-repeat: no-repeat; display: grid; place-items: center; color: #fff9; font-size: 22px; font-weight: 800; }
+.story-beat-caption { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.6em; padding: 3px 4px; font-size: 10px; line-height: 1.3; }
+.shot { width: 100%; }
+.shot-media { max-height: 320px; }
+@media (max-width: 420px) { .story-compose textarea { font-size: 21px; } .story-head .pill { display: none; } .story-panel-head .actions { width: 100%; } }

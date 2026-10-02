@@ -55,7 +55,7 @@ export const STORY_SYSTEM = [
   { type: 'text', text: `${STORY_CRAFT}\n\nFORMATO DE RESPUESTA (obligatorio):\n${NOTES}` },
 ];
 
-const SHOT_SCHEMA = `{ "id": "S1", "titulo": "3 a 6 palabras", "funcion": "qué hace esta toma en la historia", "intensidad": 1, "accion": "qué pasa en los ${SHOT_SECONDS} s (español)", "emocion": "qué siente el espectador", "encuadre": "plano, ángulo, lente", "camara": "movimiento (uno) o fija", "luz": "fuente, dirección, calidad", "refs": ["M1"], "prompt_cuadro": "el primer cuadro, en inglés (sección 4)", "reglas": ["guia/regla"] }`;
+const SHOT_SCHEMA = `{ "id": "S1", "titulo": "3 a 6 palabras", "funcion": "qué hace esta toma en la historia", "intensidad": 1, "accion": "qué pasa en los ${SHOT_SECONDS} s (español)", "vinetas": ["momento 1, apertura", "momento 2", "momento 3", "momento 4", "momento 5", "momento 6, cierre"], "emocion": "qué siente el espectador", "encuadre": "plano, ángulo, lente", "camara": "movimiento (uno) o fija", "luz": "fuente, dirección, calidad", "refs": ["M1"], "prompt_cuadro": "el primer cuadro, en inglés (sección 4)", "reglas": ["guia/regla"] }`;
 
 const assetList = (assets) => assets.length
   ? assets.map((a) => `- ${a.code}: ${a.source === 'video' ? 'cuadro de un video' : 'foto'}${a.name ? ` "${a.name}"` : ''}${a.note ? ` — ${a.note}` : ''}`).join('\n')
@@ -63,7 +63,7 @@ const assetList = (assets) => assets.length
 
 const shotBrief = (s) => ({
   id: s.id, titulo: s.titulo, funcion: s.funcion, intensidad: s.intensidad, accion: s.accion, emocion: s.emocion,
-  encuadre: s.encuadre, camara: s.camara, luz: s.luz, refs: s.refs, prompt_cuadro: s.prompt_cuadro,
+  encuadre: s.encuadre, camara: s.camara, luz: s.luz, refs: s.refs, vinetas: s.vinetas, prompt_cuadro: s.prompt_cuadro,
   estado: s.video?.file ? 'video listo' : s.approved ? 'aprobada (generando video)' : s.frame?.file ? 'cuadro dibujado, sin aprobar' : 'sin cuadro',
 });
 
@@ -98,6 +98,7 @@ Esquema JSON exacto:
   { "titulo": "…", "logline": "una frase", "emocion_central": "…", "arco": "cómo sube y baja la intensidad", "estilo_visual": { "paleta": "…", "luz": "…", "textura": "…", "look": "en inglés, una línea que se suma a cada cuadro" }, "personajes": [{ "nombre": "…", "material": ["M1"], "descripcion_visual": "en inglés, fija, se repite en cada cuadro" }], "musica": "qué música le queda (género, tempo, energía)" }
 - "tomas": null si no cambió ninguna; si cambia alguna, la lista COMPLETA en orden (las que no cambian, idénticas, con su mismo id). Cada toma:
   ${SHOT_SCHEMA}
+  Escribí seis viñetas concretas y distintas por toma: posiciones y acciones visibles en orden temporal. Se mostrarán en dos filas de tres cuadros.
   Ids "S1", "S2"… Si agregás una toma nueva, dale un id nuevo que no exista. Máximo ${MAX_SHOTS}.
 - "preguntas": [] si no hace falta preguntar. "notas_material": solo para imágenes nuevas o que todavía no tienen nota.
 - "listo_para_storyboard": true cuando la historia y las tomas están para dibujar.`;
@@ -137,7 +138,10 @@ El "id" sigue siendo "${shot.id}".`;
 // Prompt del modelo de imagen: el cuadro + la identidad fija de personajes y estilo.
 export function frameImagePrompt({ project, shot, refCodes }) {
   const story = project.story || {};
-  const refsLine = refCodes.length ? `Reference images: ${refCodes.map((c, i) => `image ${i + 1} is ${c}${project.assets.find((a) => a.code === c)?.note ? ` (${project.assets.find((a) => a.code === c).note})` : ''}`).join('; ')}. Keep every person, face, outfit and product from the references exactly identical.` : '';
+  const refsLine = refCodes.length ? `Reference images: ${refCodes.map((c, i) => {
+    const a = project.assets.find((item) => item.code === c);
+    return `image ${i + 1} is ${a?.name || c}${a?.note ? ` (${a.note})` : ''}`;
+  }).join('; ')}. Keep every person, face, outfit and product from the references exactly identical.` : '';
   const cast = (story.personajes || [])
     .filter((p) => (p.material || []).some((m) => refCodes.includes(m)) || String(shot.prompt_cuadro || '').toLowerCase().includes(String(p.nombre || '').toLowerCase()))
     .map((p) => `${p.nombre}: ${p.descripcion_visual}`).join(' ');

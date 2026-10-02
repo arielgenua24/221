@@ -3,7 +3,7 @@ import { kindOf, loadVideo } from './media.js';
 import { createStoryEditor } from './story-timeline.js';
 
 // Historia: el humano sube su material y conversa con el Guionista, que arma la historia en tomas de 5 s.
-// Se dibuja el storyboard (el primer cuadro de cada toma); cada toma que el humano aprueba la dirige el
+// Se dibuja una secuencia de seis viñetas y el primer cuadro de cada toma; cada toma aprobada la dirige el
 // Director de Fotografía y la genera Wan 3.0, en paralelo. Las tomas listas se montan sobre la música.
 // Todo lo largo corre en el servidor: la pestaña consulta el proyecto mientras haya algo generándose.
 
@@ -15,6 +15,28 @@ let project = null;
 let turn = null; // AbortController del turno en curso
 let pollTimer = 0;
 let editor = null;
+let folderId = null;
+let folderAssets = [];
+let folderName = '';
+let selectedShot = null;
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let storyMicOn = (() => { try { return localStorage.getItem('story-mic') !== '0'; } catch { return true; } })();
+let storyMicExplicit = false;
+let storyRecognition = null;
+let storyHeard = '';
+let storySilenceTimer = 0;
+let storySpeaking = false;
+let storySpeechToken = 0;
+const storyPlayer = new Audio();
+let storyAudioUnlocked = false;
+function unlockStoryAudio() {
+  if (storyAudioUnlocked) return;
+  storyAudioUnlocked = true;
+  storyPlayer.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+  storyPlayer.play().then(() => storyPlayer.pause()).catch(() => {});
+  try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch {}
+}
+window.addEventListener('pointerdown', unlockStoryAudio, { once: true });
 const drafts = new Map(); // textos que el humano está escribiendo en cada toma (sobreviven a los redibujos)
 const cards = new Map(); // id → { node, sig }
 
@@ -27,16 +49,29 @@ async function api(url, body) {
   if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
   return data;
 }
-const fileUrl = (f) => `/story-files/${f}`;
+const fileUrl = (f) => f?.startsWith('raw:') ? `/raw-files/${encodeURIComponent(f.slice(4))}` : `/story-files/${encodeURIComponent(f)}`;
 const busyStatus = (j) => j?.status === 'queued' || j?.status === 'running';
 
 // ---------- Inicio: lista de historias ----------
 async function loadHome() {
-  const { projects } = await api('/api/story/projects');
+  const [{ projects }, { folders }] = await Promise.all([api('/api/story/projects'), api('/api/raw/folders')]);
+  const picker = $('story-folder');
+  picker.replaceChildren();
+  folders.forEach((f) => {
+    const option = el('option', null, f.name); option.value = f.id; picker.append(option);
+  });
+  if (!folders.length) {
+    const option = el('option', null, 'Creá una carpeta en Raw'); option.value = ''; picker.append(option);
+  }
+  if (!folderId || !folders.some((f) => f.id === folderId)) folderId = folders[0]?.id || null;
+  picker.value = folderId || '';
+  folderName = folders.find((f) => f.id === folderId)?.name || '';
+  $('story-new').querySelector('button[type="submit"]').disabled = !folderId;
   const box = $('story-projects');
   box.replaceChildren();
-  if (!projects.length) box.append(el('p', 'muted small', 'Todavía no hay historias. Creá la primera.'));
-  projects.forEach((p) => {
+  const visible = projects.filter((p) => p.rawFolderId === folderId);
+  if (!visible.length) box.append(el('p', 'muted small', folderId ? 'Todavía no hay historias en esta carpeta.' : 'Creá una carpeta en Raw para empezar.'));
+  visible.forEach((p) => {
     const b = el('button', 'story-project');
     b.type = 'button';
     const cover = el('span', 'story-cover');
@@ -50,11 +85,18 @@ async function loadHome() {
     box.append(b);
   });
 }
+$('story-folder').addEventListener('change', (e) => { folderId = e.target.value || null; loadHome().catch((err) => showError(err.message)); });
+window.addEventListener('story-folder-context', (e) => {
+  folderId = e.detail;
+  if (project && project.rawFolderId !== folderId) goHome();
+  else if (!project) loadHome().catch((err) => showError(err.message));
+});
 
 $('story-new').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    const { project: p } = await api('/api/story/projects', { title: $('story-new-name').value, aspect: $('story-new-aspect').value });
+    if (!folderId) throw new Error('Elegí una carpeta de Raw.');
+    const { project: p } = await api('/api/story/projects', { title: $('story-new-name').value, aspect: $('story-new-aspect').value, rawFolderId: folderId });
     $('story-new-name').value = '';
     openProject(p.id);
   } catch (err) { alert(err.message); }
@@ -64,6 +106,7 @@ async function openProject(id) {
   try {
     const { project: p } = await api(`/api/story/project?id=${encodeURIComponent(id)}`);
     project = p;
+    folderId = p.rawFolderId || folderId;
     cards.clear();
     $('story-board').replaceChildren();
     editor?.destroy();
@@ -74,6 +117,8 @@ async function openProject(id) {
     history.replaceState(null, '', `#historia/${id}`);
     showError('');
     render();
+    loadFolderLibrary().catch((err) => showError(err.message));
+    resumeStoryVoice();
   } catch (err) {
     alert(err.message);
     goHome();
@@ -81,6 +126,7 @@ async function openProject(id) {
 }
 
 function goHome() {
+  stopStoryVoice();
   stopPolling();
   turn?.abort();
   editor?.destroy();
@@ -108,22 +154,13 @@ function render() {
   if (document.activeElement !== $('story-title')) $('story-title').value = project.title;
   $('story-aspect').textContent = project.aspect;
   $('story-cost').textContent = project.cost ? `US$ ${project.cost.toFixed(3)}` : '';
-  renderSteps();
+  $('story-source').textContent = folderName ? `Carpeta Raw / ${folderName}` : 'Historia sin carpeta Raw';
   renderMaterial();
   renderChat();
+  renderScript();
   renderBoard();
   renderEditor();
   if (project.busy) startPolling(); else stopPolling();
-}
-
-function renderSteps() {
-  const s = project.shots;
-  const step = s.some((x) => x.video?.file) ? 'edit' : s.some((x) => x.approved) ? 'clips' : s.some((x) => x.frame?.file) || project.ready ? 'board' : 'talk';
-  const order = ['talk', 'board', 'clips', 'edit'];
-  document.querySelectorAll('.story-steps li').forEach((li) => {
-    const k = order.indexOf(li.dataset.step);
-    li.dataset.state = k < order.indexOf(step) ? 'done' : k === order.indexOf(step) ? 'now' : '';
-  });
 }
 
 function renderMaterial() {
@@ -136,16 +173,78 @@ function renderMaterial() {
   project.assets.forEach((a) => {
     const t = el('figure', 'story-asset');
     const img = el('img'); img.src = fileUrl(a.file); img.alt = a.name || a.code; img.loading = 'lazy';
-    const cap = el('figcaption', null, a.code);
+    const cap = el('figcaption', null, a.name || a.rawCode || a.code);
+    const rename = el('button', 'story-asset-rename', '✎'); rename.type = 'button'; rename.title = `Poner nombre a ${a.code}`; rename.setAttribute('aria-label', `Poner nombre a ${a.code}`);
+    rename.onclick = async () => {
+      const name = prompt('Nombre de esta referencia o persona', a.name || '');
+      if (name === null) return;
+      try { await api('/api/story/assets/rename', { projectId: project.id, code: a.code, name }); await refreshProject(); await loadFolderLibrary(); } catch (e) { showError(e.message); }
+    };
     const x = el('button', 'story-asset-x', '×'); x.type = 'button'; x.title = `Quitar ${a.code}`; x.setAttribute('aria-label', `Quitar ${a.code}`);
     x.onclick = async () => {
       if (!confirm(`¿Quitar ${a.code} del proyecto?`)) return;
       try { await api('/api/story/assets/delete', { projectId: project.id, code: a.code }); await refreshProject(); } catch (e) { showError(e.message); }
     };
     t.title = a.note ? `${a.code}: ${a.note}` : a.code;
-    t.append(img, cap, x);
+    t.append(img, cap, rename, x);
     box.append(t);
   });
+}
+
+async function loadFolderLibrary() {
+  const box = $('story-library');
+  box.replaceChildren();
+  if (!project?.rawFolderId) { box.append(el('p', 'muted small', 'Esta historia no tiene carpeta Raw.')); return; }
+  const data = await api(`/api/raw/folder?id=${encodeURIComponent(project.rawFolderId)}`);
+  folderAssets = data.assets.filter((a) => a.folderId === project.rawFolderId);
+  const names = new Map(folderAssets.map((a) => [a.code, a.name]));
+  project.assets.forEach((a) => { if (a.rawCode && names.has(a.rawCode)) a.name = names.get(a.rawCode); });
+  renderMaterial();
+  folderName = data.lineage.at(-1)?.name || '';
+  $('story-source').textContent = `Carpeta Raw / ${folderName}`;
+  const linked = new Set(project.assets.map((a) => a.rawCode));
+  for (const [kind, title] of [['persona', 'Personas'], ['referencia', 'Referencias'], ['generada', 'Imágenes generadas']]) {
+    const assets = folderAssets.filter((a) => a.kind === kind);
+    if (!assets.length) continue;
+    const row = el('div', 'story-library-row'); row.append(el('div', 'raw-row-head', title));
+    const strip = el('div', 'raw-strip');
+    assets.forEach((a) => {
+      const tile = el('div', `raw-thumb ${linked.has(a.code) ? 'selected' : ''}`);
+      const hit = el('button', 'raw-thumb-hit'); hit.type = 'button'; hit.title = linked.has(a.code) ? `${a.name || a.code} incluida` : `Usar ${a.name || a.code}`;
+      const img = el('img'); img.src = `/raw-files/${encodeURIComponent(a.file)}`; img.alt = a.name || a.code; img.loading = 'lazy';
+      hit.append(img); hit.onclick = async () => {
+        if (linked.has(a.code)) return;
+        try { await api('/api/story/assets/link', { projectId: project.id, rawCode: a.code }); await refreshProject(); await loadFolderLibrary(); } catch (e) { showError(e.message); }
+      };
+      const badge = el('span', 'raw-badge', a.name || a.code);
+      const pen = el('button', 'raw-thumb-menu', '✎'); pen.type = 'button'; pen.title = `Poner nombre a ${a.code}`; pen.setAttribute('aria-label', `Poner nombre a ${a.code}`);
+      pen.onclick = async () => {
+        const name = prompt('Nombre de esta persona o referencia', a.name || '');
+        if (name === null) return;
+        try {
+          const inStory = project.assets.find((m) => m.rawCode === a.code);
+          if (inStory) await api('/api/story/assets/rename', { projectId: project.id, code: inStory.code, name });
+          else await api('/api/raw/assets/update', { code: a.code, name });
+          await refreshProject(); await loadFolderLibrary();
+        } catch (e) { showError(e.message); }
+      };
+      tile.append(hit, badge, pen); strip.append(tile);
+    });
+    row.append(strip); box.append(row);
+  }
+  if (!box.children.length) box.append(el('p', 'muted small', 'Esta carpeta todavía no tiene imágenes. Agregalas arriba.'));
+}
+
+function renderScript() {
+  const wrap = $('story-script-wrap');
+  wrap.hidden = !project.story;
+  if (!project.story) return;
+  const s = project.story;
+  const box = $('story-script'); box.replaceChildren();
+  if (s.titulo) box.append(el('h3', null, s.titulo));
+  if (s.logline) box.append(el('p', 'story-logline', s.logline));
+  if (s.arco) box.append(el('p', 'muted small', s.arco));
+  if (s.personajes?.length) box.append(el('p', 'muted small', `Personajes: ${s.personajes.map((p) => p.nombre).filter(Boolean).join(', ')}`));
 }
 
 function renderChat() {
@@ -166,7 +265,7 @@ function renderChat() {
 function greet() {
   const box = $('story-chat');
   const msg = el('div', 'story-msg bot');
-  msg.append(el('div', 'bubble', 'Hola. Contame qué historia querés contar —para quién, qué tiene que sentir— y subí tu material (personas, producto, lugar). La armamos en tomas de 5 segundos.'));
+  msg.append(el('div', 'bubble', 'Hola. Contame qué historia querés crear con las personas y referencias de esta carpeta.'));
   box.append(msg);
 }
 
@@ -201,6 +300,90 @@ function questionCard(questions) {
 
 // ---------- Conversación ----------
 const input = $('story-text');
+function storyPhase(phase, caption = '') {
+  $('story-orb').dataset.phase = phase;
+  $('story-phase').textContent = ({ idle: 'Listo', listening: 'Te escucho…', thinking: 'Pensando…', speaking: 'Hablando', muted: 'Micrófono apagado' })[phase] || phase;
+  $('story-caption').textContent = caption;
+}
+function stopStoryListening() {
+  clearTimeout(storySilenceTimer);
+  if (storyRecognition) { storyRecognition.onend = null; storyRecognition.onresult = null; try { storyRecognition.abort(); } catch {} }
+  storyRecognition = null; storyHeard = '';
+}
+function stopStoryVoice() {
+  stopStoryListening(); storySpeechToken++; storySpeaking = false; storyPlayer.pause();
+  try { speechSynthesis.cancel(); } catch {}
+  storyPhase('idle');
+}
+function resumeStoryVoice() {
+  $('story-mic').setAttribute('aria-pressed', String(storyMicOn));
+  $('story-mic').classList.toggle('off', !storyMicOn || !SpeechRecognition);
+  if (!SpeechRecognition || !storyMicOn || !project || turn || storySpeaking || storyRecognition || document.hidden || document.body.dataset.tab !== 'story') {
+    if (!turn && !storySpeaking) storyPhase(storyMicOn ? 'idle' : 'muted');
+    return;
+  }
+  const rec = new SpeechRecognition(); storyRecognition = rec;
+  rec.lang = navigator.language?.toLowerCase().startsWith('es') ? navigator.language : 'es-ES';
+  rec.continuous = true; rec.interimResults = true;
+  rec.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const r = event.results[i]; if (r.isFinal) storyHeard += ` ${r[0].transcript}`; else interim += r[0].transcript;
+    }
+    storyPhase('listening', `${storyHeard} ${interim}`.trim());
+    clearTimeout(storySilenceTimer);
+    if (storyHeard.trim()) storySilenceTimer = setTimeout(flushStoryVoice, interim ? 1800 : 900);
+  };
+  rec.onerror = (event) => {
+    if (['not-allowed', 'service-not-allowed'].includes(event.error)) {
+      storyMicOn = false; stopStoryListening(); resumeStoryVoice();
+      if (storyMicExplicit) showError('El navegador no dio permiso al micrófono. Podés escribir en la caja.');
+    }
+  };
+  rec.onend = () => {
+    storyRecognition = null;
+    if (storyHeard.trim()) flushStoryVoice(); else setTimeout(resumeStoryVoice, 300);
+  };
+  try { rec.start(); storyPhase('listening'); } catch { storyRecognition = null; storyPhase('idle'); }
+}
+function flushStoryVoice() {
+  const text = storyHeard.trim(); stopStoryListening();
+  if (text) send({ text }); else resumeStoryVoice();
+}
+async function speakStory(text) {
+  if (!text || !storyMicOn) return;
+  const token = ++storySpeechToken; storySpeaking = true; stopStoryListening(); storyPhase('speaking', text);
+  let url = null;
+  try { url = (await api('/api/raw/speak', { text })).url; } catch {}
+  if (token !== storySpeechToken) return;
+  let played = false;
+  if (url) {
+    played = await new Promise((resolve) => {
+      storyPlayer.src = url; storyPlayer.onended = () => resolve(true); storyPlayer.onerror = () => resolve(false);
+      storyPlayer.play().catch(() => resolve(false));
+    });
+  }
+  if (!played && 'speechSynthesis' in window) {
+    await new Promise((resolve) => {
+      const u = new SpeechSynthesisUtterance(text); u.lang = 'es-ES'; u.onend = resolve; u.onerror = resolve;
+      const timer = setTimeout(resolve, 5000 + text.length * 100);
+      const done = () => { clearTimeout(timer); resolve(); }; u.onend = done; u.onerror = done;
+      speechSynthesis.speak(u);
+    });
+  }
+  if (token === storySpeechToken) { storySpeaking = false; resumeStoryVoice(); }
+}
+$('story-mic').onclick = () => {
+  unlockStoryAudio();
+  if (!SpeechRecognition) return showError('Este navegador no reconoce voz. Podés escribir en la caja.');
+  storyMicExplicit = true;
+  storyMicOn = !storyMicOn;
+  try { localStorage.setItem('story-mic', storyMicOn ? '1' : '0'); } catch {}
+  if (storyMicOn) resumeStoryVoice(); else { stopStoryVoice(); storyPhase('muted'); resumeStoryVoice(); }
+};
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopStoryListening(); else resumeStoryVoice(); });
+input.addEventListener('focus', stopStoryListening);
+input.addEventListener('blur', () => setTimeout(resumeStoryVoice, 200));
 function autosize() { input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 160)}px`; }
 input.addEventListener('input', autosize);
 input.addEventListener('keydown', (e) => {
@@ -216,6 +399,8 @@ $('story-form').addEventListener('submit', (e) => {
 
 async function send({ text = '', answers = [] }) {
   if (!project || turn) return;
+  stopStoryListening();
+  storyPhase('thinking');
   showError('');
   const box = $('story-chat');
   box.querySelectorAll('.story-questions button').forEach((b) => { b.disabled = true; });
@@ -239,7 +424,7 @@ async function send({ text = '', answers = [] }) {
       else if (ev.type === 'reasoning') live.textContent = `Pensando… ${ev.text.replace(/\s+/g, ' ').slice(-120)}`;
       else if (ev.type === 'progress') live.textContent = `Escribiendo las tomas… ${ev.chars.toLocaleString('es')} caracteres`;
       else if (ev.type === 'notice') live.textContent = ev.text;
-      else if (ev.type === 'story_reply') { bubble.textContent = ev.decir; reply.classList.remove('thinking'); }
+      else if (ev.type === 'story_reply') { bubble.textContent = ev.decir; reply.classList.remove('thinking'); speakStory(ev.decir); }
       else if (ev.type === 'project') project = ev.project;
       else if (ev.type === 'error') showError(ev.text);
     });
@@ -250,6 +435,7 @@ async function send({ text = '', answers = [] }) {
     live.hidden = true;
     $('story-send').classList.remove('stop');
     render();
+    resumeStoryVoice();
   }
 }
 
@@ -268,7 +454,7 @@ async function toJpeg(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 
-async function addFiles(files) {
+async function addFiles(files, kind = 'referencia') {
   if (!project) return;
   showError('');
   const list = [...files].filter((f) => ['photo', 'video'].includes(kindOf(f)));
@@ -279,7 +465,12 @@ async function addFiles(files) {
     for (const f of list) {
       live.textContent = `Subiendo ${f.name}…`;
       if (kindOf(f) === 'photo') {
-        await api('/api/story/assets', { projectId: project.id, dataUrl: await toJpeg(f), name: f.name, source: 'foto' });
+        if (project.rawFolderId) {
+          const { asset } = await api('/api/raw/assets', { folderId: project.rawFolderId, kind, dataUrl: await toJpeg(f), name: f.name.replace(/\.[^.]+$/, '') });
+          await api('/api/story/assets/link', { projectId: project.id, rawCode: asset.code });
+        } else {
+          await api('/api/story/assets', { projectId: project.id, dataUrl: await toJpeg(f), name: f.name, source: 'foto' });
+        }
       } else {
         // De un video, tres cuadros representativos.
         const v = await loadVideo(f);
@@ -295,9 +486,11 @@ async function addFiles(files) {
   } finally {
     live.hidden = true;
     await refreshProject();
+    await loadFolderLibrary();
   }
 }
 $('story-file').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
+$('story-person-file').addEventListener('change', (e) => { addFiles(e.target.files, 'persona'); e.target.value = ''; });
 // Soltar archivos en cualquier parte de la historia abierta (la música se suelta en su pista, en el montaje).
 const storyActive = () => document.body.dataset.tab === 'story' && !!project;
 window.addEventListener('dragover', (e) => { if (storyActive()) e.preventDefault(); });
@@ -319,7 +512,7 @@ function renderBoard() {
   const drawBtn = $('story-draw');
   const missing = shots.filter((s) => !s.frame?.file && !busyStatus(s.frame));
   drawBtn.hidden = !missing.length;
-  drawBtn.textContent = shots.some((s) => s.frame?.file) ? `Dibujar las que faltan (${missing.length})` : `Dibujar storyboard (${shots.length} cuadros)`;
+  drawBtn.textContent = shots.some((s) => s.frame?.file) ? `Dibujar las que faltan (${missing.length})` : `Dibujar ${shots.length} toma${shots.length === 1 ? '' : 's'}`;
   drawBtn.disabled = !cfg.story.generate;
   const approvable = shots.filter((s) => s.frame?.file && s.frame.status === 'done' && !s.approved);
   $('story-approve-all').hidden = approvable.length < 2;
@@ -327,12 +520,21 @@ function renderBoard() {
   const secs = shots.length * cfg.story.shotSeconds;
   $('story-board-hint').textContent = !cfg.story.generate
     ? 'Falta WAVESPEED_API_KEY en el servidor: no se pueden dibujar cuadros ni generar video.'
-    : `${shots.length} tomas · ${secs} s. Cada cuadro es el primer cuadro exacto de su toma. Al aprobar una, el Director de Fotografía la dirige y Wan 3.0 la genera (${cfg.story.resolution || '480p'}, ${cfg.story.shotSeconds} s)${cfg.mock ? ' — en demo no se genera video' : ''}.`;
+    : `${shots.length} tomas · ${secs} s. Cada toma muestra seis momentos en dos filas. El primer cuadro aprobado inicia su video de ${cfg.story.shotSeconds} s${cfg.mock ? ' · demo' : ''}.`;
 
   const board = $('story-board');
+  const nav = $('story-shot-nav'); nav.replaceChildren();
   const ids = shots.map((s) => s.id);
-  for (const [id, c] of cards) if (!ids.includes(id)) { c.node.remove(); cards.delete(id); }
+  if (!ids.includes(selectedShot)) selectedShot = ids[0];
   shots.forEach((s, i) => {
+    const b = el('button', 'story-shot-tab', `${String(i + 1).padStart(2, '0')} · ${s.titulo}`);
+    b.type = 'button'; b.setAttribute('aria-pressed', String(s.id === selectedShot));
+    b.onclick = () => { selectedShot = s.id; renderBoard(); };
+    nav.append(b);
+  });
+  for (const [id, c] of cards) if (!ids.includes(id)) { c.node.remove(); cards.delete(id); }
+  shots.filter((s) => s.id === selectedShot).forEach((s) => {
+    const i = shots.indexOf(s);
     const sig = JSON.stringify([s, project.aspect, cfg.story.generate]);
     let c = cards.get(s.id);
     if (!c || c.sig !== sig) {
@@ -343,6 +545,7 @@ function renderBoard() {
     }
     if (board.children[i] !== c.node) board.insertBefore(c.node, board.children[i] || null);
   });
+  for (const child of [...board.children]) if (child !== cards.get(selectedShot)?.node) child.remove();
 }
 
 function shotCard(s, i) {
@@ -354,6 +557,27 @@ function shotCard(s, i) {
   dots.title = `Intensidad ${s.intensidad}/5`;
   dots.textContent = '●'.repeat(s.intensidad) + '○'.repeat(5 - s.intensidad);
   head.append(dots);
+
+  const sequence = el('div', 'story-sequence');
+  sequence.append(el('p', 'story-sequence-title', 'Storyboard · 6 momentos / 5 s'));
+  const grid = el('div', 'story-sequence-grid');
+  const beats = s.vinetas?.length ? s.vinetas : Array.from({ length: 6 }, (_, n) => `${s.accion || 'Acción'} · momento ${n + 1}`);
+  beats.slice(0, 6).forEach((beat, index) => {
+    const panel = el('div', 'story-beat');
+    const image = el('div', 'story-beat-image');
+    if (index === 0 && s.frame?.file) {
+      image.style.backgroundImage = `url("${fileUrl(s.frame.file)}")`;
+      image.style.backgroundSize = 'cover';
+      image.style.backgroundPosition = 'center';
+    } else if (s.storyboard?.file) {
+      image.style.backgroundImage = `url("${fileUrl(s.storyboard.file)}")`;
+      image.style.backgroundSize = '300% 200%';
+      image.style.backgroundPosition = `${(index % 3) * 50}% ${Math.floor(index / 3) * 100}%`;
+    } else image.textContent = s.storyboard?.status === 'running' ? '…' : String(index + 1).padStart(2, '0');
+    panel.append(image, el('span', 'story-beat-caption', beat)); grid.append(panel);
+  });
+  sequence.append(grid);
+  if (s.storyboard?.status === 'error') sequence.append(el('p', 'muted small', 'La plancha visual no se pudo completar; las seis acciones siguen disponibles. Redibujá la toma para reintentar.'));
 
   const media = el('div', 'shot-media');
   const [w, h] = project.aspect.split(':').map(Number);
@@ -461,7 +685,7 @@ function shotCard(s, i) {
     [fb, pt, redo, use].forEach((x) => { x.disabled = !cfg.story.generate; });
     body.append(more);
   }
-  card.append(head, media, body);
+  card.append(head, sequence, media, body);
   card.style.setProperty('--i', i);
   return card;
 }
@@ -523,11 +747,11 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && pr
 
 // ---------- Pestaña ----------
 function onTab(tab) {
-  if (tab !== 'story') { if (!editor?.busy()) editor?.pause(); return; }
+  if (tab !== 'story') { stopStoryVoice(); if (!editor?.busy()) editor?.pause(); return; }
   const m = /^historia\/(.+)$/.exec(location.hash.slice(1));
   if (m && (!project || project.id !== m[1])) openProject(m[1]);
   else if (!project) loadHome().catch((err) => alert(err.message));
-  else refreshProject();
+  else { refreshProject(); resumeStoryVoice(); }
 }
 window.addEventListener('tab', (e) => onTab(e.detail));
 // raw.js elige la pestaña al cargar, antes de que este módulo escuche.

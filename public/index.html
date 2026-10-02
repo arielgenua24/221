@@ -117,9 +117,11 @@
       <div id="story-home" class="raw-scroll">
         <div class="story-inner">
           <h1 class="raw-title">Historia</h1>
-          <p class="muted">Contá una historia con tu material. El Guionista la arma con vos en tomas de 5 segundos, dibuja el storyboard, y cada toma que aprobás se genera con Wan 3.0. Después la montás sobre tu música.</p>
+          <p class="muted">Elegí una carpeta de Raw. Sus personas y referencias acompañan la conversación, el guion y cada toma.</p>
+          <label class="story-folder-label" for="story-folder">Carpeta de Raw</label>
+          <select id="story-folder" aria-label="Carpeta de Raw"></select>
           <form id="story-new" class="raw-new">
-            <input id="story-new-name" type="text" placeholder="Nombre de la historia" maxlength="80" aria-label="Nombre de la historia nueva">
+            <input id="story-new-name" type="text" placeholder="Nueva historia" maxlength="80" aria-label="Nombre de la historia nueva">
             <select id="story-new-aspect" aria-label="Formato">
               <option value="9:16">9:16 vertical</option><option value="16:9">16:9 horizontal</option><option value="1:1">1:1 cuadrado</option>
             </select>
@@ -139,37 +141,32 @@
             <button id="story-delete" type="button" class="raw-round small-round" title="Borrar la historia" aria-label="Borrar la historia">⋯</button>
           </div>
 
-          <ol class="story-steps" aria-label="Pasos">
-            <li data-step="talk">1 · Historia</li><li data-step="board">2 · Storyboard</li><li data-step="clips">3 · Tomas</li><li data-step="edit">4 · Montaje</li>
-          </ol>
-
-          <section class="story-panel" aria-label="Conversación con el Guionista">
-            <div id="story-material" class="story-material"></div>
-            <div id="story-chat" class="story-chat" aria-live="polite"></div>
-            <div id="story-live" class="story-live" hidden></div>
-            <p id="story-error" class="error" hidden></p>
-            <form id="story-form" class="composer-row">
-              <label class="icon-btn" title="Agregar fotos o videos (tu material)">
-                <input type="file" id="story-file" accept="image/*,video/*" multiple hidden>
-                <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/></svg>
-                <span class="sr-only">Agregar fotos o videos</span>
-              </label>
-              <textarea id="story-text" rows="1" placeholder="Contá tu historia o soltá tu material…" aria-label="Mensaje al Guionista"></textarea>
-              <button id="story-send" class="send" type="submit" title="Enviar" aria-label="Enviar">
-                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg>
-              </button>
-            </form>
-          </section>
+          <p id="story-source" class="muted small"></p>
+          <form id="story-form" class="raw-card story-compose" aria-label="Conversación con el Guionista">
+            <div class="raw-card-top"><span class="story-mode">Historia · Guionista</span><span class="muted small">Guion + video</span></div>
+            <div class="raw-prompt"><textarea id="story-text" rows="2" placeholder="¿Qué historia querés contar?" aria-label="Mensaje al Guionista"></textarea></div>
+            <div class="raw-card-bottom">
+              <span class="story-add-pair"><label class="raw-icon story-add" title="Agregar referencias o videos"><input type="file" id="story-file" accept="image/*,video/*" multiple hidden><span aria-hidden="true">▣</span><span class="sr-only">Agregar referencias o videos</span></label><label class="raw-icon story-add" title="Agregar personas"><input type="file" id="story-person-file" accept="image/*" multiple hidden><span aria-hidden="true">♙</span><span class="sr-only">Agregar personas</span></label></span>
+              <span class="story-compose-actions"><button id="story-mic" type="button" class="raw-round raw-mic" aria-pressed="false" title="Hablar" aria-label="Hablar"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2Z"/></svg></button><button id="story-send" class="raw-round raw-send" type="submit" title="Enviar" aria-label="Enviar"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg></button></span>
+            </div>
+          </form>
+          <div class="raw-voice" aria-live="polite"><span id="story-orb" class="raw-orb" data-phase="idle"></span><div class="raw-voice-text"><span id="story-phase" class="raw-phase">Listo</span><span id="story-caption" class="raw-caption"></span></div></div>
+          <div id="story-live" class="story-live" hidden></div>
+          <p id="story-error" class="error" hidden></p>
+          <section class="story-conversation" aria-label="Conversación"><h2 class="raw-section">Conversación</h2><div id="story-chat" class="story-chat" aria-live="polite"></div></section>
+          <section class="story-library-wrap" aria-label="Personas y referencias de la carpeta"><h2 class="raw-section">Personas y referencias</h2><p class="muted small">Tocá una imagen de esta carpeta para usarla en la historia.</p><div id="story-library" class="raw-library"></div><h3 class="raw-section">Material de esta historia</h3><div id="story-material" class="story-material"></div></section>
+          <section id="story-script-wrap" class="story-script" hidden><h2 class="raw-section">Guion</h2><div id="story-script"></div></section>
 
           <section id="story-board-wrap" class="story-panel" hidden>
             <div class="story-panel-head">
-              <h2 class="raw-section">Storyboard</h2>
+              <h2 class="raw-section">Tomas y storyboard</h2>
               <div class="actions">
                 <button id="story-draw" type="button" class="primary">Dibujar storyboard</button>
                 <button id="story-approve-all" type="button" class="small-btn" hidden>Aprobar todas</button>
               </div>
             </div>
             <p id="story-board-hint" class="muted small"></p>
+            <div id="story-shot-nav" class="story-shot-nav" aria-label="Tomas planeadas"></div>
             <div id="story-board" class="story-board"></div>
           </section>
 

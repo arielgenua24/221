@@ -27,7 +27,7 @@ export function parseDataUrl(dataUrl, allowed = /^(image|audio)\//) {
 
 export const emptyJob = () => ({ status: 'idle', file: null, error: null });
 
-export function createStoryStore(dir) {
+export function createStoryStore(dir, { rawFilesDir = null } = {}) {
   const FILES = path.join(dir, 'files');
   const PROJECTS = path.join(dir, 'projects');
   const cache = new Map();
@@ -89,18 +89,18 @@ export function createStoryStore(dir) {
       const all = await Promise.all(names.map((n) => load(n.slice(0, -5)).catch(() => null)));
       return all.filter(Boolean)
         .map((p) => ({
-          id: p.id, title: p.title, aspect: p.aspect, updatedAt: p.updatedAt, shots: p.shots.length,
+          id: p.id, title: p.title, aspect: p.aspect, rawFolderId: p.rawFolderId || null, updatedAt: p.updatedAt, shots: p.shots.length,
           clips: p.shots.filter((s) => s.video?.file).length,
           cover: p.shots.find((s) => s.frame?.file)?.frame.file || p.assets[0]?.file || null,
         }))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     },
 
-    async create({ title, aspect }) {
+    async create({ title, aspect, rawFolderId = null }) {
       const now = new Date().toISOString();
       const p = {
         id: randomUUID(), title: cleanTitle(title) || 'Historia sin título', aspect: ASPECTS.includes(aspect) ? aspect : '9:16',
-        createdAt: now, updatedAt: now, counter: 0,
+        createdAt: now, updatedAt: now, counter: 0, rawFolderId,
         assets: [], chat: [], story: null, shots: [],
         timeline: { order: [], music: null },
       };
@@ -133,6 +133,23 @@ export function createStoryStore(dir) {
         return asset;
       });
     },
+
+    linkRawAsset: (id, raw) => mutate(id, (p) => {
+      const existing = p.assets.find((a) => a.rawCode === raw.code);
+      if (existing) return existing;
+      if (p.assets.length >= MAX_ASSETS) throw new Error(`Máximo ${MAX_ASSETS} imágenes por proyecto.`);
+      const asset = { code: `M${++p.counter}`, file: `raw:${path.basename(raw.file)}`, rawCode: raw.code,
+        name: cleanTitle(raw.name) || null, source: 'raw', kind: raw.kind, note: raw.description || null };
+      p.assets.push(asset);
+      return asset;
+    }),
+
+    renameAsset: (id, code, name) => mutate(id, (p) => {
+      const asset = p.assets.find((a) => a.code === code);
+      if (!asset) throw new Error('Esa referencia no está en la historia.');
+      asset.name = cleanTitle(name) || null;
+      return asset;
+    }),
 
     deleteAsset: (id, code) => mutate(id, (p) => {
       p.assets = p.assets.filter((a) => a.code !== code);
@@ -172,7 +189,9 @@ export function createStoryStore(dir) {
     async dataUrl(file) {
       const ext = path.extname(file).slice(1).toLowerCase();
       const type = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', svg: 'image/svg+xml' }[ext] || 'application/octet-stream';
-      return `data:${type};base64,${(await readFile(path.join(FILES, path.basename(file)))).toString('base64')}`;
+      const isRaw = file.startsWith('raw:');
+      if (isRaw && !rawFilesDir) throw new Error('La carpeta Raw no está disponible.');
+      return `data:${type};base64,${(await readFile(path.join(isRaw ? rawFilesDir : FILES, path.basename(isRaw ? file.slice(4) : file)))).toString('base64')}`;
     },
   };
 }

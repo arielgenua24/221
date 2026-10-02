@@ -45,6 +45,7 @@ function setTab(tab) {
   if (tab !== 'raw') { stopListening(); stopSpeaking(); } else if (current) resumeListening();
 }
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
+  if (b.dataset.tab === 'story' && current) window.dispatchEvent(new CustomEvent('story-folder-context', { detail: current.id }));
   setTab(b.dataset.tab);
   if (b.dataset.tab === 'studio') history.replaceState(null, '', '#estudio');
   else if (b.dataset.tab === 'story') history.replaceState(null, '', '#historia');
@@ -171,6 +172,14 @@ function renderWork() {
     } catch (err) { showError(err.message); }
   };
   subs.append(add);
+  const toStory = el('button', 'raw-chip story-jump', '✦ Crear historia');
+  toStory.type = 'button';
+  toStory.onclick = () => {
+    window.dispatchEvent(new CustomEvent('story-folder-context', { detail: current.id }));
+    setTab('story');
+    history.replaceState(null, '', '#historia');
+  };
+  subs.append(toStory);
 
   renderAspects();
   renderMic();

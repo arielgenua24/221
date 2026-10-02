@@ -72,7 +72,7 @@ const ttsWs = mock ? rawWs : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedK
 const speak = createSpeaker({ ws: ttsWs, filesDir: rawStore.filesDir, publicPrefix: '/raw-files/', model: rawConfig.ttsModel, voice: rawConfig.ttsVoice, style: rawConfig.ttsStyle });
 
 // Historia: el Guionista conversa y arma las tomas; cada toma aprobada la dirige el DP y la genera Wan 3.0.
-const storyStore = createStoryStore(path.join(RUNS, 'story'));
+const storyStore = createStoryStore(path.join(RUNS, 'story'), { rawFilesDir: rawStore.filesDir });
 const storyConfig = {
   storyModel: process.env.STORY_MODEL || config.orchestratorModel,
   dpModel: process.env.STORY_DP_MODEL || process.env.STORY_MODEL || config.orchestratorModel,
@@ -262,8 +262,27 @@ async function handleRawTurn(req, res) {
 const storyJobs = storyWs ? createStoryJobs({ store: storyStore, ws: storyWs, llm, config: storyConfig }) : null;
 const needWs = () => { if (!storyJobs) throw new Error('Los cuadros y los videos necesitan WAVESPEED_API_KEY en el .env del servidor.'); return storyJobs; };
 const view = (id) => (storyJobs ? storyJobs.view(id) : storyStore.get(id));
+async function folderAsset(projectId, rawCode) {
+  const p = await storyStore.get(projectId);
+  if (!p.rawFolderId) throw new Error('Esta historia no está vinculada a una carpeta Raw.');
+  const assets = await rawStore.assetsFor(p.rawFolderId, { inherit: false });
+  const raw = assets.find((a) => a.code === rawCode);
+  if (!raw) throw new Error('La imagen no pertenece a la carpeta de esta historia.');
+  return raw;
+}
 const STORY_ACTIONS = {
-  '/api/story/projects': async (b) => ({ project: await storyStore.create({ title: b.title, aspect: b.aspect }) }),
+  '/api/story/projects': async (b) => {
+    const rawFolderId = String(b.rawFolderId || '');
+    if (rawFolderId) await rawStore.lineage(rawFolderId);
+    const project = await storyStore.create({ title: b.title, aspect: b.aspect, rawFolderId: rawFolderId || null });
+    if (rawFolderId) {
+      const assets = await rawStore.assetsFor(rawFolderId, { inherit: false });
+      for (const asset of assets.filter((a) => a.kind === 'persona' || a.kind === 'referencia').slice(0, STORY_MAX_ASSETS)) {
+        await storyStore.linkRawAsset(project.id, asset);
+      }
+    }
+    return { project: await view(project.id) };
+  },
   '/api/story/projects/update': async (b) => { await storyStore.update(String(b.id), b); return { project: await view(String(b.id)) }; },
   '/api/story/projects/delete': async (b) => {
     const p = await storyStore.get(String(b.id));
@@ -271,6 +290,18 @@ const STORY_ACTIONS = {
     return storyStore.remove(p.id);
   },
   '/api/story/assets': async (b) => ({ asset: await storyStore.addAsset(String(b.projectId), { dataUrl: b.dataUrl, name: b.name, source: b.source }) }),
+  '/api/story/assets/link': async (b) => ({ asset: await storyStore.linkRawAsset(String(b.projectId), await folderAsset(String(b.projectId), String(b.rawCode))) }),
+  '/api/story/assets/rename': async (b) => {
+    const id = String(b.projectId), code = String(b.code);
+    const p = await storyStore.get(id);
+    const asset = p.assets.find((a) => a.code === code);
+    if (!asset) throw new Error('Esa referencia no está en la historia.');
+    if (asset.rawCode) {
+      await folderAsset(id, asset.rawCode);
+      await rawStore.updateAsset(asset.rawCode, { name: b.name });
+    }
+    return { asset: await storyStore.renameAsset(id, code, b.name) };
+  },
   '/api/story/assets/delete': async (b) => storyStore.deleteAsset(String(b.projectId), String(b.code)),
   '/api/story/frames': async (b) => needWs().frames(String(b.projectId), Array.isArray(b.shotIds) ? b.shotIds.map(String) : null),
   '/api/story/shots/revise': async (b) => needWs().reviseFrame(String(b.projectId), String(b.shotId), { feedback: String(b.feedback || '').slice(0, 1500).trim(), prompt: String(b.prompt || '').slice(0, 2000).trim() }),
@@ -284,7 +315,15 @@ async function handleStoryTurn(req, res) {
   let input;
   try {
     input = parseStoryTurnBody(await readBody(req));
-    await storyStore.get(input.projectId);
+    const p = await storyStore.get(input.projectId);
+    if (p.rawFolderId) {
+      const current = await rawStore.assetsFor(p.rawFolderId, { inherit: false });
+      const byCode = new Map(current.map((a) => [a.code, a]));
+      await storyStore.mutate(p.id, (d) => {
+        d.assets = d.assets.filter((a) => !a.rawCode || byCode.has(a.rawCode));
+        d.assets.forEach((a) => { if (a.rawCode) a.name = byCode.get(a.rawCode).name || null; });
+      });
+    }
   } catch (err) {
     return badRequest(res, err.message);
   }
