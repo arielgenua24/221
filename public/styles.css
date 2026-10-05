@@ -631,3 +631,17 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 .raw-proposal-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .raw-proposal-card .actions button { padding: 11px 16px; }
 @media (max-width: 480px) { .raw-proposal-overlay { padding: 12px; } .raw-proposal-card { padding: 18px; max-height: calc(100dvh - 24px); } .raw-proposal-refs img { height: 120px; } }
+
+/* References belong to a message; the composer is the visible draft. */
+.story-attachments, .story-message-refs { display: flex; flex-wrap: wrap; gap: 8px; }
+.story-attachments { padding: 8px 4px 0; }
+.story-attachments[hidden] { display: none; }
+.story-reference { margin: 0; width: 72px; position: relative; }
+.story-reference img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; display: block; }
+.story-reference figcaption { font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; margin-top: 4px; }
+.story-reference button { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 50%; background: #222; color: white; width: 24px; height: 24px; cursor: pointer; }
+.story-message-refs { margin-top: 8px; }
+.story-msg.me .story-message-refs { justify-content: flex-end; }
+.story-asset.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+.story-asset-hit { display: block; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.story-asset-hit:focus-visible { outline: 2px solid var(--accent); }

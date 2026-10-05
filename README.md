@@ -44,7 +44,7 @@ La imagen aparece en "Generadas antes" (y también queda en el proyecto para seg
 Entrás a una carpeta de Raw y abrís Historia desde esa carpeta. Historia comparte **solo las personas, referencias e imágenes generadas de esa carpeta**. Contás la historia por voz o texto, y el equipo la arma en **tomas de 5 segundos**, la dibuja, la genera con **Wan 3.0** y la montás sobre tu música.
 
 ```
-Elegís carpeta Raw y creás una historia (9:16, 16:9 o 1:1). Sus personas y referencias se incorporan; tocás las imágenes generadas que quieras usar. También podés agregar fotos a la carpeta o cuadros de video a la historia → M1, M2…
+Elegís carpeta Raw y creás una historia (9:16, 16:9 o 1:1). La biblioteca muestra sus imágenes disponibles: tocarlas elige o quita referencias para el próximo mensaje, sin modificar el material de la historia. Las elegidas aparecen dentro del compositor. Al enviar texto o empezar a hablar, se captura esa selección y se limpia el borrador: las miniaturas quedan junto a ese mensaje humano y sobreviven a una recarga. Las referencias que elijas mientras hablás o se procesa un turno quedan para el siguiente. El Guionista recibe los adjuntos explícitos de cada turno separados del contexto previo. Las historias anteriores conservan material, guion y tomas. También podés agregar fotos a la carpeta o cuadros de video a la historia → M1, M2…; las cargas nuevas se seleccionan para el próximo mensaje. Hasta 16 referencias por mensaje.
   ▼
 [1] Guionista (STORY_MODEL, ve el material) ⇄ VOS, en una conversación
     → historia (emoción, arco, estilo visual, personajes con nombre) + tomas: acción, seis viñetas, encuadre, cámara, luz, refs, prompt del cuadro
@@ -56,7 +56,7 @@ Elegís carpeta Raw y creás una historia (9:16, 16:9 o 1:1). Sus personas y ref
   └─ ✋ VOS: "Aprobar y generar" (o "Aprobar todas")
   ▼  cada aprobación arranca su propia tarea, en paralelo:
 [3] Director de Fotografía (STORY_DP_MODEL, ve el cuadro aprobado y las tomas vecinas) → acción, un movimiento de cámara,
-    beats en 5 s, luz → prompt → Wan 3.0 image→video (480p, 5 s, sin audio propio) → se baja a runs/story/files/
+    beats en 5 s, luz y sonido → prompt → Wan 3.0 image→video (480p, 5 s, con audio propio) → se baja a runs/story/files/
   ▼
 [4] Montaje: las tomas en orden (arrastrar o ‹ ›), la pista de música con su volumen y desde qué segundo empieza
     (con fundido al final) → reproducir y exportar (MP4 o WebM, en el navegador)
@@ -66,6 +66,8 @@ Elegís carpeta Raw y creás una historia (9:16, 16:9 o 1:1). Sus personas y ref
 - **El cuadro aprobado ES el primer cuadro del video**: lo que aprobás es lo que se anima.
 - **Todo lo largo corre en el servidor** ([src/story-pipeline.js](src/story-pipeline.js)): podés cerrar la pestaña mientras se generan las tomas. Si el servidor se reinicia con una toma ya enviada a WaveSpeed, la retoma sin volver a pagarla.
 - Las tomas que todavía no tienen video se ven en el montaje como su cuadro (y así se exportan, si querés).
+- Las tomas nuevas generan sonidos propios sincronizados con la acción; el montaje conserva ese sonido y mezcla la música opcional. Las tomas anteriores que salieron mudas se rehacen desde “Cambiar esta toma” → “Rehacer el video”.
+- Los diálogos de Historia usan por defecto español rioplatense de Buenos Aires, con acento porteño natural. Se conservan las frases dadas por el usuario, y puede pedir otro idioma o acento en la conversación.
 - Cada proyecto se guarda en `runs/story/projects/<id>.json`; los nuevos archivos de Historia, en `runs/story/files/`. Las imágenes vinculadas conservan su archivo en `runs/raw/files/` y su nombre de Raw se actualiza antes de conversar con el modelo.
 
 ## Cómo correrlo

@@ -1,9 +1,10 @@
 import { createAgentRunner } from './agent.js';
-import { STORY_SYSTEM, DP_SYSTEM, storyTurnPrompt, frameFixPrompt, frameImagePrompt, shotVideoPrompt } from './story-prompts.js';
+import { STORY_SYSTEM, DP_SYSTEM, STORY_SPEECH_DEFAULT, storyTurnPrompt, frameFixPrompt, frameImagePrompt, shotVideoPrompt } from './story-prompts.js';
 import { finalVideoPrompt } from './intuition-prompts.js';
 import { VIDEO_MODELS } from './wavespeed.js';
-import { SHOT_SECONDS, MAX_SHOTS, emptyJob } from './story-store.js';
+import { SHOT_SECONDS, MAX_SHOTS, MAX_ASSETS, emptyJob } from './story-store.js';
 import { parseImageGenerator, imageRequest } from './image-models.js';
+import { parseStoryReferences, referenceSnapshot, storyHistoryText } from './story-references.js';
 
 // Historia: el humano conversa con el Guionista (turnos con streaming); todo lo que tarda (dibujar cuadros,
 // dirigir y generar cada toma) corre en segundo plano, una tarea por toma, en paralelo. El estado vive en el
@@ -86,15 +87,18 @@ export function parseStoryTurnBody(body) {
   const answers = (Array.isArray(body?.answers) ? body.answers : []).slice(0, 6).map((a) => ({ pregunta: str(a?.pregunta, 200), respuesta: str(a?.respuesta, 200) })).filter((a) => a.respuesta);
   if (!projectId) throw new Error('Falta el proyecto.');
   if (!text && !answers.length) throw new Error('Escribí qué historia querés contar.');
-  return { projectId, text, answers };
+  return { projectId, text, answers, references: parseStoryReferences(body.references) };
 }
 
 // Las imágenes del humano, rotuladas con su código, para que el agente las vea.
-async function assetParts(store, assets, codes) {
+async function assetParts(store, assets, codes, onMissing) {
   const list = codes ? assets.filter((a) => codes.includes(a.code)) : assets;
   const parts = [];
   for (const a of list) {
-    parts.push({ type: 'text', text: `${a.code}${a.name ? ` — ${a.name}` : ''}` }, { type: 'image_url', image_url: { url: await store.dataUrl(a.file) } });
+    let url;
+    try { url = await store.dataUrl(a.file); }
+    catch (err) { if (onMissing && err.code === 'ENOENT') { onMissing(a); continue; } throw err; }
+    parts.push({ type: 'text', text: `${a.code}${a.name ? ` — ${a.name}` : ''}` }, { type: 'image_url', image_url: { url } });
   }
   return parts;
 }
@@ -105,8 +109,29 @@ export async function runStoryTurn({ store, jobs, input, config, emit, llm, sign
   const log = { startedAt: new Date().toISOString(), projectId: project.id, input: { text: input.text, answers: input.answers }, steps: {} };
   const { agent, totals } = createAgentRunner({ emit, llm, signal, log });
 
-  const history = project.chat.slice(-12).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }));
-  const content = [{ type: 'text', text: storyTurnPrompt({ project, text: input.text, answers: input.answers }) }, ...(await assetParts(store, project.assets))];
+  const references = (input.references || []).map((ref) => {
+    const asset = project.assets.find((a) => a.code === ref.code);
+    if (!asset) throw new Error('Esa referencia no está en la historia.');
+    return referenceSnapshot(ref.file ? ref : asset);
+  });
+  const history = project.chat.slice(-12).map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: storyHistoryText(m) }));
+  const userText = [input.text, ...(input.answers || []).map((a) => `${a.pregunta} → ${a.respuesta}`)].filter(Boolean).join('\n');
+  if (remember) {
+    await store.pushChat(project.id, { role: 'user', text: userText, references, at: log.startedAt });
+    emit({ type: 'story_user', text: userText, references });
+  }
+  // Bound image context as the archive grows, prioritizing associations already
+  // used in shots/cast and recent messages. Explicit current attachments always go first.
+  const priorCodes = [...new Set([
+    ...project.shots.flatMap((s) => s.refs || []),
+    ...(project.story?.personajes || []).flatMap((p) => p.material || []),
+    ...project.chat.slice(-12).reverse().flatMap((m) => (m.references || []).map((a) => a.code)),
+    ...project.assets.map((a) => a.code),
+  ])].filter((code) => !references.some((r) => r.code === code)).slice(0, MAX_ASSETS);
+  const content = [{ type: 'text', text: storyTurnPrompt({ project, text: input.text, answers: input.answers, references }) },
+    { type: 'text', text: 'Imágenes adjuntas explícitamente a ESTE mensaje:' }, ...(await assetParts(store, references)),
+    { type: 'text', text: 'Material previo de la historia (contexto, NO seleccionado en este mensaje):' },
+    ...(await assetParts(store, project.assets, priorCodes, (a) => emit({ type: 'notice', text: `La imagen previa ${a.name || a.code} ya no está disponible. Conservo sus asociaciones en la historia.` })))];
   const data = await agent({
     step: 'story-turn', role: 'Guionista', title: 'El Guionista piensa la historia', model: config.storyModel, system: STORY_SYSTEM,
     temperature: 0.7, history, content, meta: { project, text: input.text },
@@ -115,7 +140,6 @@ export async function runStoryTurn({ store, jobs, input, config, emit, llm, sign
   const codes = new Set(project.assets.map((a) => a.code));
   const decir = str(data.decir, 1200) || 'Listo.';
   const preguntas = sanitizeQuestions(data.preguntas);
-  const userText = [input.text, ...input.answers.map((a) => `${a.pregunta} → ${a.respuesta}`)].filter(Boolean).join('\n');
   let reset = [];
   await store.mutate(project.id, (p) => {
     for (const n of Array.isArray(data.notas_material) ? data.notas_material : []) {
@@ -133,9 +157,9 @@ export async function runStoryTurn({ store, jobs, input, config, emit, llm, sign
     p.ready = !!data.listo_para_storyboard && p.shots.length > 0;
     p.cost = (p.cost || 0) + totals.cost;
     if (remember) p.chat.push(
-      { role: 'user', text: userText, at: log.startedAt },
       { role: 'assistant', text: decir, preguntas, at: new Date().toISOString() },
     );
+    p.chat = p.chat.slice(-60);
   });
   reset.forEach((id) => jobs.cancel(project.id, id));
   emit({ type: 'story_reply', decir, preguntas, ready: !!data.listo_para_storyboard });
@@ -348,7 +372,7 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
       if (!shot) throw new Error('Esa toma no existe.');
       if (shot.frame?.status !== 'done' || !shot.frame.file) throw new Error(`${sid} todavía no tiene cuadro dibujado.`);
       if (running.has(key(pid, sid, 'video'))) return { started: [] };
-      await setShot(pid, sid, (s) => { s.approved = true; s.video = { ...emptyJob(), status: 'queued' }; });
+      await setShot(pid, sid, (s) => { s.approved = true; s.video = { ...emptyJob(), status: 'queued', audioRequested: true }; });
       start(pid, sid, 'video', async (ctx) => {
         await setShot(pid, sid, (s) => { s.video.status = 'running'; });
         ctx.note('El Director de Fotografía mira el cuadro…');
@@ -366,14 +390,14 @@ export function createStoryJobs({ store, ws, llm, config, log = console }) {
           step: `shotdp-${sid}`, role: 'Director de Fotografía', title: `${sid} · Dirigiendo la toma`, model: config.dpModel, system: DP_SYSTEM,
           temperature: 0.5, content, meta: { shot: cur },
         }, ctx);
-        const prompt = finalVideoPrompt(plan);
+        const prompt = `${finalVideoPrompt(plan)}\nAudio: ${str(plan.sonido, 300) || 'Natural synchronized sounds of the visible action and setting, with fitting ambient sound. No voiceover or soundtrack unless requested.'}\n${STORY_SPEECH_DEFAULT}`;
         await setShot(pid, sid, (s) => { s.video.prompt = prompt; s.video.plan = plan; });
         const wan = VIDEO_MODELS.wan;
         ctx.note('Subiendo el cuadro a WaveSpeed…');
         const image = await upload(cur.frame.file, ctx.signal);
         const out = await ws.video({
           model: config.videoModel, signal: ctx.signal,
-          body: wan.body({ prompt, image, duration: SHOT_SECONDS, aspect: project.aspect, resolution: config.videoResolution }),
+          body: wan.body({ prompt, image, duration: SHOT_SECONDS, aspect: project.aspect, resolution: config.videoResolution, generateAudio: true }),
           onStatus: ({ status, elapsed, task }) => {
             if (task) setShot(pid, sid, (s) => { s.video.task = task; }).catch(() => {});
             ctx.note(`Wan 3.0 · ${status}${elapsed ? ` · ${Math.round(elapsed)} s` : ''}`);

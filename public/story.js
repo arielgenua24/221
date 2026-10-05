@@ -3,6 +3,7 @@ import { isGptAudio } from './voice-mode.js';
 import { createGptVoice } from './gpt-voice.js';
 import { kindOf, loadVideo } from './media.js';
 import { createStoryEditor } from './story-timeline.js';
+import { createStorySelection, referenceSelectors } from './story-selection.js';
 
 // Historia: el humano sube su material y conversa con el Guionista, que arma la historia en tomas de 5 s.
 // Se dibuja una secuencia de seis viñetas y el primer cuadro de cada toma; cada toma aprobada la dirige el
@@ -20,6 +21,9 @@ let editor = null;
 let folderId = null;
 let folderAssets = [];
 let folderName = '';
+const selection = createStorySelection();
+let speechSnapshot = null;
+let openingProject = 0;
 let selectedShot = null;
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let storyMicOn = (() => { try { return localStorage.getItem('story-mic') !== '0'; } catch { return true; } })();
@@ -107,10 +111,14 @@ $('story-new').addEventListener('submit', async (e) => {
 });
 
 async function openProject(id) {
+  const opening = ++openingProject;
   stopStoryVoice(); turn?.abort(); turn = null; stopPolling();
+  folderAssets = []; folderName = '';
   try {
     const { project: p } = await api(`/api/story/project?id=${encodeURIComponent(id)}`);
+    if (opening !== openingProject) return;
     project = p;
+    input.value = ''; autosize();
     folderId = p.rawFolderId || folderId;
     cards.clear();
     $('story-board').replaceChildren();
@@ -125,12 +133,14 @@ async function openProject(id) {
     loadFolderLibrary().catch((err) => showError(err.message));
     resumeStoryVoice();
   } catch (err) {
+    if (opening !== openingProject) return;
     alert(err.message);
     goHome();
   }
 }
 
 function goHome() {
+  openingProject++;
   stopStoryVoice();
   stopPolling();
   turn?.abort();
@@ -162,6 +172,8 @@ function render() {
   $('story-cost').textContent = project.cost ? `US$ ${project.cost.toFixed(3)}` : '';
   $('story-source').textContent = folderName ? `Carpeta Raw / ${folderName}` : 'Historia sin carpeta Raw';
   renderMaterial();
+  renderLibrary();
+  renderAttachments();
   renderChat();
   renderScript();
   renderBoard();
@@ -172,12 +184,17 @@ function render() {
 function renderMaterial() {
   const box = $('story-material');
   box.replaceChildren();
-  if (!project.assets.length) {
-    box.append(el('p', 'muted small', 'Tu material: soltá o elegí con + fotos de personas, productos o lugares, o videos (tomo cuadros). El Guionista los ve y los usa como referencia.'));
+  const ownAssets = project.assets;
+  if (!ownAssets.length) {
+    box.append(el('p', 'muted small', 'Las imágenes que adjuntes quedarán disponibles para la historia. Elegí referencias en la biblioteca o agregalas con +.'));
     return;
   }
-  project.assets.forEach((a) => {
-    const t = el('figure', 'story-asset');
+  ownAssets.forEach((a) => {
+    const t = el('figure', `story-asset ${selection.has(project.id, a) ? 'selected' : ''}`);
+    const hit = el('button', 'story-asset-hit'); hit.type = 'button';
+    hit.setAttribute('aria-pressed', String(selection.has(project.id, a)));
+    hit.title = `Elegir o quitar ${a.name || a.code} para el próximo mensaje`;
+    hit.onclick = () => toggleReference(a);
     const img = el('img'); img.src = fileUrl(a.file); img.alt = a.name || a.code; img.loading = 'lazy';
     const cap = el('figcaption', null, a.name || a.rawCode || a.code);
     const rename = el('button', 'story-asset-rename', '✎'); rename.type = 'button'; rename.title = `Poner nombre a ${a.code}`; rename.setAttribute('aria-label', `Poner nombre a ${a.code}`);
@@ -189,39 +206,78 @@ function renderMaterial() {
     const x = el('button', 'story-asset-x', '×'); x.type = 'button'; x.title = `Quitar ${a.code}`; x.setAttribute('aria-label', `Quitar ${a.code}`);
     x.onclick = async () => {
       if (!confirm(`¿Quitar ${a.code} del proyecto?`)) return;
-      try { await api('/api/story/assets/delete', { projectId: project.id, code: a.code }); await refreshProject(); } catch (e) { showError(e.message); }
+      try { const id = project.id; await api('/api/story/assets/delete', { projectId: id, code: a.code }); selection.remove(id, a); await refreshProject(); } catch (e) { showError(e.message); }
     };
     t.title = a.note ? `${a.code}: ${a.note}` : a.code;
-    t.append(img, cap, rename, x);
+    hit.append(img); t.append(hit, cap, rename, x);
     box.append(t);
   });
 }
 
+function toggleReference(asset) {
+  if (!project) return;
+  try { selection.toggle(project.id, asset); renderAttachments(); renderMaterial(); renderLibrary(); }
+  catch (e) { showError(e.message); }
+}
+function referenceStrip(references, removable = false) {
+  const strip = el('div', 'story-message-refs');
+  references.forEach((a) => {
+    const fig = el('figure', 'story-reference');
+    const img = el('img'); img.src = fileUrl(a.file); img.alt = a.name || a.rawCode || a.code; img.loading = 'lazy';
+    fig.append(img, el('figcaption', null, a.name || a.rawCode || a.code));
+    if (removable) {
+      const remove = el('button', null, '×'); remove.type = 'button';
+      remove.setAttribute('aria-label', `Quitar ${img.alt} del próximo mensaje`);
+      remove.onclick = () => toggleReference(a); fig.append(remove);
+    }
+    strip.append(fig);
+  });
+  return strip;
+}
+function renderAttachments() {
+  const box = $('story-attachments'); box.replaceChildren();
+  const refs = project ? selection.list(project.id) : [];
+  box.hidden = !refs.length;
+  if (refs.length) box.append(referenceStrip(refs, true));
+}
+function takeReferences() {
+  if (!project) return {};
+  const snapshot = selection.take(project.id);
+  renderAttachments(); renderMaterial(); renderLibrary();
+  return snapshot;
+}
+function restoreReferences(snapshot) {
+  selection.restore(snapshot);
+  if (snapshot?.projectId === project?.id && snapshot.text && !input.value) { input.value = snapshot.text; autosize(); }
+  if (snapshot?.projectId === project?.id) { renderAttachments(); renderMaterial(); renderLibrary(); }
+}
 async function loadFolderLibrary() {
-  const box = $('story-library');
-  box.replaceChildren();
-  if (!project?.rawFolderId) { box.append(el('p', 'muted small', 'Esta historia no tiene carpeta Raw.')); return; }
-  const data = await api(`/api/raw/folder?id=${encodeURIComponent(project.rawFolderId)}`);
-  folderAssets = data.assets.filter((a) => a.folderId === project.rawFolderId);
-  const names = new Map(folderAssets.map((a) => [a.code, a.name]));
-  project.assets.forEach((a) => { if (a.rawCode && names.has(a.rawCode)) a.name = names.get(a.rawCode); });
-  renderMaterial();
+  if (!project?.rawFolderId) { folderAssets = []; renderLibrary(); return; }
+  const id = project.id, rawFolderId = project.rawFolderId;
+  const data = await api(`/api/raw/folder?id=${encodeURIComponent(rawFolderId)}`);
+  if (project?.id !== id) return;
+  folderAssets = data.assets.filter((a) => a.folderId === rawFolderId);
   folderName = data.lineage.at(-1)?.name || '';
   $('story-source').textContent = `Carpeta Raw / ${folderName}`;
-  const linked = new Set(project.assets.map((a) => a.rawCode));
+  renderMaterial(); renderLibrary();
+}
+function renderLibrary() {
+  const box = $('story-library'); box.replaceChildren();
+  if (!project?.rawFolderId) { box.append(el('p', 'muted small', 'Esta historia no tiene carpeta Raw.')); return; }
   for (const [kind, title] of [['persona', 'Personas'], ['referencia', 'Referencias'], ['generada', 'Imágenes generadas']]) {
     const assets = folderAssets.filter((a) => a.kind === kind);
     if (!assets.length) continue;
     const row = el('div', 'story-library-row'); row.append(el('div', 'raw-row-head', title));
     const strip = el('div', 'raw-strip');
     assets.forEach((a) => {
-      const tile = el('div', `raw-thumb ${linked.has(a.code) ? 'selected' : ''}`);
-      const hit = el('button', 'raw-thumb-hit'); hit.type = 'button'; hit.title = linked.has(a.code) ? `${a.name || a.code} incluida` : `Usar ${a.name || a.code}`;
+      const reference = { ...a, rawCode: a.code, file: `raw:${a.file}` };
+      const selected = selection.has(project.id, reference);
+      const tile = el('div', `raw-thumb ${selected ? 'selected' : ''}`);
+      const hit = el('button', 'raw-thumb-hit'); hit.type = 'button';
+      hit.title = `${selected ? 'Quitar' : 'Elegir'} ${a.name || a.code} para el próximo mensaje`;
+      hit.setAttribute('aria-pressed', String(selected));
       const img = el('img'); img.src = `/raw-files/${encodeURIComponent(a.file)}`; img.alt = a.name || a.code; img.loading = 'lazy';
-      hit.append(img); hit.onclick = async () => {
-        if (linked.has(a.code)) return;
-        try { await api('/api/story/assets/link', { projectId: project.id, rawCode: a.code }); await refreshProject(); await loadFolderLibrary(); } catch (e) { showError(e.message); }
-      };
+      hit.append(img); hit.onclick = () => toggleReference(reference);
       const badge = el('span', 'raw-badge', a.name || a.code);
       const pen = el('button', 'raw-thumb-menu', '✎'); pen.type = 'button'; pen.title = `Poner nombre a ${a.code}`; pen.setAttribute('aria-label', `Poner nombre a ${a.code}`);
       pen.onclick = async () => {
@@ -261,6 +317,7 @@ function renderChat() {
   project.chat.forEach((m, i) => {
     const msg = el('div', `story-msg ${m.role === 'user' ? 'me' : 'bot'}`);
     msg.append(el('div', 'bubble', m.text));
+    if (m.role === 'user' && m.references?.length) msg.append(referenceStrip(m.references));
     box.append(msg);
     // Las preguntas del último mensaje se pueden responder tocando.
     if (m.role !== 'user' && i === project.chat.length - 1 && m.preguntas?.length) box.append(questionCard(m.preguntas));
@@ -324,7 +381,9 @@ const gpt = createGptVoice({
   mic: () => storyMicOn,
   inputAllowed: () => document.activeElement !== input,
   phase: storyPhase,
-  user: (text, node) => { if (!node && project) { voiceQuestions.delete(project.id); $('story-chat').querySelectorAll('.story-questions button').forEach((b) => { b.disabled = true; }); } return voiceBubble('me', text, node); },
+  beginInput: takeReferences,
+  discardInput: restoreReferences,
+  user: (text, node, references) => { if (!node && project) { voiceQuestions.delete(project.id); $('story-chat').querySelectorAll('.story-questions button').forEach((b) => { b.disabled = true; }); } return voiceBubble('me', text, node, references); },
   reply: (text, node) => voiceBubble('bot', text, node),
   error: (text) => { showError(text); if (text) $('story-live').hidden = true; },
   event: (ev) => {
@@ -333,10 +392,14 @@ const gpt = createGptVoice({
   },
   refresh: refreshProject,
 });
-function voiceBubble(who, text, node) {
-  if (node) { node.textContent = text; return node; }
+function voiceBubble(who, text, node, references) {
+  if (node) {
+    node.textContent = text;
+    if (references) { node.parentNode.querySelector('.story-message-refs')?.remove(); if (references.length) node.parentNode.append(referenceStrip(references)); }
+    return node;
+  }
   const msg = el('div', `story-msg ${who}`), bubble = el('div', 'bubble', text);
-  msg.append(bubble); $('story-chat').append(msg); $('story-chat').scrollTop = $('story-chat').scrollHeight;
+  msg.append(bubble); if (references?.length) msg.append(referenceStrip(references)); $('story-chat').append(msg); $('story-chat').scrollTop = $('story-chat').scrollHeight;
   return bubble;
 }
 window.addEventListener('voice-mode', () => {
@@ -352,8 +415,9 @@ function storyPhase(phase, caption = '') {
 function stopStoryListening() {
   gpt.pauseInput();
   clearTimeout(storySilenceTimer);
-  if (storyRecognition) { storyRecognition.onend = null; storyRecognition.onresult = null; try { storyRecognition.abort(); } catch {} }
+  if (storyRecognition) { storyRecognition.onend = null; storyRecognition.onresult = null; storyRecognition.onspeechstart = null; storyRecognition.onerror = null; try { storyRecognition.abort(); } catch {} }
   storyRecognition = null; storyHeard = '';
+  if (speechSnapshot) { restoreReferences(speechSnapshot); speechSnapshot = null; }
 }
 function stopStoryVoice() {
   gpt.stop();
@@ -372,7 +436,9 @@ function resumeStoryVoice() {
   const rec = new SpeechRecognition(); storyRecognition = rec;
   rec.lang = navigator.language?.toLowerCase().startsWith('es') ? navigator.language : 'es-ES';
   rec.continuous = true; rec.interimResults = true;
+  rec.onspeechstart = () => { speechSnapshot ||= takeReferences(); };
   rec.onresult = (event) => {
+    speechSnapshot ||= takeReferences();
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const r = event.results[i]; if (r.isFinal) storyHeard += ` ${r[0].transcript}`; else interim += r[0].transcript;
@@ -394,8 +460,9 @@ function resumeStoryVoice() {
   try { rec.start(); storyPhase('listening'); } catch { storyRecognition = null; storyPhase('idle'); }
 }
 function flushStoryVoice() {
-  const text = storyHeard.trim(); stopStoryListening();
-  if (text) send({ text }); else resumeStoryVoice();
+  const text = storyHeard.trim(), snapshot = speechSnapshot; speechSnapshot = null; stopStoryListening();
+  if (text) send({ text, snapshot });
+  else if (snapshot) { restoreReferences(snapshot); resumeStoryVoice(); } else resumeStoryVoice();
 }
 async function speakStory(text) {
   if (!text || !storyMicOn) return;
@@ -444,20 +511,22 @@ $('story-form').addEventListener('submit', (e) => {
   send({ text });
 });
 
-async function send({ text = '', answers = [] }) {
+async function send({ text = '', answers = [], snapshot = null }) {
   if (project && isGptAudio()) {
     input.value = ''; autosize();
-    await gpt.send({ text: [text, ...answers.map((a) => `${a.pregunta}: ${a.respuesta}`)].filter(Boolean).join('\n') });
+    await gpt.send({ ...(snapshot || {}), text: [text, ...answers.map((a) => `${a.pregunta}: ${a.respuesta}`)].filter(Boolean).join('\n') });
     return;
   }
-  if (!project || turn) return;
+  if (!project || turn) { if (snapshot) restoreReferences(snapshot); return; }
   stopStoryListening();
+  snapshot ||= takeReferences();
   storyPhase('thinking');
   showError('');
   const box = $('story-chat');
   box.querySelectorAll('.story-questions button').forEach((b) => { b.disabled = true; });
   const echo = [text, ...answers.map((a) => a.respuesta)].filter(Boolean).join(' · ');
-  const mine = el('div', 'story-msg me'); mine.append(el('div', 'bubble', echo)); box.append(mine);
+  const mine = el('div', 'story-msg me'); mine.append(el('div', 'bubble', echo));
+  if (snapshot.references.length) mine.append(referenceStrip(snapshot.references)); box.append(mine);
   const reply = el('div', 'story-msg bot thinking');
   const bubble = el('div', 'bubble', '…');
   const notes = el('div', 'story-notes');
@@ -470,11 +539,12 @@ async function send({ text = '', answers = [] }) {
   $('story-send').classList.add('stop');
   const live = $('story-live');
   live.hidden = false; live.textContent = 'El Guionista lee tu mensaje y mira el material…';
-  let noteText = '';
+  let noteText = '', accepted = false;
   try {
-    await streamEvents('/api/story/turn', JSON.stringify({ projectId, text, answers }), controller.signal, (ev) => {
+    await streamEvents('/api/story/turn', JSON.stringify({ projectId, text, answers, references: referenceSelectors(snapshot.references) }), controller.signal, (ev) => {
       if (controller.signal.aborted || turn !== controller || project?.id !== projectId || isGptAudio()) return;
-      if (ev.type === 'delta') { noteText += ev.text; notes.textContent = noteText.trim(); box.scrollTop = box.scrollHeight; }
+      if (ev.type === 'story_user') { accepted = true; project.chat.push({ role: 'user', text: ev.text, references: ev.references }); }
+      else if (ev.type === 'delta') { noteText += ev.text; notes.textContent = noteText.trim(); box.scrollTop = box.scrollHeight; }
       else if (ev.type === 'reasoning') live.textContent = `Pensando… ${ev.text.replace(/\s+/g, ' ').slice(-120)}`;
       else if (ev.type === 'progress') live.textContent = `Escribiendo las tomas… ${ev.chars.toLocaleString('es')} caracteres`;
       else if (ev.type === 'notice') live.textContent = ev.text;
@@ -485,6 +555,7 @@ async function send({ text = '', answers = [] }) {
   } catch (err) {
     if (!controller.signal.aborted && project?.id === projectId) showError(err.message);
   } finally {
+    if (!accepted) { restoreReferences(snapshot); if (project?.id === projectId && !input.value) { input.value = text; autosize(); } }
     if (turn === controller) {
       turn = null;
       live.hidden = true;
@@ -512,6 +583,7 @@ async function toJpeg(file) {
 
 async function addFiles(files, kind = 'referencia') {
   if (!project) return;
+  const target = project, targetId = project.id;
   showError('');
   const list = [...files].filter((f) => ['photo', 'video'].includes(kindOf(f)));
   if (!list.length) return showError('Soltá fotos o videos (la música se agrega en el montaje).');
@@ -521,18 +593,20 @@ async function addFiles(files, kind = 'referencia') {
     for (const f of list) {
       live.textContent = `Subiendo ${f.name}…`;
       if (kindOf(f) === 'photo') {
-        if (project.rawFolderId) {
-          const { asset } = await api('/api/raw/assets', { folderId: project.rawFolderId, kind, dataUrl: await toJpeg(f), name: f.name.replace(/\.[^.]+$/, '') });
-          await api('/api/story/assets/link', { projectId: project.id, rawCode: asset.code });
+        if (target.rawFolderId) {
+          const { asset } = await api('/api/raw/assets', { folderId: target.rawFolderId, kind, dataUrl: await toJpeg(f), name: f.name.replace(/\.[^.]+$/, '') });
+          selection.toggle(targetId, { ...asset, rawCode: asset.code, file: `raw:${asset.file}` });
         } else {
-          await api('/api/story/assets', { projectId: project.id, dataUrl: await toJpeg(f), name: f.name, source: 'foto' });
+          const { asset } = await api('/api/story/assets', { projectId: targetId, dataUrl: await toJpeg(f), name: f.name, source: 'foto' });
+          selection.toggle(targetId, asset);
         }
       } else {
         // De un video, tres cuadros representativos.
         const v = await loadVideo(f);
         URL.revokeObjectURL(v.url);
         for (const [i, fr] of v.frames.slice(1, 4).entries()) {
-          await api('/api/story/assets', { projectId: project.id, dataUrl: fr.url, name: `${f.name} · ${fr.t.toFixed(1)} s`, source: 'video' });
+          const { asset } = await api('/api/story/assets', { projectId: targetId, dataUrl: fr.url, name: `${f.name} · ${fr.t.toFixed(1)} s`, source: 'video' });
+          selection.toggle(targetId, asset);
           live.textContent = `Subiendo ${f.name} (${i + 1}/3)…`;
         }
       }
@@ -540,9 +614,7 @@ async function addFiles(files, kind = 'referencia') {
   } catch (err) {
     showError(err.message);
   } finally {
-    live.hidden = true;
-    await refreshProject();
-    await loadFolderLibrary();
+    if (project?.id === targetId) { live.hidden = true; await refreshProject(); await loadFolderLibrary(); }
   }
 }
 $('story-file').addEventListener('change', (e) => { addFiles(e.target.files); e.target.value = ''; });
@@ -640,7 +712,7 @@ function shotCard(s, i) {
   media.style.aspectRatio = `${w} / ${h}`;
   if (s.video?.file) {
     const v = el('video');
-    v.src = fileUrl(s.video.file); v.muted = true; v.loop = true; v.playsInline = true; v.controls = true; v.preload = 'metadata';
+    v.src = fileUrl(s.video.file); v.loop = true; v.playsInline = true; v.controls = true; v.preload = 'metadata';
     if (s.frame?.file) v.poster = fileUrl(s.frame.file);
     media.append(v);
   } else if (s.frame?.file) {
@@ -658,6 +730,7 @@ function shotCard(s, i) {
 
   const body = el('div', 'shot-body');
   body.append(el('p', 'shot-action', s.accion));
+  if (s.video?.file && !s.video.audioRequested) body.append(el('p', 'muted small', 'Este video se generó sin sonido. Abrí “Cambiar esta toma” y tocá “Rehacer el video” para generarlo con audio.'));
   const meta = [s.encuadre, s.camara, s.luz].filter(Boolean).join(' · ');
   if (meta) body.append(el('p', 'muted small', meta));
   if (s.refs?.length || s.reglas?.length) {

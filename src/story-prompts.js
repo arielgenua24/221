@@ -12,6 +12,7 @@ const STORY_GUIDES = ['edition-and-emotion', 'visual-structure', 'shot-framing']
 const DP_GUIDES = ['cinematography', 'cinematic-light'];
 export const STORY_MANUAL = filmManual({ full: STORY_GUIDES });
 export const DP_MANUAL = filmManual({ full: DP_GUIDES });
+export const STORY_SPEECH_DEFAULT = 'Unless the user explicitly requests another language or accent, any requested speech must use Rioplatense Spanish as spoken in Buenos Aires, Argentina, with natural porteño pronunciation and intonation. Preserve quoted dialogue verbatim. Do not invent dialogue or voiceover.';
 
 const NOTES = `1. Primero, "Lo que pienso": entre 2 y 6 viñetas breves en español (qué entendiste, qué decidís y qué regla de la biblioteca lo respalda, citada por id). El humano las lee en vivo.
 2. Después, un único bloque que empiece con \`\`\`json y termine con \`\`\`, con EXACTAMENTE el esquema pedido. Sin comentarios dentro del JSON.`;
@@ -27,6 +28,7 @@ Sos guionista y director. El humano trae material (fotos de personas, productos,
 - Si falta algo que cambia la historia (para quién es, qué tiene que sentir, qué no se puede tocar, duración), preguntalo con opciones para tocar. No más de 2 preguntas por vez. Si podés decidir con criterio, decidí y decilo.
 - Apenas tengas lo suficiente, proponé la historia completa con sus tomas: es más fácil corregir algo concreto que imaginar en abstracto.
 - Cuando el humano pide cambios, cambiá SOLO lo que pidió y decí qué cambiaste. No toques las tomas que no mencionó (sus cuadros ya pueden estar aprobados).
+- Si una toma lleva diálogo, el idioma y acento predeterminados son español rioplatense de Buenos Aires, con entonación porteña y voseo natural. Conservá literalmente las frases que dio el humano. Usá otro idioma o acento cuando lo pida explícitamente; no agregues diálogo si no lo pidió.
 
 ## 2. La historia
 - Una emoción central y un arco de intensidad (presentación → desarrollo → clímax → cierre). La biblioteca te da la curva: usá visual-structure para la progresión y edition-and-emotion para que el corte entre tomas genere sentido (Kuleshov) y emoción (regla de seis).
@@ -68,11 +70,16 @@ const shotBrief = (s) => ({
 });
 
 // Un turno de conversación: lo que el Guionista sabe del proyecto + lo que dijo el humano ahora.
-export function storyTurnPrompt({ project, text, answers }) {
+export function storyTurnPrompt({ project, text, answers, references = [] }) {
   const respuestas = (answers || []).map((a) => `- ${a.pregunta}: ${a.respuesta}`).join('\n');
   return `# PROYECTO "${project.title}" — formato ${project.aspect}, tomas de ${SHOT_SECONDS} s
 
-## Material del humano (las imágenes vienen después de este texto, rotuladas con su código)
+## Referencias explícitas de ESTE mensaje
+${references.length ? assetList(references) : '(ninguna)'}
+${references.length ? 'Estas son las imágenes a las que el humano se refiere en este turno (por ejemplo «esta persona» o «estas fotos»).' : 'Este mensaje no adjunta imágenes. No arrastres la selección de otro turno ni asumas que toda la biblioteca está elegida.'}
+Conservá las asociaciones y decisiones previas de la historia. Los adjuntos de mensajes anteriores siguen siendo contexto, no una selección nueva. Si una referencia es ambigua, preguntá.
+
+## Material previo de la historia (contexto disponible, NO selección actual)
 ${assetList(project.assets)}
 
 ## La historia hasta ahora
@@ -171,6 +178,7 @@ Antes de escribir: qué hay en el cuadro de verdad (no lo que la toma "debería"
 - **Tiempo**: beats con segundos (0–1.5 s, 1.5–4 s, 4–5 s). Lo importante pasa antes de los 4.5 s: el final de la toma es el corte.
 - **Física**: peso, inercia, pelo, tela, reflejos. Nombrá lo que tiene que comportarse como en la realidad.
 - **Lo que no cambia**: rostro, ropa, producto, etiqueta, fondo. Nombralo.
+- **Sonido**: describí los sonidos sincronizados con la acción y el ambiente que se escucha en esta toma. Si hay diálogo, respetá exactamente lo que pidió el humano; no inventes voces ni narración. El idioma y acento predeterminados son español rioplatense de Buenos Aires, Argentina, con pronunciación y entonación porteñas naturales. Cambialos solo si el humano lo pidió explícitamente.
 
 ## 3. El prompt (inglés, 70 a 160 palabras), en este orden
 1. Sujeto y acción, con sus tiempos.
@@ -178,6 +186,7 @@ Antes de escribir: qué hay en el cuadro de verdad (no lo que la toma "debería"
 3. Luz y atmósfera (las del cuadro; el cambio, si hay uno).
 4. Estilo: "cinematic, photorealistic, natural motion" + el look de la historia.
 5. Continuidad: "the same face, outfit and product throughout".
+6. Sonido ambiente y efectos ligados a lo visible. La música del montaje se añade aparte.
 Sin texto en pantalla, sin cortes, sin cambio de escena. Las restricciones van aparte, en "evitar".
 `;
 
@@ -188,7 +197,7 @@ export const DP_SYSTEM = [
 
 export function shotVideoPrompt({ project, shot, prev, next, feedback }) {
   const near = (s, label) => (s ? `- ${label}: ${s.id} "${s.titulo}" — ${s.accion} (cámara: ${s.camara})` : `- ${label}: (ninguna)`);
-  return `# DIRIGIR LA TOMA ${shot.id} — "${shot.titulo}" (Wan 3.0, image→video, ${SHOT_SECONDS} s, 480p, ${project.aspect}, muda: va con música)
+  return `# DIRIGIR LA TOMA ${shot.id} — "${shot.titulo}" (Wan 3.0, image→video con audio, ${SHOT_SECONDS} s, 480p, ${project.aspect})
 
 ## La historia
 \`\`\`json
@@ -213,6 +222,7 @@ Esquema JSON exacto:
   "camara": "movimiento, dirección, velocidad",
   "beats": [{ "desde": 0, "hasta": 1.5, "accion": "qué pasa" }],
   "luz": "la luz del cuadro y su cambio, si hay",
+  "sonido": "dirección de sonido en inglés; diálogo exacto solo si se pidió, por defecto en español rioplatense con acento de Buenos Aires",
   "reglas": ["guia/regla"],
   "prompt_video": "el prompt en inglés (sección 3)",
   "evitar": ["restricciones cortas en inglés"],

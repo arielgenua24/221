@@ -1,7 +1,7 @@
 import { PCMDecoder, VoiceActivity, wavBase64, SAMPLE_RATE } from './voice-audio.js';
 
-export function createGptVoice({ context, enabled, mic, inputAllowed, phase, user, reply, event, error, refresh = async () => {} }) {
-  let audioContext = null, capture = null, opening = null, lifetime = 0, inputEpoch = 0, request = null, playing = null, pollTimer = null, polling = false;
+export function createGptVoice({ context, enabled, mic, inputAllowed, phase, user, reply, event, error, refresh = async () => {}, beginInput = () => ({}), discardInput = () => {} }) {
+  let audioContext = null, capture = null, opening = null, lifetime = 0, inputEpoch = 0, request = null, playing = null, pollTimer = null, polling = false, recordingInput = null;
   const cursors = new Map(), announced = new Set();
   const here = () => enabled() && context() && !document.hidden;
   const key = (ctx) => ctx && `${ctx.kind}/${ctx.id}`;
@@ -26,6 +26,7 @@ export function createGptVoice({ context, enabled, mic, inputAllowed, phase, use
     }
   }
   function pauseInput() {
+    if (recordingInput) { discardInput(recordingInput); recordingInput = null; }
     if (capture) {
       capture.processor.onaudioprocess = null;
       capture.stream.getTracks().forEach((track) => track.stop());
@@ -73,8 +74,8 @@ export function createGptVoice({ context, enabled, mic, inputAllowed, phase, use
         processor.onaudioprocess = (ev) => {
           if (!here() || !mic() || !inputAllowed()) return;
           const result = vad.push(ev.inputBuffer.getChannelData(0));
-          if (result.started) { cancel(); phase('listening', 'Te escucho…'); }
-          if (result.chunks) send({ audio: { data: wavBase64(result.chunks, audioContext.sampleRate), format: 'wav' } });
+          if (result.started) { cancel(); recordingInput = beginInput(); phase('listening', 'Te escucho…'); }
+          if (result.chunks) { const metadata = recordingInput; recordingInput = null; send({ ...metadata, audio: { data: wavBase64(result.chunks, audioContext.sampleRate), format: 'wav' } }); }
         };
         source.connect(processor); processor.connect(gain); gain.connect(audioContext.destination);
         capture = { stream, source, processor, gain, vad };
@@ -100,14 +101,16 @@ export function createGptVoice({ context, enabled, mic, inputAllowed, phase, use
   async function send(message) {
     if (!here()) return;
     cancel();
+    if (recordingInput) { discardInput(recordingInput); recordingInput = null; }
+    if (!message.greeting && !message.notification && !message.references) message = { ...beginInput(), ...message };
     capture?.vad.reset();
     const ctx = context(), epoch = lifetime;
     const controller = new AbortController(), token = { controller };
     request = token;
     const state = { ctx, notification: message.notification, sources: new Set(), at: 0, text: '', turnId: null, done: false, cancelled: false, acked: false };
     playing = state;
-    let mine = null, theirs = null;
-    if (!message.greeting && !message.notification) mine = user(message.text || 'Mensaje de voz…');
+    let mine = null, theirs = null, recorded = false;
+    if (!message.greeting && !message.notification) mine = user(message.text || 'Mensaje de voz…', null, message.references);
     phase('thinking'); error('');
     try {
       await unlock();
@@ -119,7 +122,7 @@ export function createGptVoice({ context, enabled, mic, inputAllowed, phase, use
         if (!current(ctx, epoch) || controller.signal.aborted) return;
         if (ev.type === 'error') throw new Error(ev.text);
         if (ev.type === 'voice_start') state.turnId = ev.turnId;
-        if (ev.type === 'voice_user') mine = user(ev.text, mine);
+        if (ev.type === 'voice_user') { recorded = true; mine = user(ev.text, mine, ev.references || message.references); }
         if (ev.type === 'voice_audio') queuePCM(state, pcm.push(ev.data));
         if (ev.type === 'voice_transcript') { state.text += ev.text; theirs = reply(state.text, theirs); phase(state.sources.size ? 'speaking' : 'thinking', state.text); }
         if (ev.type === 'voice_job' || ev.type === 'raw_proposal_decision') event(ev);
@@ -141,6 +144,7 @@ export function createGptVoice({ context, enabled, mic, inputAllowed, phase, use
       if (!controller.signal.aborted && current(ctx, epoch)) error(err.message);
       if (playing === state) cancel(false);
     } finally {
+      if (!recorded && !message.greeting && !message.notification) discardInput(message);
       if (request === token) request = null;
       if (playing === state) playing = null;
       if (current(ctx, epoch) && !request && !playing) {

@@ -23,8 +23,8 @@ export const VIDEO_MODELS = {
     path: () => process.env.WAN_MODEL || 'alibaba/wan-3.0-prime/image-to-video',
     minSeconds: 2,
     maxSeconds: 30,
-    // Sin audio propio (el campo es generate_audio y por defecto es true): el clip conserva el sonido original del video.
-    body: ({ prompt, image, duration, aspect, resolution, seed }) => ({ prompt, image, duration, aspect_ratio: aspect, resolution, generate_audio: false, ...(seed !== undefined ? { seed } : {}) }),
+    // Otras herramientas conservan el audio de su video original; Historia pide sonido nuevo por toma.
+    body: ({ prompt, image, duration, aspect, resolution, seed, generateAudio = false }) => ({ prompt, image, duration, aspect_ratio: aspect, resolution, generate_audio: generateAudio, ...(seed !== undefined ? { seed } : {}) }),
   },
 };
 export const DEFAULT_VIDEO_MODEL = VIDEO_MODELS[process.env.VIDEO_MODEL] ? process.env.VIDEO_MODEL : 'seedance';

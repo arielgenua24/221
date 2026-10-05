@@ -146,6 +146,7 @@
           <p id="story-source" class="muted small"></p>
           <form id="story-form" class="raw-card story-compose" aria-label="Conversación con el Guionista">
             <div class="raw-card-top"><span class="story-mode">Historia · Guionista</span><select id="story-image-generator" class="image-generator" aria-label="Generador de imágenes en Historia"><option value="gpt-image">GPT Image 2.5</option><option value="seedream">Seedream 5 Pro</option></select></div>
+            <div id="story-attachments" class="story-attachments" hidden aria-label="Referencias para el próximo mensaje"></div>
             <div class="raw-prompt"><textarea id="story-text" rows="2" placeholder="¿Qué historia querés contar?" aria-label="Mensaje al Guionista"></textarea></div>
             <div class="raw-card-bottom">
               <span class="story-add-pair"><label class="raw-icon story-add" title="Agregar referencias o videos"><input type="file" id="story-file" accept="image/*,video/*" multiple hidden><span aria-hidden="true">▣</span><span class="sr-only">Agregar referencias o videos</span></label><label class="raw-icon story-add" title="Agregar personas"><input type="file" id="story-person-file" accept="image/*" multiple hidden><span aria-hidden="true">♙</span><span class="sr-only">Agregar personas</span></label></span>
@@ -156,7 +157,7 @@
           <div id="story-live" class="story-live" hidden></div>
           <p id="story-error" class="error" hidden></p>
           <section class="story-conversation" aria-label="Conversación"><h2 class="raw-section">Conversación</h2><div id="story-chat" class="story-chat" aria-live="polite"></div></section>
-          <section class="story-library-wrap" aria-label="Personas y referencias de la carpeta"><h2 class="raw-section">Personas y referencias</h2><p class="muted small">Tocá una imagen de esta carpeta para usarla en la historia.</p><div id="story-library" class="raw-library"></div><h3 class="raw-section">Material de esta historia</h3><div id="story-material" class="story-material"></div></section>
+          <section class="story-library-wrap" aria-label="Personas y referencias de la carpeta"><h2 class="raw-section">Personas y referencias</h2><p class="muted small">Tocá para elegir o quitar referencias del próximo mensaje. Se adjuntan al enviar texto o hablar.</p><div id="story-library" class="raw-library"></div><h3 class="raw-section">Material previo de esta historia</h3><div id="story-material" class="story-material"></div></section>
           <section id="story-script-wrap" class="story-script" hidden><h2 class="raw-section">Guion</h2><div id="story-script"></div></section>
 
           <section id="story-board-wrap" class="story-panel" hidden>

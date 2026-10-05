@@ -114,7 +114,7 @@ test('GPT Audio no puede aprobar otra revisión ni aprobar a partir de un result
   let decisions = 0, round = 0;
   const service = createVoiceSessions({ ...options, decide: async () => { decisions++; }, chat: async (opts) => {
     if (round++ === 0) return { content: '', toolCalls: [tool('decide_image', { proposal_id: 'old-proposal', action: 'approve' })] };
-    assert.match(opts.messages.at(-1).content, /propuesta actual/); return speak(opts, 'Revisá el modal actual.');
+    assert.match(opts.messages.at(-1).content, /propuesta actual|No se puede decidir sobre una imagen en este turno/); return speak(opts, 'Revisá el modal actual.');
   } });
   await service.turn(input({ proposalId: 'current-proposal', viewerId: 'viewer-123' }), () => {}, new AbortController().signal);
   assert.equal(decisions, 0);
@@ -122,4 +122,33 @@ test('GPT Audio no puede aprobar otra revisión ni aprobar a partir de un result
   const job = (await service.jobs(input())).at(-1); round = 0;
   await service.turn(input({ text: undefined, notification: job.id, proposalId: 'current-proposal' }), () => {}, new AbortController().signal);
   assert.equal(decisions, 0);
+}));
+
+test('Historia guarda adjuntos de voz, los pasa al especialista y no los hereda en otro turno o historia', () => fixture(async (options, histories) => {
+  const references = [{ code: 'M1', file: 'ana.png', name: 'Ana' }], inputs = [], requests = [];
+  let round = 0;
+  const service = createVoiceSessions({ ...options,
+    chat: async (opts) => {
+      requests.push(structuredClone(opts.messages));
+      if (round++ === 0) return { content: '', toolCalls: [tool('record_user', { text: 'Esta persona en el bosque' }), tool('work_on_project', { request: 'Escribí la historia de esta persona en el bosque.' })] };
+      return speak(opts);
+    },
+    work: async (i) => { inputs.push(structuredClone(i)); return 'Historia preparada.'; },
+  });
+  const audio = { format: 'wav', data: wavBase64([new Float32Array(1000)], 24000) };
+  const i = { ...input({ kind: 'story', text: undefined, audio }), references };
+  const events = [];
+  await service.turn(i, (e) => events.push(e), new AbortController().signal);
+  references[0].name = 'Renombrada después';
+  for (let j = 0; j < 30 && !(await service.jobs(i)).every((job) => job.status === 'done'); j++) await new Promise(setImmediate);
+  assert.equal(inputs[0].references[0].name, 'Ana');
+  assert.equal(histories.get('story-project-123')[0].references[0].name, 'Ana');
+  assert.equal(events.find((e) => e.type === 'voice_user').references[0].file, 'ana.png');
+  assert.equal((await service.jobs(i))[0].references[0].name, 'Ana');
+  await service.played(i, events.at(-1).turnId, true);
+  await service.turn(input({ kind: 'story', text: 'Otro turno' }), () => {}, new AbortController().signal);
+  assert.deepEqual(histories.get('story-project-123').at(-1).references, []);
+  assert.match(requests.at(-1).find((m) => m.role === 'user').content, /M1 \(Ana\)/);
+  await service.turn(input({ kind: 'story', id: 'different-123' }), () => {}, new AbortController().signal);
+  assert.equal(requests.at(-1).length, 3);
 }));

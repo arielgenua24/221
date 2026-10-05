@@ -20,6 +20,7 @@ import { createStoryJobs, runStoryTurn, parseStoryTurnBody } from './story-pipel
 import { streamAudioChat } from './gpt-audio.js';
 import { createVoiceSessions, parseVoiceBody } from './voice-session.js';
 import { IMAGE_GENERATORS, parseImageGenerator } from './image-models.js';
+import { referenceLabels } from './story-references.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -312,13 +313,13 @@ const voiceSessions = createVoiceSessions({
     if (!gptAudioConfig.available) throw new Error('GPT Audio necesita OPENROUTER_API_KEY y el modo demo desactivado.');
     return streamAudioChat({ apiKey, ...gptAudioConfig, ...opts });
   },
-  context: async ({ kind, id }) => {
+  context: async ({ kind, id, references = [] }) => {
     if (kind === 'raw') {
       const [lineage, assets, history] = await Promise.all([rawStore.lineage(id), rawStore.assetsFor(id), rawStore.history(id)]);
       return { info: { kind, name: lineage.map((f) => f.name).join(' / '), proposal: await rawApprovals.pending(id), shown: [...history].reverse().find((h) => h.shown)?.shown || null, assets: assets.map(({ code, name, kind, description }) => ({ code, name, kind, description })) }, history };
     }
     const p = await storyStore.get(id);
-    return { info: { kind, name: p.title, aspect: p.aspect, story: p.story, shots: p.shots.map(({ id, titulo, accion, frame, video }) => ({ id, titulo, accion, frame: frame?.status, video: video?.status })), assets: p.assets.map(({ code, rawCode, name, note }) => ({ code, rawCode, name, note })) }, history: p.chat };
+    return { info: { kind, references: references.map(({ code, rawCode, name, note }) => ({ code, rawCode, name, note })), referenceScope: `Referencias explícitas de ESTE mensaje: ${referenceLabels(references) || 'ninguna'}. El material previo y los adjuntos anteriores son contexto; no arrastres su selección.`, name: p.title, aspect: p.aspect, story: p.story, shots: p.shots.map(({ id, titulo, accion, frame, video }) => ({ id, titulo, accion, frame: frame?.status, video: video?.status })), assets: p.assets.map(({ code, rawCode, name, note }) => ({ code, rawCode, name, note })) }, history: p.chat };
   },
   remember: async ({ kind, id }, entry) => {
     if (kind === 'raw') return rawStore.appendHistory(id, [entry]);
@@ -330,14 +331,8 @@ const voiceSessions = createVoiceSessions({
       const failed = log.generation?.error;
       return JSON.stringify({ reply: log.reply, proposal: log.proposal, awaitingApproval: !!log.proposal, generation: log.generation, error: failed });
     }
-    const p = await storyStore.get(input.id);
-    if (p.rawFolderId) {
-      const assets = await rawStore.assetsFor(p.rawFolderId, { inherit: false });
-      const names = new Map(assets.map((a) => [a.code, a.name]));
-      await storyStore.mutate(p.id, (d) => { d.assets = d.assets.filter((a) => !a.rawCode || names.has(a.rawCode)); d.assets.forEach((a) => { if (a.rawCode) a.name = names.get(a.rawCode) || null; }); });
-    }
     let reply;
-    await runStoryTurn({ store: storyStore, jobs: storyJobs || { cancel() {}, view: (id) => storyStore.get(id) }, input: parseStoryTurnBody({ projectId: input.id, text: input.text }), config: storyConfig, llm, signal, remember: false,
+    await runStoryTurn({ store: storyStore, jobs: storyJobs || { cancel() {}, view: (id) => storyStore.get(id) }, input: { ...parseStoryTurnBody({ projectId: input.id, text: input.text }), references: input.references || [] }, config: storyConfig, llm, signal, remember: false,
       emit: (ev) => { if (ev.type === 'story_reply') reply = ev; emit(ev); },
     });
     return JSON.stringify(reply);
@@ -360,7 +355,8 @@ async function handleVoice(req, res, url) {
     const input = parseVoiceBody(body);
     if (!gptAudioConfig.available) throw new Error('GPT Audio necesita OPENROUTER_API_KEY y el modo demo desactivado.');
     // Validate the real project before opening the stream or creating session files.
-    if (input.kind === 'raw') await rawStore.lineage(input.id); else await storyStore.get(input.id);
+    if (input.kind === 'raw') await rawStore.lineage(input.id);
+    else input.references = await prepareStoryReferences(input.id, input.references);
     res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableFinished) controller.abort(); });
@@ -370,6 +366,13 @@ async function handleVoice(req, res, url) {
     catch (err) { if (!controller.signal.aborted) emit({ type: 'error', text: err.message }); }
     finally { clearInterval(ping); res.end(); }
   } catch (err) { return badRequest(res, err.message); }
+}
+async function prepareStoryReferences(id, selectors) {
+  const p = await storyStore.get(id);
+  if (!selectors?.length) return [];
+  const raw = p.rawFolderId && selectors?.some((r) => r.rawCode)
+    ? await rawStore.assetsFor(p.rawFolderId, { inherit: false }) : [];
+  return storyStore.attachReferences(id, selectors || [], raw);
 }
 async function folderAsset(projectId, rawCode) {
   const p = await storyStore.get(projectId);
@@ -384,12 +387,6 @@ const STORY_ACTIONS = {
     const rawFolderId = String(b.rawFolderId || '');
     if (rawFolderId) await rawStore.lineage(rawFolderId);
     const project = await storyStore.create({ title: b.title, aspect: b.aspect, rawFolderId: rawFolderId || null, imageGenerator: b.imageGenerator });
-    if (rawFolderId) {
-      const assets = await rawStore.assetsFor(rawFolderId, { inherit: false });
-      for (const asset of assets.filter((a) => a.kind === 'persona' || a.kind === 'referencia').slice(0, STORY_MAX_ASSETS)) {
-        await storyStore.linkRawAsset(project.id, asset);
-      }
-    }
     return { project: await view(project.id) };
   },
   '/api/story/projects/update': async (b) => { await storyStore.update(String(b.id), b); return { project: await view(String(b.id)) }; },
@@ -430,15 +427,7 @@ async function handleStoryTurn(req, res) {
   let input;
   try {
     input = parseStoryTurnBody(await readBody(req));
-    const p = await storyStore.get(input.projectId);
-    if (p.rawFolderId) {
-      const current = await rawStore.assetsFor(p.rawFolderId, { inherit: false });
-      const byCode = new Map(current.map((a) => [a.code, a]));
-      await storyStore.mutate(p.id, (d) => {
-        d.assets = d.assets.filter((a) => !a.rawCode || byCode.has(a.rawCode));
-        d.assets.forEach((a) => { if (a.rawCode) a.name = byCode.get(a.rawCode).name || null; });
-      });
-    }
+    input.references = await prepareStoryReferences(input.projectId, input.references);
   } catch (err) {
     return badRequest(res, err.message);
   }

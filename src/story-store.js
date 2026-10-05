@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { parseImageGenerator } from './image-models.js';
+import { parseStoryReferences, referenceSnapshot } from './story-references.js';
 
 // Historia guarda cada proyecto en disco (runs/story/): un JSON por proyecto con el material que subió
 // el humano, la conversación con el Guionista, la historia, las tomas (cuadro, aprobación, video) y la
@@ -128,7 +129,7 @@ export function createStoryStore(dir, { rawFilesDir = null } = {}) {
     async addAsset(id, { dataUrl, name, source }) {
       const { bytes, ext } = parseDataUrl(dataUrl, /^image\//);
       const p = await load(id);
-      if (p.assets.length >= MAX_ASSETS) throw new Error(`Máximo ${MAX_ASSETS} imágenes por proyecto.`);
+      if (p.assets.filter((a) => !a.rawCode).length >= MAX_ASSETS) throw new Error(`Máximo ${MAX_ASSETS} imágenes subidas directamente a esta historia.`);
       const file = await saveFile(bytes, ext);
       return mutate(id, (d) => {
         const asset = { code: `M${++d.counter}`, file, name: cleanTitle(name) || null, source: source === 'video' ? 'video' : 'foto', note: null };
@@ -145,6 +146,33 @@ export function createStoryStore(dir, { rawFilesDir = null } = {}) {
         name: cleanTitle(raw.name) || null, source: 'raw', kind: raw.kind, note: raw.description || null };
       p.assets.push(asset);
       return asset;
+    }),
+
+    // Validate every reference before changing the story; the whole selection is atomic.
+    attachReferences: (id, selectors, rawAssets = []) => mutate(id, (p) => {
+      const refs = parseStoryReferences(selectors);
+      const resolved = refs.map((r) => {
+        if (r.rawCode) {
+          const raw = rawAssets.find((a) => a.code === r.rawCode && a.folderId === p.rawFolderId);
+          if (!raw) throw new Error('La imagen no pertenece a la carpeta de esta historia.');
+          return { raw, asset: p.assets.find((a) => a.rawCode === r.rawCode) };
+        }
+        const asset = p.assets.find((a) => a.code === r.code);
+        if (!asset) throw new Error('Esa referencia no está en la historia.');
+        return { asset };
+      });
+      // The 16-reference limit applies to a message, not its accumulated history.
+      // Legacy stories may already contain 16 automatically linked images; never
+      // require deleting that material to attach a different library image.
+      const attached = resolved.map(({ raw, asset }) => {
+        if (!asset) {
+          asset = { code: `M${++p.counter}`, file: `raw:${path.basename(raw.file)}`, rawCode: raw.code,
+            name: cleanTitle(raw.name) || null, source: 'raw', kind: raw.kind, note: raw.description || null };
+          p.assets.push(asset);
+        }
+        return referenceSnapshot({ ...asset, ...(raw ? { name: cleanTitle(raw.name) || null } : {}) });
+      });
+      return [...new Map(attached.map((a) => [a.code, a])).values()];
     }),
 
     renameAsset: (id, code, name) => mutate(id, (p) => {

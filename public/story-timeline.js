@@ -1,8 +1,8 @@
 import { el, fmt } from './shared.js';
 
-// Montaje de Historia: las tomas en orden (cada una ~5 s) sobre una pista de música con su volumen.
-// Se dibuja en un canvas con un reloj propio (la música puede ser más corta o no estar), la música pasa por
-// WebAudio (volumen + fundido al final) y se exporta en tiempo real con MediaRecorder (canvas + audio).
+// Montaje de Historia: las tomas en orden (cada una ~5 s) con su sonido y una pista opcional de música.
+// Se dibuja en un canvas con un reloj propio; el sonido de las tomas y la música se mezclan en
+// WebAudio y se exportan en tiempo real con MediaRecorder (canvas + audio).
 // Las tomas que todavía no tienen video se ven como su cuadro (con un zoom lento), para ver la historia entera.
 
 const SIZES = { '9:16': [540, 960], '16:9': [960, 540], '1:1': [720, 720] };
@@ -73,7 +73,7 @@ export function createStoryEditor({ onOrder, onMusic, onMix, onRemoveMusic, shot
       const c = { id: s.id, titulo: s.titulo, kind, url, poster: s.frame?.file ? fileUrl(s.frame.file) : url, dur: shotSeconds, pending: kind === 'still' };
       if (kind === 'video') {
         const v = document.createElement('video');
-        v.src = url; v.muted = true; v.playsInline = true; v.preload = 'auto';
+        v.src = url; v.playsInline = true; v.preload = 'auto';
         v.addEventListener('loadedmetadata', () => { if (Number.isFinite(v.duration) && v.duration > 0.5) { c.dur = Math.min(v.duration, shotSeconds + 1); layout(); } });
         // En pausa, el cuadro se redibuja cuando el video termina de cargar o de posicionarse.
         ['loadeddata', 'seeked'].forEach((ev) => v.addEventListener(ev, () => { if (!playing) loop(); }));
@@ -85,7 +85,12 @@ export function createStoryEditor({ onOrder, onMusic, onMix, onRemoveMusic, shot
       }
       return c;
     });
-    [...old.values()].forEach((c) => { if (!clips.includes(c) && !clips.some((x) => x.node === c.node)) c.node?.removeAttribute('src'); });
+    [...old.values()].forEach((c) => {
+      if (c.node && !clips.some((x) => x.node === c.node)) {
+        c.node.pause(); c.audioSource?.disconnect(); c.audioGain?.disconnect(); c.node.removeAttribute('src');
+      }
+    });
+    clips.forEach(connectClipAudio);
   }
 
   const starts = () => { let acc = 0; return clips.map((c) => { const s = acc; acc += c.dur; return s; }); };
@@ -187,7 +192,7 @@ export function createStoryEditor({ onOrder, onMusic, onMix, onRemoveMusic, shot
     if (graph) connectAudio();
   }
 
-  // ---------- Audio (WebAudio: volumen, fundido y salida para exportar) ----------
+  // ---------- Audio (sonido de las tomas + música, también en la exportación) ----------
   function ensureGraph() {
     if (graph) return graph;
     const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -198,7 +203,16 @@ export function createStoryEditor({ onOrder, onMusic, onMix, onRemoveMusic, shot
     gain.connect(dest);
     graph = { ac, gain, dest, source: null };
     connectAudio();
+    clips.forEach(connectClipAudio);
     return graph;
+  }
+  function connectClipAudio(clip) {
+    if (!graph || !clip.node || clip.audioSource) return;
+    clip.audioSource = graph.ac.createMediaElementSource(clip.node);
+    clip.audioGain = graph.ac.createGain();
+    clip.audioSource.connect(clip.audioGain);
+    clip.audioGain.connect(graph.ac.destination);
+    clip.audioGain.connect(graph.dest);
   }
   function connectAudio() {
     if (!graph || !audio || audio._connected) return;
@@ -333,7 +347,7 @@ export function createStoryEditor({ onOrder, onMusic, onMix, onRemoveMusic, shot
     await ac.resume();
     const mime = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
       .find((m) => MediaRecorder.isTypeSupported(m)) || '';
-    const tracks = [...canvas.captureStream(30).getVideoTracks(), ...(audio ? dest.stream.getAudioTracks() : [])];
+    const tracks = [...canvas.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()];
     const chunks = [];
     recorder = new MediaRecorder(new MediaStream(tracks), { mimeType: mime || undefined, videoBitsPerSecond: 6_000_000 });
     recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };

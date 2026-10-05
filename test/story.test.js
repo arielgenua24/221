@@ -39,9 +39,10 @@ test('los agentes leen la biblioteca agents-film (guías completas + catálogo, 
   assert.match(DP_SYSTEM[0].text, /<guia id="motivated-lighting"/);
 });
 
-test('Wan 3.0 sale sin audio propio (va con la música del montaje)', () => {
+test('Historia puede pedir audio nativo a Wan sin cambiar el valor de otras herramientas', () => {
   const body = VIDEO_MODELS.wan.body({ prompt: 'p', image: 'u', duration: 5, aspect: '9:16', resolution: '480p' });
   assert.deepEqual(body, { prompt: 'p', image: 'u', duration: 5, aspect_ratio: '9:16', resolution: '480p', generate_audio: false });
+  assert.equal(VIDEO_MODELS.wan.body({ prompt: 'p', image: 'u', duration: 5, aspect: '9:16', resolution: '480p', generateAudio: true }).generate_audio, true);
 });
 
 test('sanitizeShot y mergeShots: refs reales, ids únicos, lo que no cambia conserva cuadro y video', () => {
@@ -115,6 +116,9 @@ test('el prompt del cuadro nombra las referencias y fija el look y el formato', 
 
 test('flujo completo (demo): conversar → tomas → storyboard en paralelo → aprobar → video, y el montaje guarda orden y música', () => withStore(async (store) => {
   const ws = createMockWaveSpeed({ mediaDir: store.filesDir });
+  const videoBodies = [];
+  const mockVideo = ws.video;
+  ws.video = async (request) => { videoBodies.push(request.body); return mockVideo(request); };
   const jobs = createStoryJobs({ store, ws, llm: mockLLM, config: CONFIG, log: silent });
   const p = await store.create({ title: 'Prueba', aspect: '9:16' });
   await store.addAsset(p.id, { dataUrl: PNG, name: 'ana.png', source: 'foto' });
@@ -139,9 +143,13 @@ test('flujo completo (demo): conversar → tomas → storyboard en paralelo → 
   for (const id of ['S1', 'S2']) {
     const s = cur.shots.find((x) => x.id === id);
     assert.equal(s.video.status, 'done');
+    assert.equal(s.video.audioRequested, true);
     assert.match(s.video.prompt, /Single continuous shot/);
     assert.ok(s.video.plan.prompt_video);
   }
+  assert.equal(videoBodies.length, 2);
+  assert.ok(videoBodies.every((body) => body.generate_audio === true && /Audio:/.test(body.prompt)));
+  assert.ok(videoBodies.every((body) => /Rioplatense Spanish.*Buenos Aires, Argentina/.test(body.prompt) && /explicitly requests another language or accent/.test(body.prompt)));
   assert.equal(cur.shots.find((x) => x.id === 'S3').approved, false);
 
   // Pedir cambios sobre un cuadro: vuelve a dibujarse y pierde la aprobación.

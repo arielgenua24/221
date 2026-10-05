@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { AUDIO_RATE } from './gpt-audio.js';
 import { parseImageGenerator } from './image-models.js';
+import { parseStoryReferences, storyHistoryText } from './story-references.js';
 
 const clean = (s, max = 4000) => String(s || '').trim().slice(0, max);
 const functionTool = (name, description, properties, required) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required, additionalProperties: false } } });
@@ -32,7 +33,7 @@ export function parseVoiceBody(body) {
     audio = { data, format: 'wav' };
   }
   if ([!!audio, !!text, !!notification, greeting].filter(Boolean).length !== 1) throw new Error('Enviá un mensaje, audio, saludo o notificación por turno.');
-  return { kind, id, text, audio, notification, greeting, proposalId: clean(body.proposalId, 64), viewerId: clean(body.viewerId, 64),
+  return { kind, id, text, audio, notification, greeting, ...(kind === 'story' ? { references: parseStoryReferences(body.references) } : {}), proposalId: clean(body.proposalId, 64), viewerId: clean(body.viewerId, 64),
     selected: [...new Set((Array.isArray(body.selected) ? body.selected : []).map(String).filter((s) => /^[PRG]\d{1,6}$/.test(s)))].slice(0, 8),
     style: clean(body.style, 60), aspect: clean(body.aspect, 10),
     imageGenerator: parseImageGenerator(body.imageGenerator),
@@ -82,7 +83,7 @@ export function createVoiceSessions({ dir, chat, context, remember, work, decide
   }
   async function enqueue(input, s, request) {
     if (s.data.jobs.filter((j) => ['queued', 'running'].includes(j.status)).length >= 3) return { status: 'busy', message: 'Ya hay tres trabajos pendientes; esperá a que terminen.' };
-    const job = { id: randomUUID(), request, status: 'queued', events: [], result: '', notified: false, at: new Date().toISOString() };
+    const job = { id: randomUUID(), request, ...(input.kind === 'story' ? { references: input.references || [] } : {}), status: 'queued', events: [], result: '', notified: false, at: new Date().toISOString() };
     s.data.jobs.push(job);
     s.data.jobs = s.data.jobs.slice(-20);
     await save(s);
@@ -114,6 +115,7 @@ export function createVoiceSessions({ dir, chat, context, remember, work, decide
     async jobs(input) { await context(input); const s = await state(input); return s.data.jobs; },
     async played(input, turnId, played) { await context(input); await settle(input, await state(input), turnId, played === true); },
     async turn(input, emit, signal) {
+      input = structuredClone(input); // Bind background work to the originating turn.
       const s = await state(input), key = s.key;
       active.get(key)?.abort();
       const controller = new AbortController();
@@ -128,14 +130,14 @@ export function createVoiceSessions({ dir, chat, context, remember, work, decide
         check();
         if (s.data.pending) await settle(input, s, s.data.pending.turnId, false);
         const ctx = await context(input); check();
-        const history = ctx.history.slice(-24).map((h) => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.text }));
+        const history = ctx.history.slice(-24).map((h) => ({ role: h.role === 'user' ? 'user' : 'assistant', content: input.kind === 'story' ? storyHistoryText(h) : h.text }));
         const result = input.notification ? s.data.jobs.find((j) => j.id === input.notification && ['done', 'error'].includes(j.status) && !j.notified) : null;
         if (input.notification && !result) throw new Error('Ese resultado ya fue anunciado o no está listo.');
         const recordUser = async (text) => {
           check();
           if (userRecorded || input.greeting || input.notification) return;
-          await remember(input, { role: 'user', text, voice: true, selected: input.selected }); userRecorded = true; userText = text;
-          emit({ type: 'voice_user', text });
+          await remember(input, { role: 'user', text, voice: true, selected: input.selected, ...(input.kind === 'story' ? { references: input.references || [] } : {}) }); userRecorded = true; userText = text;
+          emit({ type: 'voice_user', text, ...(input.kind === 'story' ? { references: input.references || [] } : {}) });
         };
         if (input.text) await recordUser(input.text);
         const user = input.audio ? [{ type: 'input_audio', input_audio: input.audio }]
@@ -174,6 +176,7 @@ export function createVoiceSessions({ dir, chat, context, remember, work, decide
               if (call.function.name === 'record_user') { const text = clean(args.text); if (!text) throw new Error('Falta la transcripción.'); await recordUser(text); output = { ok: true }; }
               else if (call.function.name === 'work_on_project') {
                 const request = clean(args.request); if (!request) throw new Error('Falta el pedido al especialista.');
+                if (input.audio && !userRecorded) throw new Error('Registrá primero la transcripción del humano con record_user.');
                 if (decision) throw new Error('Ya decidiste sobre una propuesta en este turno.');
                 receipt ||= await enqueue(input, s, request); output = receipt;
                 emit({ type: 'voice_job', ...receipt });
