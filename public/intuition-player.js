@@ -755,8 +755,9 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
     },
     cineStatus(id, status, elapsed) {
       const c = byId.get(id);
-      if (!c?.cine || ['ready', 'loading', 'error', 'demo', 'skipped'].includes(c.cine.take.status)) return;
-      Object.assign(c.cine.take, { status, elapsed });
+      // Un error no es final: el humano puede reintentar el re-filmado.
+      if (!c?.cine || ['ready', 'loading', 'demo', 'skipped'].includes(c.cine.take.status)) return;
+      Object.assign(c.cine.take, { status, elapsed, error: status === 'error' ? c.cine.take.error : null });
       renderPanel(c);
     },
     async setCineVideo({ id, url, demo, skipped }) {

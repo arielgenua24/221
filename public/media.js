@@ -170,8 +170,12 @@ async function gifFrames(file) {
 
 // Graba un tramo del video (para re-filmarlo con IA): se reproduce mudo en un canvas y se captura en tiempo real.
 // Así viaja solo el tramo (≤ 5 s), no el archivo entero. Devuelve un data URL (mp4 si el navegador puede, si no webm).
-export async function recordSegment(url, start, end, { side = 1280, onProgress } = {}) {
+// mp4: true exige MP4 (WaveSpeed no acepta WebM como video de referencia).
+export async function recordSegment(url, start, end, { side = 1280, mp4 = false, onProgress } = {}) {
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error('Este navegador no puede grabar el clip. Probá con Chrome, Edge o Safari actualizados.');
+  const types = ['video/mp4;codecs=avc1.640028', 'video/mp4;codecs=avc1.42E01E', 'video/mp4', ...(mp4 ? [] : ['video/webm;codecs=vp9', 'video/webm'])];
+  const mime = types.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+  if (mp4 && !mime) throw new Error('Este navegador no puede grabar el clip en MP4 (lo pide el modelo de re-filmado). Probá con Chrome o Safari actualizados.');
   const v = await openVideo(url);
   v.muted = true;
   const scale = Math.min(1, side / Math.max(v.videoWidth, v.videoHeight));
@@ -181,7 +185,6 @@ export async function recordSegment(url, start, end, { side = 1280, onProgress }
   v.currentTime = start;
   await once(v, 'seeked');
   ctx.drawImage(v, 0, 0, c.width, c.height);
-  const mime = ['video/mp4;codecs=avc1.640028', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
   const rec = new MediaRecorder(c.captureStream(30), { mimeType: mime || undefined, videoBitsPerSecond: 10_000_000 });
   const chunks = [];
   rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };

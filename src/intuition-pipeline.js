@@ -5,13 +5,14 @@ import {
   ART_DIRECTOR_SYSTEM, MOTION_SYSTEM, directionPrompt, motionPrompt, revisionPrompt, parseMotion, motionFix,
   VIDEO_DIRECTOR_SYSTEM, videoDirectorPrompt, videoRevisionPrompt, storyboardImagePrompt, finalVideoPrompt, TEXT_LAYER_SYSTEM, textLayerPrompt,
 } from './intuition-prompts.js';
-import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL, EDIT_MODEL, videoSeconds, nearestRatio, storyboardLayout, mediaDataUrl } from './wavespeed.js';
-import { CINE_SYSTEM, cinePrompt, cineRevisionPrompt, refilmPrompt } from './cine-prompts.js';
-import { normalizeTreatment } from '../public/cine-lib.js';
+import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL, REFILM_MODELS, DEFAULT_REFILM_MODEL, refilmResolution, videoSeconds, nearestRatio, storyboardLayout, mediaDataUrl } from './wavespeed.js';
+import { CINE_SYSTEM, cinePrompt, cineRevisionPrompt, refilmPrompt, cineStoryboardPrompt, cineStoryboardRevisionPrompt, cineIntentPrompt, storyboardSheetAspect } from './cine-prompts.js';
+import { normalizeTreatment, ambiguousChanges } from '../public/cine-lib.js';
 
 export const MAX_CLIPS = 3;
 export const MAX_CLIP_SECONDS = 5;
 export const MIN_CLIP_SECONDS = 0.5;
+export const MIN_CINE_SECONDS = 1.2; // el re-filmado necesita ≥ 1 s de video de referencia (margen por la grabación)
 export const CLIP_FRAMES = 6; // cuadros por clip que ve el Motion Designer
 const DIRECTOR_FRAMES = 3; // cuadros por clip que ve el Director de Arte
 export const MAX_REFS = 4; // referencias visuales por clip
@@ -47,6 +48,7 @@ function parseClip(c, video) {
   if (start < 0 || end > video.duration + 0.05) throw new Error('Un clip se sale del video.');
   const len = end - start;
   if (len < MIN_CLIP_SECONDS - 0.01) throw new Error(`Cada clip tiene que durar al menos ${MIN_CLIP_SECONDS} s.`);
+  if (c?.mode === 'cine' && len < MIN_CINE_SECONDS - 0.01) throw new Error(`Los clips de Cinematic Pro duran al menos ${MIN_CINE_SECONDS} s (el modelo de re-filmado pide 1 s de video como mínimo).`);
   if (len > MAX_CLIP_SECONDS + 0.05) throw new Error(`Cada clip dura como máximo ${MAX_CLIP_SECONDS} s.`);
   const frames = parseFrames(c.frames, CLIP_FRAMES);
   if (!frames.length) throw new Error('Faltan los cuadros de un clip.');
@@ -340,57 +342,203 @@ function cineAgent(agent, config, { step, clip, content, history = [], title, te
   return agent({ step: step || `cine-${clip.id}`, role: 'Director de Fotografía', title, model: config.motionModel, system: CINE_SYSTEM, temperature, history, content, meta });
 }
 
-// Un clip de Cinematic Pro:
-//   [a] el Director de Fotografía mira el clip, lo diagnostica con agents-film y escribe el tratamiento
-//       (grade, luz motivada, cámara virtual, textura) → el reproductor lo aplica al video real, al instante
-//   [b] si el clip no se salva con eso, propone re-filmarlo con IA (video→video): el humano aprueba,
-//       el navegador graba el tramo y lo manda con su respuesta, y el modelo de edición genera la toma
-async function runCineClip({ clip, index, total, video, direction, agent, emit, ask, ws, config, signal, log }) {
-  const dur = clip.end - clip.start;
-  const raw = await cineAgent(agent, config, {
-    clip,
-    title: `${clip.id} · Director de Fotografía · ${String(clip.prompt || 'nivel cine').slice(0, 60)}`,
-    content: [{ type: 'text', text: cinePrompt({ direction, clip, index, total, video, refilm: !!ws }) }, ...clipParts(clip, CLIP_FRAMES)],
-    meta: { clip, direction, index, total },
-  });
-  const treatment = normalizeTreatment(raw, dur);
-  if (!ws) treatment.refilmar.recomendado = false;
-  const record = (log.cine[clip.id] = { treatment });
-  emit({ type: 'cine', data: cineView(clip, treatment) });
-  if (!treatment.refilmar.recomendado) return cineView(clip, treatment);
-
-  const prompt = refilmPrompt(treatment.refilmar);
-  const answer = await ask({
-    kind: 'refilm', title: `Clip ${index + 1}: ¿lo re-filmamos con IA?`, clip: clip.id,
-    plan: { id: clip.id, start: clip.start, end: clip.end, model: EDIT_MODEL.label, prompt, por_que: treatment.refilmar.por_que, preservar: treatment.refilmar.preservar, sobre_toma: treatment.refilmar.sobre_toma, demo: !!ws.mock, frame: clip.frames[Math.floor(clip.frames.length / 2)].url },
-  });
-  const clipVideo = typeof answer?.video === 'string' && /^data:video\//.test(answer.video) && answer.video.length <= MAX_CLIP_VIDEO_BYTES * 1.4 ? answer.video : null;
-  if (!answer?.aprobar || !clipVideo) {
-    record.refilm = { approved: false, reason: answer?.aprobar ? 'sin video' : 'rechazado' };
-    emit({ type: 'cine_video', data: { id: clip.id, url: null, skipped: true } });
-    return cineView(clip, treatment);
-  }
-  const finalPrompt = String(answer.prompt || '').trim().slice(0, 4000) || prompt;
-  record.refilm = { approved: true, prompt: finalPrompt };
-  const step = `refilm-${clip.id}`;
-  emit({ type: 'step_start', step, role: 'Video IA', title: `${clip.id} · Re-filmando con ${EDIT_MODEL.label}`, model: EDIT_MODEL.path() });
+// Storyboard dibujado a mano de la toma re-filmada (una hoja, 3 × 2), para que el humano vea la toma antes de pagarla.
+// Si falla, no frena nada: la tarjeta muestra un cuadro del clip. Devuelve { url, file } o null.
+async function cineStoryboard({ clip, treatment, video, ws, config, emit, signal, record, round }) {
+  const step = `cineboard-${clip.id}${round > 1 ? `-r${round}` : ''}`;
+  emit({ type: 'step_start', step, role: 'Storyboard', title: `${clip.id} · ${round > 1 ? 'Redibujando' : 'Dibujando'} el storyboard de la toma`, model: config.storyboardModel });
   try {
-    const url = await ws.upload(clipVideo, signal);
-    const out = await ws.video({
-      model: EDIT_MODEL.path(),
-      body: EDIT_MODEL.body({ prompt: finalPrompt, video: url, resolution: config.videoResolution }),
+    const refs = [...new Set([0, Math.floor(clip.frames.length / 2)])].map((i) => clip.frames[i].url);
+    const images = await Promise.all(refs.map((u) => ws.upload(u, signal)));
+    const out = await ws.image({
+      model: config.storyboardModel,
+      body: {
+        prompt: cineStoryboardPrompt({ refilmar: treatment.refilmar, treatment, dur: clip.end - clip.start, panelAspect: nearestRatio(video.width, video.height) }),
+        images, aspect_ratio: storyboardSheetAspect(video.width, video.height), resolution: '2k', quality: config.storyboardQuality, output_format: 'jpeg',
+      },
       signal,
       onStatus: ({ status, elapsed }) => emit({ type: 'media_status', step, status, elapsed }),
     });
-    record.refilm.video = out;
-    emit({ type: 'cine_video', data: { id: clip.id, url: out.file ? `/media/${out.file}` : null, demo: !!ws.mock, prompt: finalPrompt } });
+    record.rounds.push({ round, treatment, storyboard: out });
     emit({ type: 'step_end', step });
+    return out.file ? { url: `/media/${out.file}`, file: out.file, remote: out.remote } : null;
   } catch (err) {
     if (signal?.aborted) throw err;
-    record.refilm.error = err.message;
+    record.rounds.push({ round, treatment, storyboardError: err.message });
     emit({ type: 'step_error', step, text: err.message });
+    return null;
   }
-  return cineView(clip, treatment);
+}
+
+const MAX_REFILM_ATTEMPTS = 3;
+const IDENTITY_FRAMES = 3; // cuadros del clip que acompañan al storyboard cuando la cámara cambia (y el clip no se manda)
+
+// Las referencias del re-filmado, en el orden en que se mandan (el prompt las nombra igual):
+// Image 1 = el storyboard aprobado (si se pudo dibujar), después cuadros del clip; Video 1 = el clip, solo si la cámara NO cambia
+// (con un punto de vista nuevo, el video de referencia empuja al modelo a copiar la cámara original).
+function refilmRefs(clip, treatment, storyboard) {
+  const video = !treatment.refilmar.cambia_camara;
+  const n = clip.frames.length;
+  const picks = video ? [0] : [...new Set([0, Math.floor(n / 2), n - 1])].slice(0, IDENTITY_FRAMES);
+  return { video, storyboard: !!storyboard, frames: picks.map((i) => clip.frames[i].url) };
+}
+
+// Un clip de Cinematic Pro:
+//   [a] el Director de Fotografía mira el clip, escribe el tratamiento (se aplica al instante) y el plan de re-filmado,
+//       empezando por el CONTRATO DE INTENCIÓN: cada cambio en un eje (punto de vista, elementos, acción, lugar, luz, look)
+//   [b] si un cambio admite dos lecturas, el humano elige antes de dibujar (y el DP rehace el plan con esa elección)
+//   [c] GPT Image dibuja a mano el storyboard de la toma → el humano lo aprueba o pide cambios (el DP rehace y se redibuja)
+//   [d] aprobado: Wan 3.0 Prime (reference→video) re-filma la escena siguiendo el storyboard (la fuente de la verdad).
+//       Si la cámara no cambia, el navegador graba el tramo y va como Video 1; si cambia, solo storyboard + cuadros del clip.
+//       Si falla, se puede reintentar (si la tarea ya se había aceptado, se retoma sin volver a pagar).
+async function runCineClip({ clip, index, total, video, direction, agent, emit, ask, ws, config, signal, log }) {
+  const dur = clip.end - clip.start;
+  const record = (log.cine[clip.id] = { rounds: [] });
+  const resolution = refilmResolution();
+  const history = [];
+  let content = [{ type: 'text', text: cinePrompt({ direction, clip, index, total, video, refilm: !!ws }) }, ...clipParts(clip, CLIP_FRAMES)];
+  let treatment;
+  let storyboard = null;
+  let prompt;
+  let prompts = {};
+  let answer;
+  let intentAsked = false;
+
+  for (let turn = 1, round = 0; ; turn++) {
+    const raw = await cineAgent(agent, config, {
+      step: turn === 1 ? `cine-${clip.id}` : `cine-${clip.id}-r${turn}`,
+      clip, history, content,
+      title: turn === 1 ? `${clip.id} · Director de Fotografía · ${String(clip.prompt || 'nivel cine').slice(0, 60)}` : `${clip.id} · Ajustando la toma con tu respuesta`,
+      meta: { clip, direction, index, total, turn },
+    });
+    history.push({ role: 'user', content }, { role: 'assistant', content: `\`\`\`json\n${JSON.stringify(raw, null, 2)}\n\`\`\`` });
+    treatment = normalizeTreatment(raw, dur);
+    // Re-filmar es el corazón de Cinematic Pro: con WaveSpeed se propone siempre (el humano aprueba antes de gastar).
+    treatment.refilmar.recomendado = !!ws;
+    record.treatment = treatment;
+    emit({ type: 'cine', data: cineView(clip, treatment, turn > 1 ? { round: turn } : {}) });
+    if (!ws) return cineView(clip, treatment);
+
+    // [b] Dos lecturas posibles: se pregunta una sola vez, antes del primer storyboard (no cuesta nada).
+    const doubts = intentAsked ? [] : ambiguousChanges(treatment.refilmar);
+    if (doubts.length) {
+      intentAsked = true;
+      record.intent = { preguntas: doubts };
+      const reply = await ask({
+        kind: 'intent', title: `Clip ${index + 1}: ¿qué quisiste decir?`, clip: clip.id,
+        plan: { id: clip.id, preguntas: doubts.map((d) => ({ i: d.i, eje: d.eje, pedido: d.pedido, a: d.interpretacion, b: d.otra_lectura })) },
+      });
+      const elecciones = Array.isArray(reply?.elecciones) ? reply.elecciones : [];
+      record.intent.elecciones = elecciones;
+      const choices = doubts.map((d) => {
+        const e = elecciones.find((x) => Number(x?.i) === d.i) || {};
+        const texto = String(e.texto || '').slice(0, 600).trim();
+        if (e.opcion === 'b') return { pedido: d.pedido, texto: d.otra_lectura, changed: true };
+        if (e.opcion === 'otra' && texto) return { pedido: d.pedido, texto, changed: true };
+        return { pedido: d.pedido, texto: d.interpretacion, changed: false };
+      });
+      if (choices.some((c) => c.changed)) {
+        content = cineIntentPrompt(choices);
+        continue;
+      }
+    }
+
+    // [c] Storyboard → aprobar o pedir cambios.
+    round++;
+    storyboard = await cineStoryboard({ clip, treatment, video, ws, config, emit, signal, record, round });
+    const refs = refilmRefs(clip, treatment, storyboard);
+    // Un prompt por modelo (cada uno nombra las referencias a su manera): el humano elige en la tarjeta.
+    const models = Object.entries(REFILM_MODELS).map(([id, m]) => {
+      const seconds = m.seconds(dur);
+      return {
+        id, label: m.label, seconds,
+        cost: +m.cost({ seconds, video: refs.video, clipSeconds: dur }).toFixed(2),
+        prompt: refilmPrompt(treatment.refilmar, { treatment, storyboard: refs.storyboard, video: refs.video, frames: refs.frames.length, tag: m.tag }),
+      };
+    });
+    prompts = Object.fromEntries(models.map((m) => [m.id, m.prompt]));
+    prompt = prompts[DEFAULT_REFILM_MODEL];
+    const lastRound = round >= MAX_STORYBOARD_ROUNDS;
+    answer = await ask({
+      kind: 'refilm', title: `Clip ${index + 1}: ¿lo re-filmamos con IA?`, clip: clip.id,
+      plan: {
+        id: clip.id, start: clip.start, end: clip.end, models, model: DEFAULT_REFILM_MODEL, resolution, prompt,
+        por_que: treatment.refilmar.por_que, preservar: treatment.refilmar.preservar, cambia_camara: treatment.refilmar.cambia_camara,
+        cambios: treatment.refilmar.cambios, needsVideo: refs.video,
+        sobre_toma: treatment.refilmar.sobre_toma, vinetas: treatment.refilmar.vinetas, storyboard: storyboard?.url || null,
+        round, lastRound, demo: !!ws.mock, frame: clip.frames[Math.floor(clip.frames.length / 2)].url,
+      },
+    });
+    const cambios = String(answer?.cambios || '').slice(0, 1500).trim();
+    if (answer?.aprobar || !cambios || lastRound) break;
+    // Pidió cambios: el DP ve su storyboard y el pedido, y rehace el plan (y el tratamiento si hace falta).
+    const edited = String(answer?.prompt || '').trim().slice(0, 4000);
+    let sheet = null;
+    if (storyboard?.file && config.mediaDir) sheet = await mediaDataUrl(config.mediaDir, storyboard.file).catch(() => null);
+    content = [
+      { type: 'text', text: cineStoryboardRevisionPrompt({ feedback: cambios, prompt: edited && edited !== prompt ? edited : '', sheet: !!sheet }) },
+      ...(sheet ? [{ type: 'image_url', image_url: { url: sheet } }] : []),
+    ];
+  }
+
+  // [d] Re-filmar siguiendo el storyboard.
+  const refs = refilmRefs(clip, treatment, storyboard);
+  // WaveSpeed acepta como video de referencia solo MP4/MOV.
+  const clipVideo = typeof answer?.video === 'string' && /^data:video\/(mp4|quicktime)[;,]/.test(answer.video) && answer.video.length <= MAX_CLIP_VIDEO_BYTES * 1.4 ? answer.video : null;
+  if (!answer?.aprobar || (refs.video && !clipVideo)) {
+    record.refilm = { approved: false, reason: answer?.aprobar ? 'sin video MP4' : 'rechazado' };
+    emit({ type: 'cine_video', data: { id: clip.id, url: null, skipped: !answer?.aprobar } });
+    if (answer?.aprobar) emit({ type: 'step_error', step: `refilm-${clip.id}`, text: 'El clip grabado no llegó en MP4 (WaveSpeed solo acepta MP4/MOV). Probá con Chrome o Safari actualizados.' });
+    return cineView(clip, treatment);
+  }
+  const modelId = REFILM_MODELS[answer.model] ? answer.model : DEFAULT_REFILM_MODEL;
+  const model = REFILM_MODELS[modelId];
+  const seconds = model.seconds(dur);
+  const finalPrompt = String(answer.prompt || '').trim().slice(0, 4000) || prompts[modelId] || prompt;
+  record.refilm = { approved: true, prompt: finalPrompt, model: model.path(), resolution, seconds, refs: { video: refs.video, storyboard: refs.storyboard, frames: refs.frames.length }, errors: [] };
+
+  let uploaded = null; // { video, images } ya subidos (un reintento no los vuelve a subir)
+  let task = null; // tarea ya aceptada por WaveSpeed (un reintento la retoma con collect, sin volver a pagar)
+  for (let attempt = 1; ; attempt++) {
+    const step = `refilm-${clip.id}${attempt > 1 ? `-r${attempt}` : ''}`;
+    const onStatus = ({ status, elapsed, task: t }) => { if (t) task = t; emit({ type: 'media_status', step, status, elapsed }); };
+    emit({ type: 'step_start', step, role: 'Video IA', title: `${clip.id} · ${task ? 'Retomando la tarea de' : 'Re-filmando con'} ${model.label} (${resolution}, ${seconds} s${refs.storyboard ? ', siguiendo el storyboard' : ''})`, model: model.path() });
+    try {
+      let out;
+      if (task) out = await ws.collect({ task, signal, onStatus });
+      else {
+        if (!uploaded) {
+          // El storyboard ya está en el CDN de WaveSpeed: se pasa su URL (si no, se sube el archivo guardado).
+          const board = refs.storyboard
+            ? (/^https?:\/\//.test(storyboard.remote || '') ? storyboard.remote : ws.upload(await mediaDataUrl(config.mediaDir, storyboard.file), signal))
+            : null;
+          const [vid, sb, ...frames] = await Promise.all([refs.video ? ws.upload(clipVideo, signal) : null, board, ...refs.frames.map((f) => ws.upload(f, signal))]);
+          uploaded = { video: vid, images: [...(sb ? [sb] : []), ...frames] };
+        }
+        out = await ws.video({
+          model: model.path(),
+          body: model.body({ prompt: finalPrompt, video: uploaded.video, images: uploaded.images, duration: seconds, aspect: nearestRatio(video.width, video.height), resolution }),
+          signal, onStatus,
+        });
+      }
+      record.refilm.video = out;
+      emit({ type: 'cine_video', data: { id: clip.id, url: out.file ? `/media/${out.file}` : null, demo: !!ws.mock, prompt: finalPrompt } });
+      emit({ type: 'step_end', step });
+      return cineView(clip, treatment);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      task = err.task || null; // una tarea que terminó en "failed" no se retoma: se envía de nuevo
+      record.refilm.errors.push(err.message);
+      record.refilm.error = err.message;
+      emit({ type: 'step_error', step, text: err.message });
+      if (attempt >= MAX_REFILM_ATTEMPTS) return cineView(clip, treatment);
+      const retry = await ask({ kind: 'refilm_retry', title: `Clip ${index + 1}: falló el re-filmado`, clip: clip.id, plan: { id: clip.id, error: err.message, resume: !!task, attempt } });
+      if (!retry?.aprobar) {
+        emit({ type: 'cine_video', data: { id: clip.id, url: null, skipped: true } });
+        return cineView(clip, treatment);
+      }
+    }
+  }
 }
 
 // Motion design guiado por intuición:

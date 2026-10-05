@@ -161,7 +161,17 @@ function mockVideoPlan({ clip, layout, round }) {
 }
 
 // Tratamiento de demostración del Director de Fotografía (Cinematic Pro).
-function mockTreatment({ clip, index = 0, revision }) {
+// Con "espía" en el pedido, el DP de demo duda entre objeto y punto de vista (para probar la pregunta de intención);
+// después de la respuesta (turn > 1), es punto de vista.
+function mockChanges(clip, turn = 1) {
+  if (!/esp[ií]a|spy/i.test(clip.prompt || '')) {
+    return [{ eje: 'luz', pedido: '(propuesta del DP)', interpretacion: '(demo) luz de ventana cálida desde la izquierda', en_ingles: 'Warm late-afternoon window light coming from the left.', otra_lectura: '', confianza: 'alta' }];
+  }
+  if (turn > 1) return [{ eje: 'punto_de_vista', pedido: clip.prompt, interpretacion: '(demo) la toma se ve desde una cámara espía escondida en la mesa', en_ingles: 'The shot is seen through a hidden spy camera concealed on the table, at tabletop height, static, wide fisheye lens.', otra_lectura: '', confianza: 'alta' }];
+  return [{ eje: 'elementos', pedido: clip.prompt, interpretacion: '(demo) agrego una cámara espía chica sobre la mesa', en_ingles: 'A small black spy camera sits on the table.', otra_lectura: '(demo) la toma se ve DESDE una cámara espía escondida en la mesa (cambia el punto de vista)', confianza: 'media' }];
+}
+
+function mockTreatment({ clip, index = 0, revision, turn }) {
   const dur = clip.end - clip.start;
   return {
     lectura: '(demo) No miro de verdad los cuadros: aplico un tratamiento de ejemplo.',
@@ -185,11 +195,13 @@ function mockTreatment({ clip, index = 0, revision }) {
     transicion: { entrada: 0.3, salida: 0.3 },
     refilmar: {
       recomendado: index === 0 && !revision,
+      cambios: mockChanges(clip, turn),
       por_que: '(demo) Para probar el flujo: en el primer clip se propone re-filmar.',
       prompt: 'Keep the exact same person, clothing, gestures and framing. Relight the scene with warm late-afternoon window light coming from the left, soft shadows on the right side of the face, gentle haze in the air. Filmic color, subtle grain.',
       preservar: ['la persona y su cara', 'la ropa', 'el encuadre'],
       evitar: ['on-screen text'],
       sobre_toma: 'textura',
+      vinetas: Array.from({ length: 6 }, (_, i) => ({ t: +((i / 5) * dur).toFixed(1), encuadre: i < 3 ? 'medium shot, eye level' : 'medium close-up', accion: i < 3 ? '(demo) la luz de ventana entra por la izquierda' : '(demo) la cámara se acerca de a poco' })),
     },
     nota_para_el_humano: 'MODO DEMO: el tratamiento es fijo. Probá el control de intensidad y "ver original".',
   };

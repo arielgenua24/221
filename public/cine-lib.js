@@ -24,7 +24,18 @@ export const SPLIT_PARAMS = ['sombras', 'luces']; // { hex, fuerza 0–1 }: colo
 export const LIGHT_TYPES = ['ninguna', 'key', 'ventana', 'contra', 'practica', 'barrido', 'sombra'];
 export const EASINGS = ['linear', 'inOutSine', 'inOutCubic', 'outCubic', 'outExpo', 'inCubic'];
 export const CAMERA_LIMITS = { zoom: [1, 1.4], x: [-1, 1], y: [-1, 1], rot: [-5, 5], handheld: [0, 1] };
-export const SOBRE_TOMA = ['textura', 'completo', 'nada']; // qué del tratamiento va encima de una toma re-filmada por IA
+export const SOBRE_TOMA = ['textura', 'completo', 'nada'];
+// Ejes del contrato de intención: cada cambio respecto del clip original cae en UNO.
+// Lo que no cambia en ningún eje se conserva (así un cambio y un "conservar" nunca se contradicen).
+export const EJES = {
+  punto_de_vista: ['punto de vista (quién mira y desde dónde: posición, altura, ángulo, lente, movimiento de cámara)', 'the original camera position, angle, lens and camera movement'],
+  elementos: ['elementos (agregar, sacar o reemplazar objetos o personas en escena)', 'the objects in the scene (nothing added or removed)'],
+  accion: ['acción (qué hacen las personas y cuándo)', 'what the people do and its timing'],
+  lugar: ['lugar (escenario, fondo)', 'the place and the background'],
+  luz: ['luz, hora y clima', 'the original light, time of day and weather'],
+  look: ['look (estilo, color, época, textura)', 'the original look and color'],
+};
+const CONFIANZA = ['alta', 'media', 'baja']; // qué del tratamiento va encima de una toma re-filmada por IA
 
 const EASE = {
   linear: (p) => p,
@@ -94,13 +105,29 @@ export function normalizeTreatment(raw, dur) {
 
   const r = d.refilmar && typeof d.refilmar === 'object' ? d.refilmar : {};
   const list = (x, n, len = 200) => (Array.isArray(x) ? x : []).map((s) => String(s).slice(0, len)).filter(Boolean).slice(0, n);
+  const cambios = (Array.isArray(r.cambios) ? r.cambios : []).filter((c) => c && typeof c === 'object' && EJES[c.eje]).slice(0, 6)
+    .map((c) => ({
+      eje: c.eje,
+      pedido: String(c.pedido || '').slice(0, 300),
+      interpretacion: String(c.interpretacion || '').slice(0, 400),
+      en_ingles: String(c.en_ingles || '').slice(0, 600),
+      otra_lectura: String(c.otra_lectura || '').slice(0, 400),
+      confianza: CONFIANZA.includes(c.confianza) ? c.confianza : 'media',
+    }));
   const refilmar = {
     recomendado: r.recomendado === true && String(r.prompt || '').trim().length > 20,
+    cambios,
+    // La cámara es nueva si hay un cambio de punto de vista (o el DP lo marcó).
+    cambia_camara: r.cambia_camara === true || cambios.some((c) => c.eje === 'punto_de_vista'),
     por_que: String(r.por_que || '').slice(0, 600),
     prompt: String(r.prompt || '').slice(0, 4000),
     preservar: list(r.preservar, 10),
     evitar: list(r.evitar, 16, 80),
     sobre_toma: SOBRE_TOMA.includes(r.sobre_toma) ? r.sobre_toma : 'textura',
+    // Las 6 viñetas del storyboard de la toma re-filmada (3 columnas × 2 filas).
+    vinetas: (Array.isArray(r.vinetas) ? r.vinetas : []).filter((v) => v && typeof v === 'object').slice(0, 6)
+      .map((v) => ({ t: clamp(num(v.t), 0, dur), encuadre: String(v.encuadre || '').slice(0, 160), accion: String(v.accion || '').slice(0, 240) }))
+      .sort((a, b) => a.t - b.t),
   };
 
   return {
@@ -115,6 +142,9 @@ export function normalizeTreatment(raw, dur) {
     nota: String(d.nota_para_el_humano || '').slice(0, 600),
   };
 }
+
+// Los cambios con dos lecturas posibles: se le pregunta al humano antes de dibujar y de gastar.
+export const ambiguousChanges = (refilmar) => (refilmar?.cambios || []).map((c, i) => ({ ...c, i })).filter((c) => c.otra_lectura.trim());
 
 // Interpola keyframes en t (con easing entre cada par).
 function sample(keys, t, ease, fields) {

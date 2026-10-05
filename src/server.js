@@ -5,10 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPipeline } from './pipeline.js';
 import { runEditPipeline, parseEditBody, MAX_MEDIA, MAX_FRAMES } from './edit-pipeline.js';
-import { runIntuitionPipeline, runIntuitionRevision, parseIntuitionBody, parseRevisionBody, MAX_CLIPS, MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, CLIP_FRAMES, MAX_REFS } from './intuition-pipeline.js';
+import { runIntuitionPipeline, runIntuitionRevision, parseIntuitionBody, parseRevisionBody, MAX_CLIPS, MAX_CLIP_SECONDS, MIN_CLIP_SECONDS, MIN_CINE_SECONDS, CLIP_FRAMES, MAX_REFS } from './intuition-pipeline.js';
 import { streamChat } from './openrouter.js';
 import { mockLLM } from './mock.js';
-import { createWaveSpeed, createMockWaveSpeed, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, EDIT_MODEL } from './wavespeed.js';
+import { createWaveSpeed, createMockWaveSpeed, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, REFILM_MODELS, refilmResolution } from './wavespeed.js';
 import { FILM_GUIDES, FILM_RULES } from './film-knowledge.js';
 import { createRawStore, KINDS } from './raw-store.js';
 import { runRawTurn, runRawGeneration, parseRawTurnBody } from './raw-agent.js';
@@ -470,8 +470,8 @@ const server = http.createServer(async (req, res) => {
       },
       raw: { model: rawConfig.rawModel, imageModel: rawConfig.imageModel, ttsModel: rawConfig.ttsModel, voice: !!ttsWs && !ttsWs.mock, images: !!rawWs, greeting: GREETING }, motionModel: intuitionConfig.motionModel, storyboardModel: intuitionConfig.storyboardModel, maxPhotos: MAX_PHOTOS, maxMedia: MAX_MEDIA, maxFrames: MAX_FRAMES,
       intuition: {
-        maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS,
-        cine: true, refilm: !!ws, refilmModel: EDIT_MODEL.label, filmGuides: FILM_GUIDES.length,
+        maxClips: MAX_CLIPS, maxClipSeconds: MAX_CLIP_SECONDS, minClipSeconds: MIN_CLIP_SECONDS, minCineSeconds: MIN_CINE_SECONDS, clipFrames: CLIP_FRAMES, maxRefs: MAX_REFS,
+        cine: true, refilm: !!ws, refilmModels: Object.values(REFILM_MODELS).map((m) => m.label), refilmResolution: refilmResolution(), filmGuides: FILM_GUIDES.length,
         aiVideo: !!ws, videoModels: Object.entries(VIDEO_MODELS).map(([id, m]) => ({ id, label: m.label })), defaultVideoModel: DEFAULT_VIDEO_MODEL,
       },
     }));
@@ -523,5 +523,5 @@ server.listen(PORT, HOST, () => {
     : 'Video IA + texto: desactivado (falta WAVESPEED_API_KEY).');
   console.log(`Raw (pestaña principal) · agente: ${rawConfig.rawModel} · imágenes: ${rawWs ? rawConfig.imageModel : 'desactivado (falta WAVESPEED_API_KEY)'} · voz: ${ttsWs && !ttsWs.mock ? `${rawConfig.ttsModel} (${rawConfig.ttsVoice})` : 'la del navegador'}`);
   console.log(`Historia · Guionista: ${storyConfig.storyModel} · DP: ${storyConfig.dpModel} · cuadros: ${storyConfig.frameModel} / ${storyConfig.frameEditModel} · video: ${storyWs ? `${storyConfig.videoModel} (${storyConfig.videoResolution}, ${SHOT_SECONDS} s)${storyWs.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
-  console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${EDIT_MODEL.path()}${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
+  console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${Object.values(REFILM_MODELS).map((m) => m.path()).join(' / ')} (${refilmResolution()})${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });

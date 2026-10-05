@@ -11,7 +11,7 @@ const FILMSTRIP = 10;
 
 // ---------- Estudio: elegir el video, marcar los clips y escribir el pedido de cada uno ----------
 export function createStudio({ limits, onChange }) {
-  const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', cine: false, refilm: false, ...limits };
+  const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, minCineSeconds: 1.2, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', cine: false, refilm: false, refilmModels: ['Wan 3.0 Prime', 'Seedance 2.5'], refilmResolution: '480p', ...limits };
   let video = null; // { file, url, name, duration, width, height, el }
   let loading = false;
   let clips = []; // { key, id, start, end, prompt, notes, mode: 'motion' | 'ai' | 'cine', videoModel, refs: [{ key, kind, name, frames, thumb, status }] }
@@ -19,6 +19,8 @@ export function createStudio({ limits, onChange }) {
   let card = null;
 
   const setLimits = (l) => Object.assign(lim, l);
+  // Cinematic Pro re-filma el clip: el modelo pide al menos 1 s de video de referencia.
+  const minLen = (c) => (c.mode === 'cine' ? lim.minCineSeconds : lim.minClipSeconds);
 
   async function setVideo(file) {
     loading = true;
@@ -74,6 +76,8 @@ export function createStudio({ limits, onChange }) {
     if (!video) return 'Soltá un video (idealmente vertical 9:16).';
     if (!clips.length) return 'Marcá al menos un clip en el video (máximo 3, de hasta 5 s).';
     if (clips.some((c) => c.refs.some((r) => r.status === 'loading'))) return 'Preparando las referencias…';
+    const short = clips.find((c) => c.end - c.start < minLen(c) - 0.01);
+    if (short) return `El clip ${short.id.replace('C', '')} es de Cinematic Pro: tiene que durar al menos ${lim.minCineSeconds} s (estiralo en la línea de tiempo).`;
     return null;
   }
 
@@ -179,10 +183,10 @@ export function createStudio({ limits, onChange }) {
         c.end = c.start + len;
         preview.currentTime = c.start;
       } else if (edge === 'l') {
-        c.start = Math.max(lo, e0 - lim.maxClipSeconds, Math.min(e0 - lim.minClipSeconds, s0 + dt));
+        c.start = Math.max(lo, e0 - lim.maxClipSeconds, Math.min(e0 - minLen(c), s0 + dt));
         preview.currentTime = c.start;
       } else {
-        c.end = Math.min(hi, s0 + lim.maxClipSeconds, Math.max(s0 + lim.minClipSeconds, e0 + dt));
+        c.end = Math.min(hi, s0 + lim.maxClipSeconds, Math.max(s0 + minLen(c), e0 + dt));
         preview.currentTime = Math.max(c.start, c.end - 0.05);
       }
       node.style.left = `${(c.start / video.duration) * 100}%`;
@@ -191,6 +195,7 @@ export function createStudio({ limits, onChange }) {
       if (span) span.textContent = clipTime(c);
     };
     const onUp = () => {
+      onChange();
       node.removeEventListener('pointermove', onMove);
       node.removeEventListener('pointerup', onUp);
       node.removeEventListener('pointercancel', onUp);
@@ -232,7 +237,12 @@ export function createStudio({ limits, onChange }) {
           b.type = 'button';
           b.title = title;
           b.setAttribute('aria-pressed', String(c.mode === m));
-          b.onclick = () => { c.mode = m; renderCards(); onChange(); };
+          b.onclick = () => {
+            c.mode = m;
+            // Si queda corto para re-filmar, se estira hasta donde deja el clip siguiente.
+            if (c.end - c.start < minLen(c)) { c.end = Math.min(room(c).hi, c.start + minLen(c)); renderRanges(); }
+            renderCards(); onChange();
+          };
           modeRow.append(b);
         });
         if (c.mode === 'ai') {
@@ -249,7 +259,7 @@ export function createStudio({ limits, onChange }) {
       prompt.rows = 2; prompt.value = c.prompt;
       prompt.placeholder = {
         ai: 'Qué tiene que pasar en la toma y qué palabras van encima. Ej. "la taza gira lento hacia la luz; texto: Nuevo blend"',
-        cine: `Qué tiene que sentirse (opcional). Ej. "más íntimo, luz de atardecer", "que parezca una película de los 70"${lim.refilm ? ', "que afuera llueva" (lo re-filma con IA si hace falta)' : ''}`,
+        cine: `Qué tiene que sentirse (opcional). Ej. "más íntimo, luz de atardecer", "que parezca una película de los 70"${lim.refilm ? ', "que afuera llueva"' : ''}`,
       }[c.mode] || '¿Qué pasa en este clip? Ej. "que aparezca el precio: $12.900"';
       prompt.oninput = () => { c.prompt = prompt.value; };
       const notes = el('textarea');
@@ -280,7 +290,7 @@ export function createStudio({ limits, onChange }) {
         addRef.append(inp, el('span', null, '+ Referencia'), el('span', 'muted small', 'imagen, video o GIF'));
         refs.append(addRef);
       }
-      const cineHint = c.mode === 'cine' ? [el('p', 'muted small cine-hint', `🎞️ El Director de Fotografía mira el clip con la biblioteca de cine (luz, color, cámara, encuadre) y lo mejora sobre tu video real: grade, luz motivada, cámara virtual y textura.${lim.refilm ? ' Si no alcanza, te propone re-filmarlo con IA (vos aprobás).' : ''}`)] : [];
+      const cineHint = c.mode === 'cine' ? [el('p', 'muted small cine-hint', `🎞️ El Director de Fotografía mira el clip con la biblioteca de cine (luz, color, cámara, encuadre) y escribe el tratamiento (grade, luz motivada, cámara virtual y textura) y el plan para re-filmarlo.${lim.refilm ? ` Después re-filma el clip con IA (${lim.refilmModels.join(' o ')}, ${lim.refilmResolution}: elegís el modelo al aprobar): vos aprobás antes de gastar. Mínimo ${lim.minCineSeconds} s.` : ''}`)] : [];
       box.append(head, ...(modes.length > 1 ? [modeRow] : []), ...cineHint, prompt, notes, refs);
       cardsBox.append(box);
     });
@@ -375,6 +385,8 @@ export function handleIntuition(ev, steps, ctx) {
     case 'decision':
       if (ev.kind === 'storyboard') append(storyboardCard(ev));
       if (ev.kind === 'refilm') append(refilmCard(ev, ctx));
+      if (ev.kind === 'refilm_retry') append(refilmRetryCard(ev, ctx));
+      if (ev.kind === 'intent') append(intentCard(ev));
       return;
     case 'step_error': {
       const [kind, id] = ev.step.split('-');
@@ -454,16 +466,61 @@ function storyboardCard(ev) {
   return card;
 }
 
-// Cinematic Pro: el Director de Fotografía propone re-filmar el clip con IA (video→video).
-// Si el humano aprueba, el navegador graba el tramo y lo manda con la respuesta (el video nunca se sube entero).
+const EJE_LABEL = { punto_de_vista: 'Punto de vista', elementos: 'Elementos', accion: 'Acción', lugar: 'Lugar', luz: 'Luz', look: 'Look' };
+
+// Cinematic Pro: el pedido admite dos lecturas → el humano elige antes de que se dibuje nada (no cuesta).
+function intentCard(ev) {
+  const p = ev.plan;
+  const n = p.id.replace('C', '');
+  const card = decisionShell(ev, 'Antes de dibujar');
+  const picks = p.preguntas.map((q) => {
+    const box = el('fieldset', 'intent-q');
+    box.append(el('legend', null, `"${q.pedido}"`));
+    const name = `intent-${ev.id}-${q.i}`;
+    const opt = (value, label, checked) => {
+      const l = el('label', 'intent-opt');
+      const r = el('input');
+      r.type = 'radio'; r.name = name; r.value = value; r.checked = checked;
+      l.append(r, document.createTextNode(` ${label}`));
+      return l;
+    };
+    const other = el('textarea');
+    other.rows = 2; other.placeholder = 'O contá con tus palabras qué querés.';
+    other.oninput = () => { if (other.value.trim()) box.querySelector('input[value="otra"]').checked = true; };
+    box.append(opt('a', q.a, true), opt('b', q.b, false), opt('otra', 'Otra cosa:', false), other);
+    card.append(box);
+    return { q, box, other };
+  });
+  const actions = el('div', 'actions');
+  const go = el('button', 'primary', 'Seguir con esto');
+  go.type = 'button';
+  go.onclick = () => {
+    const elecciones = picks.map(({ q, box, other }) => ({ i: q.i, opcion: box.querySelector('input:checked')?.value || 'a', texto: other.value.trim() }));
+    const said = picks.map(({ q }, k) => { const e = elecciones[k]; return e.opcion === 'b' ? q.b : e.opcion === 'otra' && e.texto ? e.texto : q.a; });
+    decide(card, ev.id, { elecciones }, `Clip ${n}: ${said.join(' · ')}`);
+  };
+  actions.append(go);
+  card.append(actions);
+  return card;
+}
+
+// Cinematic Pro: el storyboard de la toma re-filmada, para aprobar o pedir cambios.
+// Si la cámara no cambia, al aprobar el navegador graba el tramo y lo manda con la respuesta (el video nunca se sube entero);
+// si cambia, no hace falta: el modelo recibe el storyboard y cuadros del clip.
 function refilmCard(ev, ctx) {
   const p = ev.plan;
   const n = p.id.replace('C', '');
-  const card = decisionShell(ev, `Re-filmar con IA · ${p.model}`);
+  const card = decisionShell(ev, `Re-filmar con IA${p.resolution ? ` · ${p.resolution}` : ''}${p.round > 1 ? ` · versión ${p.round}` : ''}`);
+  // Modelos para re-filmar: el humano elige (cada uno con su prompt, duración y costo estimado).
+  const models = p.models?.length ? p.models : [{ id: p.model, label: p.model, prompt: p.prompt }];
+  let model = models.find((m) => m.id === p.model) || models[0];
+  // El storyboard dibujado a mano de la toma re-filmada (o un cuadro del clip, si no se pudo dibujar).
   const media = el('div', 'storyboard');
   const img = el('img', 'storyboard-img');
-  img.src = p.frame; img.alt = `Cuadro del clip ${p.id}`;
+  img.src = p.storyboard || p.frame;
+  img.alt = p.storyboard ? `Storyboard de la toma re-filmada del clip ${p.id}` : `Cuadro del clip ${p.id}`;
   media.append(img);
+  if (!p.storyboard) media.append(el('p', 'muted small', p.demo ? 'Modo demo: se muestra un cuadro del clip en lugar del storyboard.' : 'No se pudo dibujar el storyboard: se muestra un cuadro del clip.'));
   card.append(media);
   const facts = el('div', 'facts');
   const fact = (label, value) => {
@@ -472,39 +529,94 @@ function refilmCard(ev, ctx) {
     f.append(el('strong', null, label), document.createTextNode(Array.isArray(value) ? value.join(' · ') : value));
     facts.append(f);
   };
+  (p.cambios || []).forEach((c) => fact(EJE_LABEL[c.eje] || c.eje, c.interpretacion || c.pedido));
   fact('Por qué', p.por_que);
+  fact('Cámara', p.cambia_camara ? 'una toma nueva: otra posición, ángulo o lente (como en el storyboard)' : 'la misma de tu clip');
+  fact('Tiempos', (p.vinetas || []).map((v, i) => `${i + 1} · ${Number(v.t || 0).toFixed(1)} s: ${[v.encuadre, v.accion].filter(Boolean).join(' — ')}`));
   fact('No cambia', p.preservar);
   fact('Encima de la toma', { textura: 'solo la textura (grano, halation, viñeta)', completo: 'todo el tratamiento', nada: 'nada: la toma tal cual' }[p.sobre_toma]);
   card.append(facts);
+  const pick = el('div', 'refilm-models');
+  const sel = el('select', 'clip-model');
+  sel.setAttribute('aria-label', 'Modelo para re-filmar');
+  models.forEach((m) => { const o = el('option', null, `${m.label}${m.seconds ? ` · ${m.seconds} s` : ''}${m.cost ? ` · ≈ US$${m.cost.toFixed(2)}` : ''}`); o.value = m.id; sel.append(o); });
+  sel.value = model.id;
+  pick.append(el('span', 'small', 'Modelo'), sel);
+  card.append(pick);
   const det = el('details', 'motion-code');
   det.append(el('summary', null, 'Ver y editar el prompt'));
   const prompt = el('textarea', 'prompt-edit');
-  prompt.rows = 7; prompt.value = p.prompt;
+  prompt.rows = 7; prompt.value = model.prompt;
   det.append(prompt);
   card.append(det);
-  const status = el('p', 'muted small', `Mientras tanto ya ves el tratamiento aplicado a tu clip real. Re-filmar cuesta (se paga por segundo de entrada + salida) y tarda 1 a 5 min.${p.demo ? ' Modo demo: no se genera nada.' : ''}`);
+  // Al cambiar de modelo cambia su prompt (nombra las referencias a su manera), salvo que el humano ya lo haya editado.
+  sel.onchange = () => {
+    const edited = prompt.value.trim() !== model.prompt.trim();
+    model = models.find((m) => m.id === sel.value) || models[0];
+    if (!edited) prompt.value = model.prompt;
+  };
+  // Feedback sobre el storyboard: el Director de Fotografía rehace la toma y se vuelve a dibujar.
+  const ask = el('textarea');
+  ask.rows = 2;
+  ask.placeholder = p.lastRound ? 'Es la última versión del storyboard: re-filmá o quedate con el tratamiento.' : '¿Qué cambiarías de la toma? Ej. "la cámara más alta, mirando directo al escritorio", "que la persona de la izquierda no salga", "más oscuro, de noche"';
+  ask.disabled = !!p.lastRound;
+  card.append(ask);
+  const status = el('p', 'muted small', `Mientras tanto ya ves el tratamiento aplicado a tu clip real. Re-filmar cuesta (el costo de cada modelo es una estimación) y tarda 1 a 5 min.${p.demo ? ' Modo demo: no se genera nada.' : ''}`);
   const actions = el('div', 'actions');
   const go = el('button', 'primary', 'Re-filmar este clip');
   go.type = 'button';
   go.onclick = async () => {
-    go.disabled = true; skip.disabled = true;
+    go.disabled = true; skip.disabled = true; redo.disabled = true; sel.disabled = true;
     try {
-      status.textContent = 'Grabando el tramo del clip… (dejá esta pestaña visible)';
-      const rec = await recordSegment(ctx.video.url, p.start, p.end, { onProgress: (k) => { status.textContent = `Grabando el tramo del clip… ${Math.round(k * 100)}%`; } });
-      status.textContent = `Enviando el clip (${(rec.size / 1024 / 1024).toFixed(1)} MB)…`;
-      const edited = prompt.value.trim() !== p.prompt.trim() ? prompt.value.trim() : '';
+      let rec = null;
+      if (p.needsVideo !== false) {
+        status.textContent = 'Grabando el tramo del clip… (dejá esta pestaña visible)';
+        rec = await recordSegment(ctx.video.url, p.start, p.end, { mp4: true, onProgress: (k) => { status.textContent = `Grabando el tramo del clip… ${Math.round(k * 100)}%`; } });
+        status.textContent = `Enviando el clip (${(rec.size / 1024 / 1024).toFixed(1)} MB)…`;
+      }
+      const edited = prompt.value.trim() !== model.prompt.trim() ? prompt.value.trim() : '';
       ctx.player?.cineStatus(p.id, 'uploading');
-      await decide(card, ev.id, { aprobar: true, prompt: edited, video: rec.dataUrl }, `Clip ${n}: re-filmar con ${p.model}${edited ? ' (con el prompt editado)' : ''}.`);
+      await decide(card, ev.id, { aprobar: true, model: model.id, prompt: edited, ...(rec ? { video: rec.dataUrl } : {}) }, `Clip ${n}: re-filmar con ${model.label}${p.storyboard ? ', siguiendo el storyboard' : ''}${edited ? ' (con el prompt editado)' : ''}.`);
     } catch (err) {
       status.textContent = err.message;
-      go.disabled = false; skip.disabled = false;
+      go.disabled = false; skip.disabled = false; redo.disabled = false; sel.disabled = false;
     }
+  };
+  const redo = el('button', 'ghost', 'Pedir cambios al storyboard');
+  redo.type = 'button';
+  redo.hidden = !!p.lastRound;
+  redo.onclick = () => {
+    const cambios = ask.value.trim();
+    if (!cambios) { ask.focus(); ask.placeholder = 'Contá qué querés cambiar de la toma.'; return; }
+    const edited = prompt.value.trim() !== model.prompt.trim() ? prompt.value.trim() : '';
+    decide(card, ev.id, { aprobar: false, cambios, prompt: edited }, `Clip ${n}, storyboard: ${cambios}`);
   };
   const skip = el('button', 'ghost', 'Quedarme con el tratamiento');
   skip.type = 'button';
   skip.onclick = () => decide(card, ev.id, { aprobar: false }, `Clip ${n}: sin re-filmar, me quedo con el tratamiento.`);
-  actions.append(go, skip);
+  actions.append(go, redo, skip);
   card.append(status, actions);
+  return card;
+}
+
+// El re-filmado falló: reintentar con el mismo clip ya grabado (si la tarea ya se había aceptado, se retoma sin volver a pagar).
+function refilmRetryCard(ev, ctx) {
+  const p = ev.plan;
+  const n = p.id.replace('C', '');
+  const card = decisionShell(ev, 'Falló el re-filmado');
+  card.append(el('div', 'notice', p.error));
+  card.append(el('p', 'muted small', p.resume
+    ? 'WaveSpeed ya había aceptado la tarea: reintentar la retoma, sin volver a pagar.'
+    : 'Reintentar vuelve a enviar tu clip (ya está grabado: no hace falta grabarlo de nuevo).'));
+  const actions = el('div', 'actions');
+  const go = el('button', 'primary', 'Reintentar');
+  go.type = 'button';
+  go.onclick = () => { ctx.player?.cineStatus(p.id, 'uploading'); decide(card, ev.id, { aprobar: true }, `Clip ${n}: reintentar el re-filmado.`); };
+  const skip = el('button', 'ghost', 'Quedarme con el tratamiento');
+  skip.type = 'button';
+  skip.onclick = () => decide(card, ev.id, { aprobar: false }, `Clip ${n}: sin re-filmar, me quedo con el tratamiento.`);
+  actions.append(go, skip);
+  card.append(actions);
   return card;
 }
 

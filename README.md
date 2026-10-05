@@ -171,15 +171,21 @@ Tu clip ya está filmado: la idea es que **se vea como cine sin perder lo que ti
   ▼
 Reproductor: el tratamiento se aplica en WebGL sobre tu video real, cuadro a cuadro (se ve al instante y se exporta igual)
   ├─ ✋ VOS: control de intensidad (0–150 %), "Mantener: ver original" para comparar, "Rehacer el tratamiento" con tu pedido
-  └─ Si el clip no se salva con eso (luz plana imposible, "que parezca atardecer", "que llueva afuera"), el DP propone
-     RE-FILMARLO con IA: ✋ VOS aprobás (y podés editar el prompt) → el navegador graba solo ese tramo y lo manda →
-     Seedance 2.5 Video Edit (WaveSpeed, video→video) lo regenera manteniendo movimiento, encuadre e identidad
+  └─ RE-FILMAR con IA (el corazón de Cinematic Pro: se propone siempre):
+     1. contrato de intención: el DP pone cada cambio en un eje (punto de vista, elementos, acción, lugar, luz, look);
+        lo que no cambia se conserva. Si tu pedido admite dos lecturas (¿"cámara espía" es desde dónde se ve o un objeto?),
+        ✋ VOS elegís antes de que se dibuje nada
+     2. GPT Image dibuja a mano el storyboard de la toma (6 viñetas, 3 × 2) → ✋ VOS lo aprobás o pedís cambios (el DP rehace y se redibuja)
+     3. ✋ VOS elegís el modelo (Wan 3.0 Prime reference→video o Seedance 2.5 con referencias; WaveSpeed, 480p) y re-filma
+        siguiendo el storyboard aprobado (la fuente de la verdad).
+        Misma cámara: el navegador graba el tramo en MP4 y va como "Video 1". Cámara nueva: no se manda el clip
+        (empujaría a copiar la cámara original), solo el storyboard + 3 cuadros del clip para la identidad
      → durante el clip se ve la toma re-filmada (con la textura del tratamiento encima)
 ```
 
 - **La biblioteca** es [agents-film/](agents-film/): cada guía en `.md` (para aprender) y `.json` (reglas accionables). El DP recibe completas las guías de luz, color, movimiento de cámara, encuadre y estructura visual, y el catálogo de reglas de todas. Se lee al arrancar: sumar una guía nueva la incorpora sola ([src/film-knowledge.js](src/film-knowledge.js)). Va primero en el prompt y marcada para el caché del proveedor.
 - **El contrato del tratamiento** (parámetros, rangos, cómo se dibuja) está en [public/cine-lib.js](public/cine-lib.js), que usan el servidor (valida y documenta) y el reproductor (dibuja).
-- Funciona sin WaveSpeed (solo tratamiento). Re-filmar necesita `WAVESPEED_API_KEY`; el modelo se cambia con `CINE_EDIT_MODEL`.
+- Funciona sin WaveSpeed (solo tratamiento). Re-filmar necesita `WAVESPEED_API_KEY`; el modelo y la resolución se cambian con `CINE_REFILM_MODEL` y `CINE_REFILM_RESOLUTION`. Los clips de Cinematic Pro duran al menos 1.2 s (el modelo pide ≥ 1 s de video de referencia).
 
 ## Cómo trabaja el equipo de ideas (v1)
 

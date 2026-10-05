@@ -1,0 +1,222 @@
+{
+  "fuente": "camera-as-narrator.md",
+  "categoria": "punto_de_vista",
+  "reglas": [
+    {
+      "id": "viewpoint-or-prop",
+      "nombre": "¿punto de vista u objeto?",
+      "definicion": "Un pedido con un dispositivo (cámara espía, CCTV, dron…) puede querer decir que la toma se VE a través de él (punto de vista) o que el dispositivo APARECE en escena (objeto). Son ejes distintos: punto_de_vista vs elementos.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 1,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "eje": "punto_de_vista | elementos"
+        }
+      },
+      "cuando_usar": "Siempre que el pedido nombre un dispositivo de cámara. Señales de punto de vista: \"como\", \"desde\", \"la cámara es\", \"que se vea como\", \"posicioná la cámara\". Señales de objeto: \"agregá\", \"poné\", \"que aparezca\", un lugar dentro del cuadro donde se apoya.",
+      "cuando_no_usar": "Nunca elegir en silencio si las palabras no lo deciden: proponer las dos lecturas y preguntar.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "hidden-spy-camera",
+      "nombre": "cámara espía oculta",
+      "definicion": "La toma se ve a través de una cámara diminuta escondida entre objetos: estática, a la altura del objeto donde está, lente gran angular u ojo de pez con distorsión de barril, objetos del primer plano tapando los bordes, la gente no sabe que la miran, video comprimido con ruido.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "altura": "la del objeto donde se esconde",
+          "lente": "gran angular / ojo de pez",
+          "movimiento": "estática",
+          "textura": "compresión, ruido de poca luz, foco blando",
+          "prompt_en": "seen through a hidden spy camera concealed on the desk, at tabletop height, static, wide fisheye lens with barrel distortion, foreground clutter blurring the frame edges, the people unaware of the camera, compressed low-light video texture"
+        }
+      },
+      "cuando_usar": "Voyeurismo, secreto, tensión, sensación de estar viendo algo que no deberíamos.",
+      "cuando_no_usar": "Si el humano pide AGREGAR una cámara espía como objeto visible (eso es el eje elementos).",
+      "combina_bien_con": []
+    },
+    {
+      "id": "cctv-security",
+      "nombre": "cámara de seguridad (CCTV)",
+      "definicion": "Montada alta en una esquina, mirando hacia abajo en ángulo pronunciado, estática o con un paneo mecánico lento, gran angular, luz plana, color desaturado, pocos cuadros por segundo y ruido digital.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "altura": "techo, esquina",
+          "lente": "gran angular",
+          "movimiento": "estática o paneo mecánico",
+          "textura": "desaturado, ruido digital",
+          "prompt_en": "seen from a ceiling-mounted security camera in the corner of the room, high angle looking down, static, wide lens, flat desaturated surveillance video"
+        }
+      },
+      "cuando_usar": "Vigilancia, frialdad, registro, evidencia.",
+      "cuando_no_usar": "No agregar timestamps ni REC sobreimpresos salvo pedido: los modelos de video escriben mal.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "subjective-pov",
+      "nombre": "POV subjetivo",
+      "definicion": "La cámara son los ojos de un personaje: a la altura de sus ojos, se mueve con su cabeza y su cuerpo, sus manos pueden entrar en cuadro, los otros miran a lente.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "altura": "ojos del personaje",
+          "lente": "normal",
+          "movimiento": "sigue la cabeza",
+          "prompt_en": "first-person point of view through the eyes of the character, eye height, the camera moves with their head, their hands entering the bottom of the frame"
+        }
+      },
+      "cuando_usar": "Inmersión, primera persona, empatía con quien mira.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "found-footage",
+      "nombre": "found footage / cámara amateur",
+      "definicion": "Un operador amateur dentro de la escena: cámara en mano inestable, encuadre imperfecto, autofoco que busca, reencuadres rápidos hacia la acción.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "movimiento": "en mano inestable",
+          "prompt_en": "amateur handheld camcorder footage filmed by someone in the room, unstable framing, autofocus hunting, quick reframes toward the action"
+        }
+      },
+      "cuando_usar": "Crudeza, realidad, urgencia.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "bodycam-dashcam",
+      "nombre": "bodycam / dashcam",
+      "definicion": "Fija a un cuerpo o a un auto: altura de pecho o tablero, lente muy gran angular, el horizonte se mueve con el cuerpo o el vehículo, vibración constante.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "altura": "pecho o tablero",
+          "lente": "muy gran angular",
+          "movimiento": "vibración constante",
+          "prompt_en": "body-worn camera at chest height, very wide lens, the horizon moving with the body, constant slight vibration"
+        }
+      },
+      "cuando_usar": "Registro en primera persona, acción, persecución.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "peephole",
+      "nombre": "mirilla",
+      "definicion": "Ojo de pez extremo dentro de un círculo con viñeta oscura, mirando por un agujero chico, estático.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 4,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "lente": "ojo de pez circular",
+          "prompt_en": "seen through a door peephole, extreme circular fisheye with a heavy dark vignette around the circle, static"
+        }
+      },
+      "cuando_usar": "Intrusión, amenaza, mirar a escondidas.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    },
+    {
+      "id": "drone-aerial",
+      "nombre": "dron / aéreo",
+      "definicion": "Desde muy alto, movimiento flotante suave, cenital u oblicuo.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 3,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "altura": "aérea",
+          "movimiento": "flotante suave",
+          "prompt_en": "aerial drone shot from high above, smooth floating movement, top-down view"
+        }
+      },
+      "cuando_usar": "Omnisciencia, escala, revelar el lugar.",
+      "cuando_no_usar": "No es una cámara espía salvo que el pedido lo diga.",
+      "combina_bien_con": []
+    },
+    {
+      "id": "webcam",
+      "nombre": "webcam / cámara de pantalla",
+      "definicion": "A la altura de la pantalla, frente a la persona, apenas contrapicado, gran angular, luz frontal plana de la pantalla, video comprimido.",
+      "triggers": {
+        "emocion": [],
+        "momento_video": [],
+        "tipo_producto": null
+      },
+      "parametros": {
+        "intensidad_visual": 2,
+        "duracion_min_seg": null,
+        "duracion_max_seg": null,
+        "otros": {
+          "altura": "pantalla",
+          "lente": "gran angular",
+          "prompt_en": "seen from a laptop webcam at screen height facing the person, slight low angle, wide lens, flat light from the screen, compressed video"
+        }
+      },
+      "cuando_usar": "Intimidad doméstica, videollamada, confesión.",
+      "cuando_no_usar": null,
+      "combina_bien_con": []
+    }
+  ],
+  "principios_generales": [
+    "Un dispositivo de cámara en el pedido es casi siempre un cambio de PUNTO DE VISTA: la toma se re-encuadra desde la posición física del dispositivo. Agregarlo como objeto y dejar la cámara original es el error más común.",
+    "Si las palabras no deciden entre punto de vista y objeto, se pregunta antes de generar.",
+    "Describir primero la posición física (dónde está, a qué altura, hacia dónde mira), después la lente, la estabilidad y la textura.",
+    "Un cambio de punto de vista es una cámara NUEVA: nunca pedir al mismo tiempo conservar el encuadre o el movimiento original.",
+    "Cambia solo quien mira: las personas, lo que hacen y el lugar se conservan."
+  ]
+}

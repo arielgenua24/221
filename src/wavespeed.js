@@ -29,14 +29,41 @@ export const VIDEO_MODELS = {
 };
 export const DEFAULT_VIDEO_MODEL = VIDEO_MODELS[process.env.VIDEO_MODEL] ? process.env.VIDEO_MODEL : 'seedance';
 
-// Edición de video (video→video) para "Cinematic Pro": re-genera el clip real manteniendo movimiento,
-// composición e identidad, y reescribe luz, atmósfera o estilo según el prompt. Sale con la duración del clip
-// (los clips de menos de 4 s los rellena el modelo: se usa el principio).
-export const EDIT_MODEL = {
-  label: 'Seedance 2.5 Video Edit',
-  path: () => process.env.CINE_EDIT_MODEL || 'bytedance/seedance-2.5/video-edit',
-  body: ({ prompt, video, resolution }) => ({ prompt, video, resolution, generate_audio: false }),
+// Re-filmado de "Cinematic Pro": modelos con referencias (el humano elige en la tarjeta de aprobación).
+// El storyboard aprobado y cuadros del clip van como imágenes de referencia y, si la cámara no cambia, el clip real como video
+// de referencia; el modelo genera la toma de nuevo guiado por ellos y por el prompt. Sin audio: suena el original.
+// tag: cómo se nombran las referencias en el prompt ("Image 1" en Wan, "@Image 1" en Seedance).
+// cost: estimación en US$ a 480p (WaveSpeed cobra por segundo; es orientativa).
+const ceilSeconds = (clip, min, max) => Math.min(max, Math.max(min, Math.ceil(clip - 0.01)));
+export const REFILM_MODELS = {
+  // Video de referencia MP4/MOV de 1 a 15 s; salida de 2 a 30 s.
+  wan: {
+    label: 'Wan 3.0 Prime',
+    path: () => process.env.CINE_REFILM_MODEL || 'alibaba/wan-3.0-prime/reference-to-video',
+    tag: '',
+    seconds: (clipSeconds) => ceilSeconds(clipSeconds, 2, 15),
+    cost: ({ seconds }) => 0.075 * seconds,
+    body: ({ prompt, video, images = [], duration, aspect, resolution }) => ({
+      prompt, ...(video ? { reference_videos: [video] } : {}), ...(images.length ? { reference_images: images } : {}),
+      duration, aspect_ratio: aspect, resolution, generate_audio: false, enable_prompt_expansion: false,
+    }),
+  },
+  // Seedance 2.5 con referencias (su "text-to-video" acepta imágenes y videos): salida de 4 a 30 s;
+  // con video de referencia cobra entrada + salida.
+  seedance: {
+    label: 'Seedance 2.5',
+    path: () => process.env.CINE_SEEDANCE_MODEL || 'bytedance/seedance-2.5/text-to-video',
+    tag: '@',
+    seconds: (clipSeconds) => ceilSeconds(clipSeconds, 4, 15),
+    cost: ({ seconds, video, clipSeconds }) => (video ? 0.11 * (Math.max(2, clipSeconds) + seconds) : 0.18 * seconds),
+    body: ({ prompt, video, images = [], duration, aspect, resolution }) => ({
+      prompt, ...(video ? { reference_videos: [video] } : {}), ...(images.length ? { reference_images: images } : {}),
+      duration, aspect_ratio: aspect, resolution, generate_audio: false,
+    }),
+  },
 };
+export const DEFAULT_REFILM_MODEL = REFILM_MODELS[process.env.CINE_REFILM_DEFAULT] ? process.env.CINE_REFILM_DEFAULT : 'wan';
+export const refilmResolution = () => process.env.CINE_REFILM_RESOLUTION || '480p';
 
 // Duración que se le pide al modelo: entera, dentro de su rango, y nunca más corta que el clip.
 export function videoSeconds(model, clipSeconds) {
@@ -68,7 +95,7 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
 
 function dataUrlToBlob(dataUrl) {
   const m = /^data:([^;,]+)(;base64)?,(.*)$/s.exec(dataUrl || '');
-  if (!m) throw new Error('imagen inválida');
+  if (!m) throw new Error('archivo inválido (se esperaba un data URL)');
   const bytes = m[2] ? Buffer.from(m[3], 'base64') : Buffer.from(decodeURIComponent(m[3]));
   return { blob: new Blob([bytes], { type: m[1] }), ext: (m[1].split('/')[1] || 'bin').replace('jpeg', 'jpg') };
 }
@@ -83,28 +110,54 @@ async function errorDetail(res) {
   }
 }
 
+// "fetch failed" no dice nada: la causa real (DNS, conexión rechazada, corte, timeout) viene en err.cause.
+// Si la conexión ni se abrió, el pedido no llegó a WaveSpeed: se puede reintentar sin riesgo de pagar dos veces.
+const NEVER_SENT = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'UND_ERR_CONNECT_TIMEOUT', 'EHOSTUNREACH', 'ENETUNREACH', 'ENETDOWN']);
+function networkError(what, err) {
+  const c = err?.cause;
+  const why = [c?.code, c?.message].filter(Boolean).join(': ') || err?.message || 'error de red';
+  const e = new Error(`${what}: no pude conectar con WaveSpeed (${why}).`);
+  e.code = c?.code;
+  e.network = true;
+  return e;
+}
+
 // mediaDir: carpeta donde se guardan los resultados (se sirven en /media/…): así el navegador
 // los puede dibujar en un canvas y exportar (un video de otro dominio "ensucia" el canvas).
 export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 3000 }) {
   const auth = { Authorization: `Bearer ${apiKey}` };
+
+  // fetch con errores de red legibles y reintentos (solo los que se piden: subir y bajar no cobran).
+  async function call(what, url, init, { retries = 0, retryIf = () => true } = {}) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fetchImpl(url, init);
+      } catch (err) {
+        if (init?.signal?.aborted) throw err;
+        if (attempt < retries && retryIf(err?.cause?.code)) { await sleep(800 * 2 ** attempt, init?.signal); continue; }
+        throw networkError(what, err);
+      }
+    }
+  }
 
   async function upload(dataUrl, signal) {
     if (/^https?:\/\//.test(dataUrl)) return dataUrl;
     const { blob, ext } = dataUrlToBlob(dataUrl);
     const form = new FormData();
     form.append('file', blob, `${blob.type.startsWith('video/') ? 'clip' : 'cuadro'}.${ext}`);
-    const res = await fetchImpl(`${base()}/api/v3/media/upload/binary`, { method: 'POST', headers: auth, body: form, signal });
-    if (!res.ok) throw new Error(`WaveSpeed no aceptó la imagen (${res.status}): ${await errorDetail(res)}`);
+    const kind = blob.type.startsWith('video/') ? 'el video' : 'la imagen';
+    const res = await call(`Subiendo ${kind} (${(blob.size / 1024 / 1024).toFixed(1)} MB)`, `${base()}/api/v3/media/upload/binary`, { method: 'POST', headers: auth, body: form, signal }, { retries: 3 });
+    if (!res.ok) throw new Error(`WaveSpeed no aceptó el archivo (${res.status}): ${await errorDetail(res)}`);
     const url = (await res.json())?.data?.download_url;
-    if (!url) throw new Error('WaveSpeed no devolvió la URL de la imagen subida.');
+    if (!url) throw new Error('WaveSpeed no devolvió la URL del archivo subido.');
     return url;
   }
 
-  // El envío NO se reintenta: aunque se corte la respuesta, la tarea pudo haberse aceptado (y cobrado).
+  // El envío se reintenta SOLO si la conexión ni se abrió: si se corta después, la tarea pudo haberse aceptado (y cobrado).
   async function submit(model, body, signal) {
-    const res = await fetchImpl(`${base()}/api/v3/${model}`, {
+    const res = await call(`Enviando la tarea a ${model}`, `${base()}/api/v3/${model}`, {
       method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
-    });
+    }, { retries: 2, retryIf: (code) => NEVER_SENT.has(code) });
     if (!res.ok) throw new Error(`WaveSpeed ${res.status} (${model}): ${await errorDetail(res)}`);
     const data = (await res.json())?.data;
     if (!data?.id) throw new Error(`WaveSpeed (${model}) no devolvió el id de la tarea.`);
@@ -126,7 +179,7 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
         fails = 0;
       } catch (err) {
         if (signal?.aborted) throw err;
-        if (++fails > 5) throw new Error(`No pude consultar la tarea ${id} en WaveSpeed: ${err.message}`);
+        if (++fails > 5) throw new Error(`No pude consultar la tarea ${id} en WaveSpeed: ${err.message}${err.cause?.code ? ` (${err.cause.code})` : ''}`);
         continue;
       }
       const status = String(data?.status || '').toLowerCase();
@@ -137,14 +190,16 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
         return out;
       }
       if (['failed', 'cancelled', 'canceled', 'timeout'].includes(status)) {
-        throw new Error(`WaveSpeed: la tarea ${id} terminó en "${status}"${data.error ? `: ${String(data.error).slice(0, 300)}` : ''}.`);
+        const e = new Error(`WaveSpeed: la tarea ${id} terminó en "${status}"${data.error ? `: ${String(data.error).slice(0, 300)}` : ''}.`);
+        e.final = true; // la tarea murió: no se puede retomar
+        throw e;
       }
     }
   }
 
   // Baja el resultado a mediaDir y devuelve su nombre de archivo (se sirve en /media/<archivo>).
   async function save(url, fallbackExt, signal) {
-    const res = await fetchImpl(url, { signal });
+    const res = await call('Bajando el resultado', url, { signal }, { retries: 3 });
     if (!res.ok) throw new Error(`No pude bajar el resultado de WaveSpeed (${res.status}).`);
     const type = res.headers.get('content-type') || '';
     const fromUrl = /\.(mp4|webm|mov|png|jpe?g|webp|mp3|wav|ogg|m4a)(?:\?|$)/i.exec(url)?.[1]?.toLowerCase();
@@ -167,9 +222,14 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
     async video({ model, body, signal, timeoutMs = 15 * 60 * 1000, onStatus }) {
       const task = await submit(model, body, signal);
       onStatus?.({ status: 'created', elapsed: 0, task: task.id });
-      const url = await wait(task, { signal, timeoutMs, onStatus });
-      const file = await save(url, 'mp4', signal);
-      return { task: task.id, remote: url, file };
+      try {
+        const url = await wait(task, { signal, timeoutMs, onStatus });
+        const file = await save(url, 'mp4', signal);
+        return { task: task.id, remote: url, file };
+      } catch (err) {
+        if (!err.final) err.task = task.id; // la tarea ya se aceptó (y cobró): un reintento la retoma con collect, sin volver a pagar
+        throw err;
+      }
     },
     // Retoma una tarea de video ya enviada (ej. después de reiniciar el servidor): no se vuelve a cobrar.
     async collect({ task, signal, timeoutMs = 15 * 60 * 1000, onStatus }) {
