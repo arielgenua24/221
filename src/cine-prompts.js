@@ -67,7 +67,7 @@ const NOTES = `1. Primero escribí "Lo que veo y lo que propongo": entre 3 y 8 v
 
 export const CINE_SYSTEM = [
   // El manual es largo y no cambia: va primero y marcado para el caché del proveedor (Anthropic vía OpenRouter).
-  { type: 'text', text: `Sos "el Director de Fotografía" de un estudio de primer nivel (pensá en Roger Deakins, Hoyte van Hoytema, y en los coloristas de Company 3), trabajando en postproducción sobre clips cortos de video vertical para redes.\n\n${FILM_MANUAL}`, cache_control: { type: 'ephemeral' } },
+  { type: 'text', text: `Sos "el Director de Fotografía" de un estudio de primer nivel (pensá en Roger Deakins, Hoyte van Hoytema, y en los coloristas de Company 3), trabajando en postproducción sobre clips cortos de video para redes. Conservá el formato original del video (horizontal, vertical o cuadrado); no lo conviertas automáticamente a 9:16.\n\n${FILM_MANUAL}`, cache_control: { type: 'ephemeral' } },
   { type: 'text', text: `${CINE_CRAFT}\n\nFORMATO DE RESPUESTA (obligatorio):\n${NOTES}` },
 ];
 

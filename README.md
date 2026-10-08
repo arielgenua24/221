@@ -4,7 +4,7 @@ Una sola caja de chat donde **soltás (drag & drop), pegás o elegís videos, au
 
 1. **💡 Ideas de contenido**: a partir de **fotos y una descripción del negocio**, decide qué contenido crear para Instagram/TikTok (orgánico). Entrega **4 ideas de contenido** (título + subtítulo, con hook, desarrollo, caption y cómo producirla sin filmar).
 2. **🎬 Edición con música**: una **música** (grabación de voz, MP3, M4A, o el sonido de uno de tus videos) + tus **videos y fotos**. El **Director** (Opus) orquesta todo y el **Oído** (Gemini) entiende el sonido y cómo fluye. El Oído escucha **una vez**, vos le corregís lo que haga falta, y el Director monta **3 videos distintos** (una llamada por versión), para ver y exportar.
-3. **✨ Intuition** (motion design): un **video vertical** + hasta **3 clips de hasta 5 s** que marcás en su línea de tiempo, cada uno con su pedido y sus referencias (imágenes, videos, GIFs, texto). Opus escribe **motion design como código** para cada clip, con un único sistema visual para los tres. Movés y redimensionás la **ventana** de cada clip, pedís cambios clip por clip, y al exportar el motion queda **quemado en el video**, en el lugar que elegiste.
+3. **✨ Intuition** (motion design): un **video en su formato original** + hasta **3 clips de hasta 5 s** que marcás en su línea de tiempo, cada uno con su pedido y sus referencias (imágenes, videos, GIFs, texto). Opus escribe **motion design como código** para cada clip, con un único sistema visual para los tres. Movés y redimensionás la **ventana** de cada clip, pedís cambios clip por clip, y al exportar el motion queda **quemado en el video**, en el lugar que elegiste.
 
 ## Raw (pestaña principal)
 
@@ -132,7 +132,8 @@ Reproductor: el código corre en un worker aislado (sin DOM ni red) y se dibuja 
 Exportar → MP4/WebM con el motion quemado en cada ventana y el sonido original
 ```
 
-- **El criterio de gusto** que leen los dos agentes está en [src/MOTION_DESIGN.md](src/MOTION_DESIGN.md): mirar antes de diseñar, una idea por clip, estructura entrada/sostén/salida, easing, tipografía cinética, color, composición en 9:16, coherencia entre clips, qué evitar. Editalo para cambiar cómo diseña el equipo.
+- **Formato original**: Estudio conserva la proporción del video en la vista previa y la exportación (horizontal, vertical, cuadrado u otra). Las tomas generadas con otra proporción se muestran completas, con bandas si hace falta, sin recorte automático.
+- **El criterio de gusto** que leen los dos agentes está en [src/MOTION_DESIGN.md](src/MOTION_DESIGN.md): mirar antes de diseñar, una idea por clip, estructura entrada/sostén/salida, easing, tipografía cinética, color, composición en el formato original, coherencia entre clips, qué evitar. Editalo para cambiar cómo diseña el equipo.
 - **El contrato técnico** (helpers de animación, tipografías permitidas, reglas de determinismo) sale de [public/motion-lib.js](public/motion-lib.js), el mismo archivo que usa el reproductor: lo que se le documenta al modelo es lo que existe.
 - Cada cuadro es una función pura del tiempo (sin `Math.random` ni reloj), así se puede adelantar, retroceder y exportar igual.
 - Las tipografías (Google Fonts) se bajan en la página y se pasan al worker; si no cargan, se usan las del sistema.

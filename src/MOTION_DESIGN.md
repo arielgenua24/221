@@ -117,7 +117,9 @@ La tipografía es el 80 % del motion para redes. Tratala con respeto.
 
 ---
 
-## 8. Composición en 9:16 y la ventana
+## 8. Composición en el formato original y la ventana
+
+- Conservá la proporción y el encuadre originales del video, sea horizontal, vertical o cuadrado. No asumas 9:16 ni propongas un recorte automático para convertirlo a vertical.
 
 - El humano ubica y redimensiona la **ventana** del overlay por cada clip. Tu diseño vive adentro y **tiene que funcionar en cualquier proporción**: angosta y alta, ancha y baja, cuadrada.
   - Todo relativo: posiciones con `w`/`h`, tamaños con `u`. **Nunca píxeles fijos.**

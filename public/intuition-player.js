@@ -74,6 +74,7 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
   const root = el('div', 'player intuition-player');
   const stage = el('div', 'stage motion-stage');
   stage.style.aspectRatio = `${W} / ${H}`;
+  stage.style.setProperty('--video-aspect', W / H);
   const canvas = el('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
@@ -225,7 +226,8 @@ export function createMotionPlayer({ video, clips: clipList, direction, onRevise
         }
       } catch { /* si WebGL falla en un cuadro, se ve el original */ }
     }
-    const k = Math.max(W / sw, H / sh);
+    // Las tomas generadas también se muestran completas si su proporción difiere del original.
+    const k = Math.min(W / sw, H / sh);
     ctx.drawImage(src, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
   }
 

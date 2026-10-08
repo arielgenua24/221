@@ -73,7 +73,7 @@ export function createStudio({ limits, onChange }) {
 
   function missing() {
     if (loading) return 'Leyendo el video…';
-    if (!video) return 'Soltá un video (idealmente vertical 9:16).';
+    if (!video) return 'Soltá un video; se conserva su formato original.';
     if (!clips.length) return 'Marcá al menos un clip en el video (máximo 3, de hasta 5 s).';
     if (clips.some((c) => c.refs.some((r) => r.status === 'loading'))) return 'Preparando las referencias…';
     const short = clips.find((c) => c.end - c.start < minLen(c) - 0.01);
@@ -108,9 +108,11 @@ export function createStudio({ limits, onChange }) {
     change.append(input, document.createTextNode('Cambiar video'));
     headRow.append(title, change);
 
-    const meta = el('p', 'muted small', `${video.name} · ${fmt(video.duration)} · ${video.width}×${video.height}${Math.abs(video.width / video.height - 9 / 16) > 0.02 ? ' · (no es 9:16: se va a recortar al centro)' : ''}`);
+    const meta = el('p', 'muted small', `${video.name} · ${fmt(video.duration)} · ${video.width}×${video.height} · formato original`);
 
     preview = el('video', 'studio-video');
+    preview.style.aspectRatio = `${video.width} / ${video.height}`;
+    preview.style.setProperty('--video-aspect', video.width / video.height);
     preview.src = video.url; preview.controls = true; preview.playsInline = true; preview.preload = 'auto';
 
     // Línea de tiempo con cuadros de fondo, los clips marcados y el cursor.

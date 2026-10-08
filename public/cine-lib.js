@@ -236,14 +236,19 @@ vec2 srcUv(vec2 q) {
   float cr = cos(uCam.w), sr = sin(uCam.w);
   d = vec2(cr * d.x - sr * d.y, sr * d.x + cr * d.y) / uCam.x;
   vec2 px = c + d + uCam.yz * uOut;
-  float k = max(uOut.x / uSrc.x, uOut.y / uSrc.y);
+  float k = min(uOut.x / uSrc.x, uOut.y / uSrc.y);
   vec2 off = (uOut - uSrc * k) * 0.5;
-  return clamp((px - off) / (uSrc * k), 0.0, 1.0);
+  return (px - off) / (uSrc * k);
 }
 float hash(vec2 v) { return fract(sin(dot(v, vec2(12.9898, 78.233))) * 43758.5453); }
 
 void main() {
-  vec3 col = texture2D(uTex, srcUv(p)).rgb;
+  vec2 uv = srcUv(p);
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
+  vec3 col = texture2D(uTex, uv).rgb;
   vec3 glow = vec3(0.0);
   if (uHal > 0.001) {
     vec2 r = vec2(0.014 * uOut.y / uOut.x, 0.014);

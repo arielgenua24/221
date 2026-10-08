@@ -258,7 +258,7 @@ button, textarea, input { font: inherit; color: inherit; }
 .studio-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .studio-change { padding: 8px 12px; min-height: 0; cursor: pointer; white-space: nowrap; }
 .studio > p { margin: 0; }
-.studio-video { width: 100%; max-width: 320px; max-height: 56dvh; margin-inline: auto; display: block; background: #000; border-radius: 12px; aspect-ratio: 9 / 16; object-fit: contain; }
+.studio-video { width: min(100%, 640px, calc(56dvh * var(--video-aspect, 1))); height: auto; margin-inline: auto; display: block; background: #000; border-radius: 12px; object-fit: contain; }
 .studio-tl { position: relative; height: 56px; border-radius: 10px; overflow: hidden; background: var(--surface-2); touch-action: none; cursor: pointer; }
 .studio-strip { position: absolute; inset: 0; display: flex; opacity: .75; pointer-events: none; }
 .studio-strip img { flex: 1; min-width: 0; height: 100%; object-fit: cover; }
@@ -283,7 +283,7 @@ button, textarea, input { font: inherit; color: inherit; }
 .add-ref { display: grid; place-items: center; align-content: center; gap: 0; width: 96px; height: 56px; flex-shrink: 0; border: 1.5px dashed var(--border); border-radius: 10px; cursor: pointer; font-size: 13px; text-align: center; line-height: 1.2; }
 .add-ref .small { font-size: 10px; }
 
-.motion-stage { position: relative; aspect-ratio: 9 / 16; overflow: visible; }
+.motion-stage { position: relative; width: min(100%, 640px, calc(70dvh * var(--video-aspect, 1))); max-width: none; max-height: none; flex-shrink: 0; overflow: visible; }
 .motion-stage canvas { border-radius: 12px; }
 .motion-box { position: absolute; border: 1.5px dashed var(--c); background: color-mix(in srgb, var(--c) 6%, transparent); cursor: move; touch-action: none; box-sizing: border-box; }
 .motion-box.dragging { background: color-mix(in srgb, var(--c) 14%, transparent); }
