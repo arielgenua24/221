@@ -123,3 +123,29 @@ test('un bloqueo del filtro de contenido sin texto es un error que permite cambi
     globalThis.fetch = original;
   }
 });
+
+test('streamChat manda tools y arma los tool calls y el razonamiento que llegan en fragmentos', async () => {
+  let received;
+  const server = http.createServer(async (req, res) => {
+    let body = '';
+    for await (const c of req) body += c;
+    received = JSON.parse(body);
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+    const send = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`);
+    send({ choices: [{ delta: { reasoning_details: [{ type: 'reasoning.text', index: 0, text: 'pien' }] } }] });
+    send({ choices: [{ delta: { reasoning_details: [{ type: 'reasoning.text', index: 0, text: 'so', signature: 'sig' }] } }] });
+    send({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'buscar_referencias', arguments: '{"consu' } }] } }] });
+    send({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'lta":"kinetic"}' } }] } }] });
+    send({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { total_tokens: 5, cost: 0.0001 } });
+    res.end('data: [DONE]\n\n');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${server.address().port}`;
+  const tools = [{ type: 'function', function: { name: 'buscar_referencias', parameters: { type: 'object' } } }];
+  const out = await streamChat({ apiKey: 'k', model: 'm', messages: [], tools });
+  server.close();
+  assert.deepEqual(received.tools, tools);
+  assert.equal(out.finishReason, 'tool_calls');
+  assert.deepEqual(out.toolCalls, [{ id: 'call_1', type: 'function', function: { name: 'buscar_referencias', arguments: '{"consulta":"kinetic"}' } }]);
+  assert.deepEqual(out.reasoningDetails, [{ type: 'reasoning.text', index: 0, text: 'pienso', signature: 'sig' }]);
+});

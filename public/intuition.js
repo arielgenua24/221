@@ -10,7 +10,9 @@ const COLORS = ['#ff5a1f', '#3b82f6', '#10b981'];
 const FILMSTRIP = 10;
 
 // ---------- Estudio: elegir el video, marcar los clips y escribir el pedido de cada uno ----------
-export function createStudio({ limits, onChange }) {
+// `mount` (opcional): contenedor propio donde dibujarlo (el Laboratorio lo reutiliza); sin él, va al feed del Estudio.
+// `onError` (opcional): dónde mostrar los errores; `label`: el rótulo de la tarjeta.
+export function createStudio({ limits, onChange, mount = null, onError = showError, label = '✨ Intuition' }) {
   const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, minCineSeconds: 1.2, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', cine: false, refilm: false, refilmModels: ['Wan 3.0 Prime', 'Seedance 2.5'], refilmResolution: '480p', ...limits };
   let video = null; // { file, url, name, duration, width, height, el }
   let loading = false;
@@ -34,7 +36,7 @@ export function createStudio({ limits, onChange }) {
       clips = [];
       render();
     } catch (err) {
-      showError(`${file.name}: ${err.message}`);
+      onError(`${file.name}: ${err.message}`);
     } finally {
       loading = false;
       onChange();
@@ -54,8 +56,8 @@ export function createStudio({ limits, onChange }) {
   }
 
   function addClipAt(t) {
-    if (clips.length >= lim.maxClips) return showError(`Máximo ${lim.maxClips} clips.`);
-    if (clips.some((c) => t >= c.start && t < c.end)) return showError('Ya hay un clip en ese momento: mové el cursor a otra parte del video.');
+    if (clips.length >= lim.maxClips) return onError(`Máximo ${lim.maxClips} clips.`);
+    if (clips.some((c) => t >= c.start && t < c.end)) return onError('Ya hay un clip en ese momento: mové el cursor a otra parte del video.');
     const next = clips.filter((c) => c.start > t).sort((a, b) => a.start - b.start)[0];
     const hi = Math.min(video.duration, next ? next.start : video.duration);
     let start = t;
@@ -63,8 +65,8 @@ export function createStudio({ limits, onChange }) {
     if (end - start < lim.minClipSeconds) { start = Math.max(0, end - 3); end = hi; }
     const prev = clips.filter((c) => c.end <= t).sort((a, b) => b.end - a.end)[0];
     start = Math.max(start, prev ? prev.end : 0);
-    if (end - start < lim.minClipSeconds) return showError('No queda lugar para un clip ahí.');
-    showError('');
+    if (end - start < lim.minClipSeconds) return onError('No queda lugar para un clip ahí.');
+    onError('');
     clips.push({ key: ++seq, start, end, prompt: '', notes: '', mode: 'motion', videoModel: lim.defaultVideoModel, refs: [] });
     renumber();
     refreshClips();
@@ -74,7 +76,7 @@ export function createStudio({ limits, onChange }) {
   function missing() {
     if (loading) return 'Leyendo el video…';
     if (!video) return 'Soltá un video; se conserva su formato original.';
-    if (!clips.length) return 'Marcá al menos un clip en el video (máximo 3, de hasta 5 s).';
+    if (!clips.length) return `Marcá al menos un clip en el video (máximo ${lim.maxClips}, de hasta ${lim.maxClipSeconds} s).`;
     if (clips.some((c) => c.refs.some((r) => r.status === 'loading'))) return 'Preparando las referencias…';
     const short = clips.find((c) => c.end - c.start < minLen(c) - 0.01);
     if (short) return `El clip ${short.id.replace('C', '')} es de Cinematic Pro: tiene que durar al menos ${lim.minCineSeconds} s (estiralo en la línea de tiempo).`;
@@ -92,6 +94,7 @@ export function createStudio({ limits, onChange }) {
 
   function render() {
     if (!video) return;
+    if (!card && mount) card = mount;
     if (!card) {
       document.getElementById('welcome')?.remove();
       card = append(el('section', 'studio msg'));
@@ -100,7 +103,7 @@ export function createStudio({ limits, onChange }) {
 
     const headRow = el('div', 'studio-head');
     const title = el('div');
-    title.append(el('div', 'decision-label', '✨ Intuition'), el('h3', null, 'Marcá dónde va el motion design'));
+    title.append(el('div', 'decision-label', label), el('h3', null, 'Marcá dónde va el motion design'));
     const change = el('label', 'ghost small studio-change');
     const input = el('input');
     input.type = 'file'; input.accept = 'video/*'; input.hidden = true;
@@ -308,7 +311,7 @@ export function createStudio({ limits, onChange }) {
 
   async function addRefs(c, files) {
     const room = lim.maxRefs - c.refs.length;
-    if (files.length > room) showError(`Máximo ${lim.maxRefs} referencias por clip.`);
+    if (files.length > room) onError(`Máximo ${lim.maxRefs} referencias por clip.`);
     const added = files.slice(0, Math.max(0, room)).map((file) => ({ key: ++seq, name: file.name, status: 'loading', file }));
     c.refs.push(...added);
     renderCards(); onChange();
@@ -316,7 +319,7 @@ export function createStudio({ limits, onChange }) {
       try {
         Object.assign(r, await loadReference(r.file), { status: 'ready' });
       } catch (err) {
-        showError(`${r.name}: ${err.message}`);
+        onError(`${r.name}: ${err.message}`);
         c.refs = c.refs.filter((k) => k !== r);
       }
       delete r.file;
@@ -349,7 +352,21 @@ export function createStudio({ limits, onChange }) {
   const summary = () => (video ? `✨ Intuition · ${video.name} · ${clips.map((c) => `${c.id} ${fmt(c.start)}–${fmt(c.end)}${{ ai: ' (video IA)', cine: ' (Cinematic Pro)' }[c.mode] || ''}`).join(' · ')}` : '');
   const thumbs = () => clips.map((c) => video.strip[Math.min(FILMSTRIP - 1, Math.floor((c.start / video.duration) * FILMSTRIP))].url);
 
-  return { setVideo, setLimits, missing, hint, request, summary, thumbs, busy: () => loading, hasVideo: () => !!video };
+  // Vuelve a poner clips ya marcados (el Laboratorio reabre experimentos del historial).
+  function setClips(list) {
+    if (!video) return;
+    clips = list.slice(0, lim.maxClips).map((c) => ({
+      key: ++seq, start: Math.max(0, c.start), end: Math.min(video.duration, c.end), prompt: c.prompt || '', notes: c.notes || '',
+      mode: 'motion', videoModel: lim.defaultVideoModel, refs: (c.refs || []).map((r) => ({ ...r, key: ++seq, status: 'ready' })),
+    })).filter((c) => c.end - c.start >= lim.minClipSeconds - 0.01);
+    renumber();
+    refreshClips();
+    onChange();
+  }
+
+  const current = () => (video ? { file: video.file, url: video.url, name: video.name, duration: video.duration, width: video.width, height: video.height } : null);
+
+  return { setVideo, setLimits, setClips, missing, hint, request, summary, thumbs, current, busy: () => loading, hasVideo: () => !!video };
 }
 
 // ---------- Eventos del flujo ----------

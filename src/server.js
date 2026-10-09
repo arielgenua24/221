@@ -21,6 +21,7 @@ import { streamAudioChat } from './gpt-audio.js';
 import { createVoiceSessions, parseVoiceBody } from './voice-session.js';
 import { IMAGE_GENERATORS, parseImageGenerator } from './image-models.js';
 import { referenceLabels } from './story-references.js';
+import { createLabRoutes } from './lab/routes.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -444,8 +445,12 @@ async function handleStoryGet(res, url) {
   }
 }
 
+// Laboratorio · Motion Design: dos modelos, mismo harness de Remotion (src/lab/).
+const handleLab = createLabRoutes({ mock, llm: (opts) => streamChat({ apiKey, ...opts }), readBody, sendJson, badRequest, openrouterKey: apiKey });
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (url.pathname.startsWith('/api/lab/') && handleLab(req, res, url)) return;
   if ((req.method === 'POST' && ['/api/voice/turn', '/api/voice/played'].includes(url.pathname)) || (req.method === 'GET' && url.pathname === '/api/voice/jobs')) return handleVoice(req, res, url);
   if (req.method === 'POST' && url.pathname === '/api/story/turn') return handleStoryTurn(req, res);
   if (req.method === 'POST' && STORY_ACTIONS[url.pathname]) return handleRawAction(req, res, STORY_ACTIONS[url.pathname]);
@@ -523,5 +528,6 @@ server.listen(PORT, HOST, () => {
     : 'Video IA + texto: desactivado (falta WAVESPEED_API_KEY).');
   console.log(`Raw (pestaña principal) · agente: ${rawConfig.rawModel} · imágenes: ${rawWs ? rawConfig.imageModel : 'desactivado (falta WAVESPEED_API_KEY)'} · voz: ${ttsWs && !ttsWs.mock ? `${rawConfig.ttsModel} (${rawConfig.ttsVoice})` : 'la del navegador'}`);
   console.log(`Historia · Guionista: ${storyConfig.storyModel} · DP: ${storyConfig.dpModel} · cuadros: ${storyConfig.frameModel} / ${storyConfig.frameEditModel} · video: ${storyWs ? `${storyConfig.videoModel} (${storyConfig.videoResolution}, ${SHOT_SECONDS} s)${storyWs.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
+  console.log(`Laboratorio · Motion Design: dos modelos de OpenRouter con el mismo harness de Remotion${mock ? ' (demo: componentes de ejemplo)' : ''} · búsqueda de referencias: ${process.env.SERPAPI_API_KEY || mock ? 'SerpAPI' : 'desactivada (falta SERPAPI_API_KEY)'} · imágenes: ${process.env.LAB_IMAGE_MODEL || 'google/gemini-nano-banana-2.1'} (OpenRouter)`);
   console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${Object.values(REFILM_MODELS).map((m) => m.path()).join(' / ')} (${refilmResolution()})${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });

@@ -47,7 +47,9 @@ function fail({ status, model, detail, streamed }) {
 
 // Una llamada en streaming a OpenRouter (API compatible con OpenAI).
 // onDelta recibe el texto de la respuesta; onReasoning, el razonamiento si el modelo lo expone.
-async function once({ apiKey, model, messages, temperature, plugins, reasoning, onDelta, onReasoning, signal }) {
+// tools (opcional): funciones que el modelo puede llamar (formato OpenAI). Devuelve toolCalls y reasoningDetails
+// (algunos proveedores, como Gemini, exigen que el razonamiento vuelva tal cual en el turno siguiente).
+async function once({ apiKey, model, messages, temperature, plugins, reasoning, tools, toolChoice, onDelta, onReasoning, signal }) {
   const body = {
     model,
     messages,
@@ -57,6 +59,7 @@ async function once({ apiKey, model, messages, temperature, plugins, reasoning, 
   if (temperature !== undefined) body.temperature = temperature;
   if (plugins) body.plugins = plugins;
   if (reasoning) body.reasoning = reasoning;
+  if (tools?.length) { body.tools = tools; if (toolChoice) body.tool_choice = toolChoice; }
 
   let res;
   try {
@@ -91,6 +94,8 @@ async function once({ apiKey, model, messages, temperature, plugins, reasoning, 
   let usage = null;
   let finishReason = null;
   let streamed = false;
+  const calls = []; // tool calls armados por índice a partir de sus fragmentos
+  const details = []; // reasoning_details armados por índice
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -123,6 +128,22 @@ async function once({ apiKey, model, messages, temperature, plugins, reasoning, 
       if (choice?.finish_reason) finishReason = choice.finish_reason;
       const delta = choice?.delta;
       if (delta?.reasoning) { streamed = true; onReasoning?.(delta.reasoning); }
+      for (const tc of delta?.tool_calls || []) {
+        streamed = true;
+        const i = tc.index ?? calls.length;
+        calls[i] ??= { id: '', type: 'function', function: { name: '', arguments: '' } };
+        if (tc.id) calls[i].id = tc.id;
+        if (tc.function?.name) calls[i].function.name += tc.function.name;
+        if (tc.function?.arguments) calls[i].function.arguments += tc.function.arguments;
+      }
+      for (const d of delta?.reasoning_details || []) {
+        const i = d.index ?? details.length;
+        const cur = (details[i] ??= {});
+        for (const [k, v] of Object.entries(d)) {
+          if (typeof v === 'string' && ['text', 'summary', 'data'].includes(k)) cur[k] = (cur[k] || '') + v;
+          else if (v !== null && v !== undefined && v !== '') cur[k] = v;
+        }
+      }
       if (delta?.content) {
         streamed = true;
         text += delta.content;
@@ -136,7 +157,8 @@ async function once({ apiKey, model, messages, temperature, plugins, reasoning, 
   if (finishReason === 'content_filter' && !text.trim()) {
     throw fail({ status: 'content_filter', model, detail: 'el filtro de contenido del proveedor bloqueó la respuesta', streamed: false });
   }
-  return { text, usage, finishReason };
+  const toolCalls = calls.filter((c) => c?.function.name).map((c, i) => ({ ...c, id: c.id || `call_${i}` }));
+  return { text, usage, finishReason, ...(toolCalls.length ? { toolCalls } : {}), ...(details.length ? { reasoningDetails: details.filter(Boolean) } : {}) };
 }
 
 // Llama a OpenRouter reintentando los errores pasajeros (429 del pool compartido, 5xx, caídas de red).

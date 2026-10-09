@@ -70,11 +70,52 @@ Elegís carpeta Raw y creás una historia (9:16, 16:9 o 1:1). La biblioteca mues
 - Los diálogos de Historia usan por defecto español rioplatense de Buenos Aires, con acento porteño natural. Se conservan las frases dadas por el usuario, y puede pedir otro idioma o acento en la conversación.
 - Cada proyecto se guarda en `runs/story/projects/<id>.json`; los nuevos archivos de Historia, en `runs/story/files/`. Las imágenes vinculadas conservan su archivo en `runs/raw/files/` y su nombre de Raw se actualiza antes de conversar con el modelo.
 
+## Laboratorio · Motion Design (pestaña)
+
+Un banco de pruebas para comparar **dos modelos haciendo exactamente el mismo trabajo**: motion design programático con **Remotion** sobre un clip real. La idea es aprender qué modelo conviene para cada tipo de animación, y cuánto cuesta de verdad cada animación aprobada.
+
+```
+Modelo A                    Configuración compartida                Modelo B
+selector (OpenRouter)       1 · clip + zonas marcadas (hasta 11 s)  selector (OpenRouter)
+                                (el mismo marcador de ✨ Intuition)
+                            2 · brief: contexto, referencias
+                                visuales, instrucciones
+  ▼  "Ejecutar experimento": dos ejecuciones independientes, en paralelo (ninguna ve a la otra)
+[agente] mismo prompt de sistema (contrato + Remotion Agent Skills), mismo material (cuadros de cada zona + referencias)
+   → SIEMPRE busca referencias en internet (Google Images vía SerpAPI) y genera al menos una imagen propia
+     (google/gemini-nano-banana-2.1 por OpenRouter, hasta 2) que tiene que usar en la animación
+   → escribe UN componente TSX de Remotion: la CAPA de motion (el video lo pone el entorno debajo)
+   → el servidor lo compila (esbuild) y valida el contrato
+   → si no compila: se le devuelve el error y corrige solo (hasta 2 veces por ejecución)
+   ▼
+[Player] @remotion/player en un iframe aislado → prueba de humo: recorre el inicio, el medio y el final de cada zona
+   → si falla al reproducir: corrige solo (hasta 2 veces seguidas); si no, queda el botón "Corregir el error"
+   ▼
+3 · Comparar: los dos lado a lado (reproducción sincronizada, saltar a cada zona), tabla de métricas.
+    En cada lado: arriba del video, qué buscó, con qué referencias se quedó y qué imágenes generó;
+    feedback continuo (lo que escribís mientras trabaja queda en cola y se manda junto al terminar);
+    ajustar tamaño y posición de la capa; cortar y mover tramos de la animación en el tiempo;
+    descargar el video; aprobar / rechazar, calidad y fidelidad (1–5) y cuál preferís → todo queda en el Historial
+```
+
+- **Mismo harness para los dos** ([src/lab/harness.js](src/lab/harness.js)): las [Remotion Agent Skills](https://github.com/remotion-dev/skills) oficiales copiadas en [src/lab/remotion-skills/](src/lab/remotion-skills/) (fijadas a un commit), el mismo contrato, la misma versión de Remotion y los mismos paquetes permitidos. `HARNESS_VERSION` queda guardado en cada experimento: si cambiás el harness, subila, así el historial separa las mejoras del modelo de las del harness.
+- **El componente** es solo la capa de motion: el entorno pone el video original debajo y la capa encima, así se puede escalar y mover sin tocar el video. Recibe `zones` (en cuadros, a 30 fps) e `images` (las que generó) y dibuja solo dentro de las zonas. Los experimentos del harness v1 (que renderizaban el video adentro) se siguen abriendo, pero no se pueden ajustar.
+- **Herramientas** ([src/lab/tools.js](src/lab/tools.js)), con los mismos límites para los dos modelos: `buscar_referencias` (Google Images vía SerpAPI, hasta 3 búsquedas por ejecución; solo para mirar). **Buscar es obligatorio** al diseñar y al revisar (no al corregir un error técnico): la primera llamada fuerza la herramienta con `tool_choice`; si el proveedor no lo permite, se pide por instrucción; y si el modelo igual entrega código sin buscar, no se compila y se le pide que busque primero (una vez). La otra herramienta es `generar_imagen`: `google/gemini-nano-banana-2.1` por la Image API de OpenRouter (`POST /api/v1/images`), con prompt y, si quiere, cuadros, referencias o búsquedas como entrada; hasta 2 imágenes por lado, para usar dentro de la animación. **Generar al menos una es obligatorio** en la primera ejecución: si escribe el componente sin generar, se le pide una vez; y si genera y no la usa en el código, se le pide que la integre. Las referencias tienen dos usos que el prompt le enseña: sacar una **paleta de colores** (3 a 6 hex que tiene que usar en el código) y detectar **objetos o motivos** de referencia (si los hay) para llevarlos a la animación. En las notas declara `Referencias usadas: S2, S5…`, `Paleta: #…` y `Objetos: …`; arriba del video se ven las referencias elegidas, la paleta en muestras (marcando cuáles colores aparecen de verdad en el código) y los objetos. Sin `SERPAPI_API_KEY` no hay búsqueda (la pantalla lo avisa); la generación usa la misma clave de OpenRouter. Puede importar `remotion`, `@remotion/media`, `transitions`, `effects`, `shapes`, `paths`, `noise`, `rough-notation`, `layout-utils`, `motion-blur`, `light-leaks`, `animation-utils` y 20 familias de `@remotion/google-fonts` ([src/lab/runtime.js](src/lab/runtime.js)).
+- **Aislamiento**: el código de cada agente corre en un iframe `srcdoc` con `sandbox="allow-scripts"` (origen opaco: no ve la app ni su almacenamiento) y una CSP sin red, salvo Google Fonts. El video entra como `Blob` por `postMessage`.
+- **Cortar y mover la animación**: cada lado tiene una pista con los tramos de la capa (al principio, uno por zona). Se pueden arrastrar a otro momento del video, recortar por los bordes, dividir en el cursor, duplicar o quitar. Es un reacomodo en el tiempo de la capa del agente (con dos `<Sequence>` anidadas en el iframe): el video no se toca.
+- **Descargar video**: renderiza en el navegador, con `@remotion/web-renderer`, la composición tal cual se ve (escala, posición y cortes). Si el navegador no puede decodificar el video de base, renderiza solo la capa (WebM transparente) y la compone sobre el original en un canvas con MediaRecorder, como el export de Intuition. Hay que dejar la pestaña visible mientras tanto.
+- **Métricas por ejecución**: costo (todas las llamadas, también correcciones, revisiones y herramientas; `usage.cost` de OpenRouter + costo orientativo de SerpAPI y nano-banana), tiempo generando, intentos (componentes que tuvo que escribir: cada ejecución + cada recompilación; las vueltas de herramientas no cuentan), correcciones automáticas, herramientas usadas, intervención manual (revisiones pedidas + haber ajustado tamaño/posición + minutos de retoque que anotás) y tokens.
+- **Historial**: por modelo, ejecuciones, aprobadas, veces preferido, calidad y fidelidad medias, costo medio, **costo por animación aprobada** (todo lo gastado ÷ aprobadas), tiempo, intentos e intervención medios. Cada experimento se puede reabrir (video, zonas, brief, código y evaluaciones) o exportar todo a JSON.
+- **Dónde se guarda**: en el navegador. `localStorage` guarda los experimentos (configuración, métricas, evaluaciones); IndexedDB, lo pesado por referencia (el video, los cuadros, las referencias y el código de cada agente). Borrar los datos del sitio borra el historial.
+- En modo demo, los agentes devuelven componentes de ejemplo; los modelos "baratos" (flash, mini, luna…) fallan la primera compilación a propósito para mostrar la corrección automática.
+- Remotion tiene su propia licencia: es gratis para personas y empresas chicas, y las empresas más grandes necesitan una licencia de empresa ([remotion.dev/license](https://www.remotion.dev/license)).
+
 ## Cómo correrlo
 
-Requiere Node 22+. No tiene dependencias.
+Requiere Node 22+. Las dependencias son solo para el Laboratorio (Remotion, React y esbuild).
 
 ```bash
+npm install
 cp .env.example .env      # poné tu OPENROUTER_API_KEY
 npm start                 # http://127.0.0.1:3000
 npm run demo              # modo demo: respuestas simuladas, sin API key
@@ -228,6 +269,12 @@ Fotos + texto
 | `src/raw-agent.js` / `src/raw-prompts.js` | Raw: un turno de conversación (qué ve el agente, qué contesta, cuándo pregunta, cuándo genera) |
 | `src/raw-voice.js` | Raw: texto → voz (TTS de WaveSpeed) con caché |
 | `public/raw.js` | Raw: la pestaña (carpetas, tarjeta, micrófono, reproducción de voz, biblioteca, generadas) |
+| `src/lab/harness.js` | Laboratorio: el harness compartido (contrato + Remotion Agent Skills) y el pedido idéntico para los dos modelos |
+| `src/lab/runtime.js` | Laboratorio: compila y valida el TSX de cada agente (esbuild) y empaqueta React + Remotion para el iframe |
+| `src/lab/pipeline.js` / `src/lab/routes.js` | Laboratorio: una ejecución de un agente con corrección automática; `POST /api/lab/run`, `GET /api/lab/models`, `GET /api/lab/frame.html` |
+| `src/lab/tools.js` | Laboratorio: herramientas de los agentes (búsqueda en SerpAPI, imágenes con nano-banana) |
+| `src/lab/frame.js` | Laboratorio: dentro del iframe aislado, monta el `<Player>` de Remotion y hace la prueba de humo |
+| `public/lab.js` / `public/lab-stats.js` / `public/lab-store.js` | Laboratorio: la pestaña, las métricas y el historial (localStorage + IndexedDB) |
 | `src/knowledge.js` | Manual de contenido compartido por todos los agentes |
 | `src/prompts.js` | Rol de cada agente y encargo de cada etapa |
 | `src/pipeline.js` | Orquestación: etapas, paralelismo, extracción/reparación de JSON |

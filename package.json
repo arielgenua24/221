@@ -4,10 +4,32 @@
   "private": true,
   "description": "Arnés de subagentes para crear ideas de contenido para pymes",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
     "demo": "MOCK=1 node src/server.js",
     "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@remotion/animation-utils": "4.0.534",
+    "@remotion/effects": "4.0.534",
+    "@remotion/google-fonts": "4.0.534",
+    "@remotion/layout-utils": "4.0.534",
+    "@remotion/light-leaks": "4.0.534",
+    "@remotion/media": "4.0.534",
+    "@remotion/motion-blur": "4.0.534",
+    "@remotion/noise": "4.0.534",
+    "@remotion/paths": "4.0.534",
+    "@remotion/player": "4.0.534",
+    "@remotion/rough-notation": "4.0.534",
+    "@remotion/shapes": "4.0.534",
+    "@remotion/transitions": "4.0.534",
+    "@remotion/web-renderer": "4.0.534",
+    "esbuild": "0.28.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.534"
   }
 }

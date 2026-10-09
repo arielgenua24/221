@@ -16,6 +16,7 @@
         <button type="button" class="tab" role="tab" data-tab="raw" aria-selected="true">Raw</button>
         <button type="button" class="tab" role="tab" data-tab="story" aria-selected="false">Historia</button>
         <button type="button" class="tab" role="tab" data-tab="studio" aria-selected="false">Estudio</button>
+        <button type="button" class="tab" role="tab" data-tab="lab" aria-selected="false">Laboratorio</button>
       </nav>
       <div class="meta">
         <span id="usage" class="muted"></span>
@@ -181,6 +182,27 @@
       </div>
     </section>
 
+    <section id="view-lab" class="view lab" role="tabpanel" aria-label="Laboratorio" hidden>
+      <div class="raw-scroll">
+        <div class="lab-inner">
+          <header class="lab-head">
+            <div>
+              <p class="lab-crumbs muted small">Laboratorio</p>
+              <h1 class="raw-title">Motion Design</h1>
+              <p class="muted small">Dos modelos hacen el mismo trabajo con el mismo harness (Remotion + Remotion Agent Skills). Compará calidad, fidelidad, costo, tiempo e intentos, y guardá qué funcionó.</p>
+            </div>
+            <nav class="tabs lab-views" role="tablist" aria-label="Vistas del Laboratorio">
+              <button type="button" class="lab-view-btn" role="tab" data-lab-view="experiment" aria-selected="true">Experimento</button>
+              <button type="button" class="lab-view-btn" role="tab" data-lab-view="history" aria-selected="false">Historial</button>
+            </nav>
+          </header>
+          <p id="lab-error" class="error" hidden></p>
+          <div id="lab-experiment"></div>
+          <div id="lab-history" class="lab-history" hidden></div>
+        </div>
+      </div>
+    </section>
+
     <div id="view-studio" class="view" role="tabpanel" aria-label="Estudio" hidden>
     <main id="feed" class="feed" aria-live="polite">
       <section id="welcome" class="welcome">
@@ -233,5 +255,6 @@
   <script src="/app.js" type="module"></script>
   <script src="/raw.js" type="module"></script>
   <script src="/story.js" type="module"></script>
+  <script src="/lab.js" type="module"></script>
 </body>
 </html>

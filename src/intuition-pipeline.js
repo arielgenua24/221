@@ -41,7 +41,7 @@ function parseFrames(list, max) {
     .map((f) => ({ t: Math.max(0, num(f.t)), url: f.url }));
 }
 
-function parseClip(c, video) {
+function parseClip(c, video, maxSeconds = MAX_CLIP_SECONDS) {
   const start = num(c?.start, NaN);
   const end = num(c?.end, NaN);
   if (!Number.isFinite(start) || !Number.isFinite(end)) throw new Error('Cada clip necesita inicio y fin.');
@@ -49,7 +49,7 @@ function parseClip(c, video) {
   const len = end - start;
   if (len < MIN_CLIP_SECONDS - 0.01) throw new Error(`Cada clip tiene que durar al menos ${MIN_CLIP_SECONDS} s.`);
   if (c?.mode === 'cine' && len < MIN_CINE_SECONDS - 0.01) throw new Error(`Los clips de Cinematic Pro duran al menos ${MIN_CINE_SECONDS} s (el modelo de re-filmado pide 1 s de video como mínimo).`);
-  if (len > MAX_CLIP_SECONDS + 0.05) throw new Error(`Cada clip dura como máximo ${MAX_CLIP_SECONDS} s.`);
+  if (len > maxSeconds + 0.05) throw new Error(`Cada clip dura como máximo ${maxSeconds} s.`);
   const frames = parseFrames(c.frames, CLIP_FRAMES);
   if (!frames.length) throw new Error('Faltan los cuadros de un clip.');
   const refs = (Array.isArray(c.refs) ? c.refs : []).slice(0, MAX_REFS).flatMap((r, i) => {
@@ -82,13 +82,14 @@ function parseVideo(v) {
 }
 
 // Valida el pedido: el video (solo sus datos: no viaja), hasta 3 clips con sus cuadros, pedido y referencias.
-export function parseIntuitionBody(body) {
+// `maxClipSeconds`: el Laboratorio permite zonas más largas que Intuition.
+export function parseIntuitionBody(body, { maxClipSeconds = MAX_CLIP_SECONDS } = {}) {
   const text = String(body?.text || '').slice(0, 3000);
   const video = parseVideo(body?.video);
   const raw = Array.isArray(body?.clips) ? body.clips : [];
   if (!raw.length) throw new Error('Marcá al menos un clip en el video.');
   if (raw.length > MAX_CLIPS) throw new Error(`Máximo ${MAX_CLIPS} clips.`);
-  const clips = raw.map((c) => parseClip(c, video)).sort((a, b) => a.start - b.start);
+  const clips = raw.map((c) => parseClip(c, video, maxClipSeconds)).sort((a, b) => a.start - b.start);
   const ids = new Set(clips.map((c) => c.id));
   if (ids.size !== clips.length || clips.some((c) => !/^C[1-9]$/.test(c.id))) throw new Error('Los clips tienen ids inválidos.');
   clips.forEach((c, i) => { if (i && c.start < clips[i - 1].end - 0.01) throw new Error('Los clips no pueden superponerse.'); });
