@@ -285,12 +285,12 @@ function routeFolder() {
   if (!/^#\/?laboratorio(?:\/|$)/.test(location.hash) && document.body.dataset.tab !== 'lab') return;
   const hash = location.hash.replace(/^#\/?/, '');
   const folder = hash.startsWith('laboratorio/') ? hash.split('/')[1] : 'home';
-  const cinematic = folder === 'cinematic-videos', motion = folder === 'motion-design';
-  $('lab-home').hidden = cinematic || motion; $('lab-motion-folder').hidden = !motion; $('lab-cinematic-folder').hidden = !cinematic;
+  const cinematic = folder === 'cinematic-videos', motion = folder === 'motion-design', table = folder === 'mesa-de-agentes';
+  $('lab-home').hidden = cinematic || motion || table; $('lab-motion-folder').hidden = !motion; $('lab-cinematic-folder').hidden = !cinematic; $('lab-table-folder').hidden = !table;
   document.querySelectorAll('[data-lab-folder]').forEach((a) => { if (a.dataset.labFolder === folder) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   // Motion Design conserva su evento y su superficie. Sus drops solo están activos en su carpeta.
-  document.body.dataset.tab = motion ? 'lab' : cinematic ? 'cinematic' : 'lab-home';
-  if (!motion) window.dispatchEvent(new CustomEvent('tab', { detail: cinematic ? 'cinematic' : 'lab-home' }));
+  document.body.dataset.tab = motion ? 'lab' : cinematic ? 'cinematic' : table ? 'table' : 'lab-home';
+  if (!motion) window.dispatchEvent(new CustomEvent('tab', { detail: cinematic ? 'cinematic' : table ? 'table' : 'lab-home' }));
   if (cinematic) start();
 }
 $('cinematic-mode-chat').onclick = () => setMode('chat'); $('cinematic-mode-prompt').onclick = () => setMode('prompt');

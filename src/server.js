@@ -23,6 +23,7 @@ import { IMAGE_GENERATORS, parseImageGenerator } from './image-models.js';
 import { referenceLabels } from './story-references.js';
 import { createLabRoutes } from './lab/routes.js';
 import { createCinematicRoutes } from './cinematic/routes.js';
+import { createTableRoutes } from './table/routes.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -451,11 +452,14 @@ const handleLab = createLabRoutes({ mock, llm: (opts) => streamChat({ apiKey, ..
 // Un prompt final también puede comparar videos de WaveSpeed sin configurar un LLM.
 const cinematicMock = process.env.MOCK === '1' || (!apiKey && !wavespeedKey);
 const cinematicWs = cinematicMock ? null : !mock ? ws : createWaveSpeed({ apiKey: wavespeedKey, mediaDir: MEDIA });
+// Mesa de agentes: cuatro agentes de OpenRouter conversan por rondas hacia una misión final (src/table/).
+const handleTable = createTableRoutes({ mock, llm: (opts) => streamChat({ apiKey, ...opts }), readBody, badRequest });
 const handleCinematic = createCinematicRoutes({ mock: cinematicMock, llm: (opts) => streamChat({ apiKey, ...opts }), apiKey, wavespeedKey, wavespeed: cinematicWs, mediaDir: MEDIA, runsDir: RUNS, readBody, sendJson, badRequest });
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (handleCinematic(req, res, url)) return;
+  if (handleTable(req, res, url)) return;
   if (url.pathname.startsWith('/api/lab/') && handleLab(req, res, url)) return;
   if ((req.method === 'POST' && ['/api/voice/turn', '/api/voice/played'].includes(url.pathname)) || (req.method === 'GET' && url.pathname === '/api/voice/jobs')) return handleVoice(req, res, url);
   if (req.method === 'POST' && url.pathname === '/api/story/turn') return handleStoryTurn(req, res);
@@ -535,5 +539,6 @@ server.listen(PORT, HOST, () => {
   console.log(`Raw (pestaña principal) · agente: ${rawConfig.rawModel} · imágenes: ${rawWs ? rawConfig.imageModel : 'desactivado (falta WAVESPEED_API_KEY)'} · voz: ${ttsWs && !ttsWs.mock ? `${rawConfig.ttsModel} (${rawConfig.ttsVoice})` : 'la del navegador'}`);
   console.log(`Historia · Guionista: ${storyConfig.storyModel} · DP: ${storyConfig.dpModel} · cuadros: ${storyConfig.frameModel} / ${storyConfig.frameEditModel} · video: ${storyWs ? `${storyConfig.videoModel} (${storyConfig.videoResolution}, ${SHOT_SECONDS} s)${storyWs.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
   console.log(`Laboratorio · Motion Design: dos modelos de OpenRouter con el mismo harness de Remotion${mock ? ' (demo: componentes de ejemplo)' : ''} · búsqueda de referencias: ${process.env.SERPAPI_API_KEY || mock ? 'SerpAPI' : 'desactivada (falta SERPAPI_API_KEY)'} · imágenes: ${wavespeedKey || mock ? `${process.env.LAB_IMAGE_MODEL || 'google/nano-banana-2.1/text-to-image'} (WaveSpeed)` : 'desactivadas (falta WAVESPEED_API_KEY)'}`);
+  console.log(`Laboratorio · Mesa de agentes: cuatro modelos de OpenRouter, hasta 10 rondas${mock ? ' (demo: respuestas simuladas)' : ''}`);
   console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${Object.values(REFILM_MODELS).map((m) => m.path()).join(' / ')} (${refilmResolution()})${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });

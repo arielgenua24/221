@@ -172,7 +172,7 @@ input.addEventListener('paste', (e) => {
 let dragDepth = 0;
 const dropZone = $('drop');
 // En las pestañas Raw, Historia y Laboratorio, soltar archivos lo manejan raw.js, story.js y lab.js.
-const ownDrop = () => ['raw', 'story', 'lab', 'cinematic', 'lab-home'].includes(document.body.dataset.tab);
+const ownDrop = () => ['raw', 'story', 'lab', 'cinematic', 'lab-home', 'table'].includes(document.body.dataset.tab);
 const hasFiles = (e) => !ownDrop() && [...(e.dataTransfer?.types || [])].some((t) => t === 'Files' || t === 'text/plain');
 window.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; dropZone.hidden = false; });
 window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });

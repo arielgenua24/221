@@ -129,6 +129,31 @@ Documentación de proveedores: [Video de OpenRouter](https://openrouter.ai/docs/
 
 Pruebas: `npm test`. Flujo de navegador: `PLAYWRIGHT_MODULE=/ruta/a/playwright/index.mjs node test/browser/cinematic-lab.mjs` (usa un servidor demo y almacenamiento temporal, sin generaciones pagadas).
 
+## Laboratorio · Mesa de agentes
+
+`#laboratorio/mesa-de-agentes`. Cuatro agentes, cada uno con su **nombre, misión/rol, indicaciones y modelo de OpenRouter**, sentados alrededor de una mesa con una **misión final** que también escribís vos. Conversan por turnos hasta cumplirla.
+
+```
+Asiento A ─────────── MESA ─────────── Asiento B      soltar en un asiento → privado para ese agente (A1, B2…)
+   │          misión final + archivos M1…   │         soltar en la mesa     → lo ven los cuatro (M1, M2…)
+Asiento D ──────────────────────────── Asiento C
+  ▼ "Sentarse y empezar": sorteo → empieza uno al azar y siguen en sentido horario
+Ronda 1..10: en su turno cada agente escucha todo lo anterior y elige UNA cosa:
+   aportar algo nuevo · responder/corregir a otro · pasar ([PASO]) · y marcar [LISTO] si cree que la misión ya está resuelta
+   ✋ VOS, en cualquier momento: un mensaje o archivo a toda la mesa, o en privado a un agente
+      (lo toma el próximo turno; por defecto la mesa se pausa al terminar cada ronda)
+  ▼ se cierra cuando pasan las 10 rondas, o antes si en una ronda completa los cuatro pasaron o dijeron [LISTO]
+    (sin que vos hayas sumado nada en esa ronda), o cuando tocás "Cerrar y redactar entrega"
+Relator (el modelo que elijas, o el de A) → la entrega final, en Markdown, lista para copiar o descargar con toda la conversación
+```
+
+- **Lo que ve cada agente**: el registro de la mesa, sus propios mensajes y archivos privados, y nada de lo privado de los demás. El relator ve solo lo público. El servidor arma esa vista en cada turno (`src/table/prompts.js`); las reglas de rondas, turnos y consenso son puras y compartidas con el navegador (`public/table-core.js`).
+- **Archivos**: imágenes (se reducen a 1280 px), texto (`.md`, `.txt`, `.csv`, `.json`…, hasta 60.000 caracteres) y PDF (hasta 12 MB). Hasta 40 por mesa; cada agente recibe las 16 imágenes más recientes que le corresponden. Video y audio todavía no.
+- **Turnos sin estado**: cada turno es un `POST /api/lab/table/turn` con el registro completo (respuesta NDJSON en streaming), así se puede pausar, cortar un turno, reintentar uno que falló o intervenir entre dos turnos cualquiera. Los archivos se reenvían en cada turno: con muchas imágenes, el costo crece por turno.
+- **Guardado**: las mesas viven en este navegador (localStorage + IndexedDB para los archivos), con historial, costo por turno y total. "Usar sus agentes en una mesa nueva" reutiliza el elenco.
+- **Demo** (`MOCK=1` o sin `OPENROUTER_API_KEY`): respuestas simuladas; en la ronda 2 un agente pasa y en la 3 todos dan la misión por resuelta, para ver el cierre por consenso.
+- Prueba de navegador: `PLAYWRIGHT_MODULE=… node test/browser/agent-table.mjs`.
+
 ## Cómo correrlo
 
 Requiere Node 22+. Las dependencias son solo para el Laboratorio (Remotion, React y esbuild).

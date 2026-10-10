@@ -189,10 +189,12 @@
             <a href="#laboratorio">Laboratorio</a>
             <a href="#laboratorio/motion-design" data-lab-folder="motion-design">Motion Design</a>
             <a href="#laboratorio/cinematic-videos" data-lab-folder="cinematic-videos">Cinematic Videos</a>
+            <a href="#laboratorio/mesa-de-agentes" data-lab-folder="mesa-de-agentes">Mesa de agentes</a>
           </nav>
           <div id="lab-home" class="lab-history-list" hidden>
             <a class="lab-card lab-folder-card" href="#laboratorio/motion-design"><span class="lab-badge">M</span><h1>Motion Design</h1><p class="muted">Comparar animaciones con LLMs, Remotion y el harness del laboratorio.</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/cinematic-videos"><span class="lab-badge">C</span><h1>Cinematic Videos</h1><p class="muted">Un mismo prompt y referencias. Hasta cuatro generadores de OpenRouter y WaveSpeed.</p></a>
+            <a class="lab-card lab-folder-card" href="#laboratorio/mesa-de-agentes"><span class="lab-badge">A</span><h1>Mesa de agentes</h1><p class="muted">Cuatro agentes con su propia misión conversan por turnos, hasta 10 rondas, para cumplir una misión final. Vos intervenís cuando quieras.</p></a>
           </div>
           <div id="lab-motion-folder">
           <header class="lab-head">
@@ -250,6 +252,42 @@
             <section id="cinematic-results" class="cinematic-results" aria-label="Resultados" hidden></section>
             <section id="cinematic-comparison" class="lab-card" hidden></section>
             <section id="cinematic-history" class="lab-history" hidden></section>
+          </div>
+          <div id="lab-table-folder" hidden>
+            <header class="lab-head">
+              <div><p class="lab-crumbs muted small">Laboratorio / mesa-de-agentes</p><h1 class="raw-title">Mesa de agentes</h1><p class="muted small">Sentá a cuatro agentes con su misión. Empieza uno al azar, los demás escuchan y en su turno aportan, corrigen o pasan. Hasta 10 rondas para cumplir la misión final. Soltá archivos en un asiento (solo lo ve ese agente) o en la mesa (lo ven todos).</p></div>
+              <div class="actions compact"><button id="table-new" type="button" class="small-btn">Nueva mesa</button><button id="table-history-toggle" type="button" class="small-btn" aria-pressed="false">Historial</button></div>
+            </header>
+            <p id="table-error" class="error" role="alert" hidden></p>
+            <div id="table-main">
+              <div id="table-board" class="table-board">
+                <section id="table-center" class="lab-card table-center" data-drop="table" aria-label="Mesa">
+                  <label class="lab-field">Nombre de la mesa<input id="table-name" maxlength="120" placeholder="Ej. Spot de 30 s para la cafetería"></label>
+                  <label class="lab-field">Misión final (lo que la mesa tiene que entregar)<textarea id="table-goal" rows="3" maxlength="4000" placeholder="Ej. Un guion de video de 30 s, plano por plano, con prompts listos para generar cada toma."></textarea></label>
+                  <label class="lab-field">Relator de la entrega final (vacío = el modelo de A)<input id="table-synthesis-model" class="lab-model" list="table-llms" placeholder="Modelo de OpenRouter" autocomplete="off"></label>
+                  <div id="table-progress" class="table-progress" aria-live="polite"></div>
+                  <div class="actions compact table-controls">
+                    <button id="table-start" type="button" class="primary">Sentarse y empezar</button>
+                    <button id="table-pause" type="button" class="small-btn" hidden>Pausar</button>
+                    <button id="table-continue" type="button" class="small-btn" hidden>Continuar</button>
+                    <button id="table-close" type="button" class="small-btn" hidden>Cerrar y redactar entrega</button>
+                  </div>
+                  <label class="lab-inline"><input id="table-autopause" type="checkbox" checked> Pausar al terminar cada ronda</label>
+                  <div class="table-files" id="table-files-table"></div>
+                  <form id="table-say" class="table-say">
+                    <textarea id="table-say-text" rows="2" maxlength="20000" placeholder="Decile algo a toda la mesa (lo ven los cuatro)…" aria-label="Mensaje para toda la mesa"></textarea>
+                    <div class="actions compact"><label class="small-btn cinematic-file">+ Archivo para la mesa<input id="table-file" type="file" multiple hidden accept="image/*,application/pdf,text/*,.md,.txt,.csv,.json,.srt,.vtt,.yaml,.yml,.xml,.html"></label><button type="submit" class="small-btn">Decir a la mesa</button></div>
+                  </form>
+                </section>
+              </div>
+              <datalist id="table-llms"></datalist>
+              <section class="lab-card table-log-card" aria-label="Conversación de la mesa">
+                <div class="lab-side-head"><strong>Conversación</strong><span id="table-cost" class="muted small"></span></div>
+                <div id="table-log" class="table-log" aria-live="polite"></div>
+              </section>
+              <section id="table-final" class="lab-card table-final" hidden></section>
+            </div>
+            <section id="table-history" class="lab-history" hidden></section>
           </div>
         </div>
       </div>
@@ -309,5 +347,6 @@
   <script src="/story.js" type="module"></script>
   <script src="/lab.js" type="module"></script>
   <script src="/cinematic.js" type="module"></script>
+  <script src="/table.js" type="module"></script>
 </body>
 </html>
