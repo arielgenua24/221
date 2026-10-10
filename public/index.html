@@ -185,6 +185,16 @@
     <section id="view-lab" class="view lab" role="tabpanel" aria-label="Laboratorio" hidden>
       <div class="raw-scroll">
         <div class="lab-inner">
+          <nav class="lab-folders" aria-label="Carpetas del Laboratorio">
+            <a href="#laboratorio">Laboratorio</a>
+            <a href="#laboratorio/motion-design" data-lab-folder="motion-design">Motion Design</a>
+            <a href="#laboratorio/cinematic-videos" data-lab-folder="cinematic-videos">Cinematic Videos</a>
+          </nav>
+          <div id="lab-home" class="lab-history-list" hidden>
+            <a class="lab-card lab-folder-card" href="#laboratorio/motion-design"><span class="lab-badge">M</span><h1>Motion Design</h1><p class="muted">Comparar animaciones con LLMs, Remotion y el harness del laboratorio.</p></a>
+            <a class="lab-card lab-folder-card" href="#laboratorio/cinematic-videos"><span class="lab-badge">C</span><h1>Cinematic Videos</h1><p class="muted">Un mismo prompt y referencias. Hasta cuatro generadores de OpenRouter y WaveSpeed.</p></a>
+          </div>
+          <div id="lab-motion-folder">
           <header class="lab-head">
             <div>
               <p class="lab-crumbs muted small">Laboratorio</p>
@@ -199,6 +209,48 @@
           <p id="lab-error" class="error" hidden></p>
           <div id="lab-experiment"></div>
           <div id="lab-history" class="lab-history" hidden></div>
+          </div>
+          <div id="lab-cinematic-folder" hidden>
+            <header class="lab-head">
+              <div><p class="lab-crumbs muted small">Laboratorio / cinematic-videos</p><h1 class="raw-title">Cinematic Videos</h1><p class="muted small">Conversá o pegá un prompt final. Compará hasta cuatro generadores con el mismo material.</p></div>
+              <div class="actions compact"><button id="cinematic-new" type="button" class="small-btn">Nuevo experimento</button><button id="cinematic-history-toggle" type="button" class="small-btn" aria-pressed="false">Historial y puntajes</button></div>
+            </header>
+            <p id="cinematic-error" class="error" role="alert" hidden></p>
+            <p id="cinematic-catalog-status" class="muted small" aria-live="polite">Cargando generadores…</p>
+            <div id="cinematic-editor" class="cinematic-editor">
+              <section class="lab-card cinematic-brief">
+                <label class="lab-field">Nombre del experimento<input id="cinematic-name" class="lab-name" maxlength="100" placeholder="Ej. Producto bajo la lluvia"></label>
+                <div class="options"><button id="cinematic-mode-chat" type="button" class="option" aria-pressed="true">Conversar</button><button id="cinematic-mode-prompt" type="button" class="option" aria-pressed="false">Ya tengo el prompt</button></div>
+                <div id="cinematic-conversation">
+                  <label class="lab-field">LLM de OpenRouter<input id="cinematic-llm" class="lab-model" list="cinematic-llms" placeholder="Elegí un modelo" autocomplete="off"><datalist id="cinematic-llms"></datalist></label>
+                  <div id="cinematic-chat" class="lab-thread cinematic-chat" aria-live="polite"></div>
+                  <form id="cinematic-chat-form"><label class="lab-field">Mensaje<textarea id="cinematic-message" rows="3" placeholder="Describí la escena o refiná la idea…"></textarea></label><div class="actions compact"><button id="cinematic-chat-send" type="submit" class="small-btn">Enviar</button><button id="cinematic-finalize" type="button" class="small-btn">Preparar prompt final</button></div></form>
+                </div>
+                <label class="lab-field">Prompt común<textarea id="cinematic-prompt" rows="5" placeholder="Este texto se enviará sin cambios a todos los generadores."></textarea></label>
+                <label class="lab-field">Cómo usar las imágenes<select id="cinematic-reference-mode"><option value="references">Referencias de sujeto, estilo o escena</option><option value="first-frame">Primer cuadro (una imagen)</option></select></label>
+                <div class="actions compact"><label class="small-btn cinematic-file">+ Imágenes<input id="cinematic-images" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden></label><label class="small-btn cinematic-file">+ Audio de referencia<input id="cinematic-audio-file" type="file" accept="audio/*" hidden></label><button id="cinematic-add-url" type="button" class="small-btn">+ URL de referencia</button></div>
+                <div id="cinematic-references" class="lab-refs-row cinematic-references"></div>
+                <p class="muted small">Las referencias de estilo y el primer cuadro son modos distintos. Un modelo incompatible se omite con su motivo.</p>
+              </section>
+              <section class="lab-card">
+                <div class="decision-label">Generadores · máximo 4</div>
+                <div id="cinematic-generators" class="cinematic-generators"></div>
+                <button id="cinematic-add-generator" type="button" class="small-btn">+ Generador</button>
+                <div class="cinematic-settings">
+                  <label class="lab-field">Duración (s)<input id="cinematic-duration" type="number" value="5" min="1" max="120" step="1"></label>
+                  <label class="lab-field">Proporción<select id="cinematic-aspect"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:3</option><option>3:4</option><option>21:9</option><option>9:21</option><option>3:2</option><option>2:3</option></select></label>
+                  <label class="lab-field">Resolución<select id="cinematic-resolution"><option>480p</option><option>720p</option><option>768p</option><option>1080p</option><option>2K</option><option>4K</option><option>4k</option></select></label>
+                </div>
+                <label class="lab-inline"><input id="cinematic-generate-audio" type="checkbox">Generar sonido en el video</label>
+                <p class="muted small">El audio de referencia guía la generación. La opción de sonido pide audio nuevo en el resultado.</p>
+                <div id="cinematic-preflight" class="cinematic-preflight" aria-live="polite"></div>
+                <button id="cinematic-run" type="button" class="primary">Generar comparación</button>
+              </section>
+            </div>
+            <section id="cinematic-results" class="cinematic-results" aria-label="Resultados" hidden></section>
+            <section id="cinematic-comparison" class="lab-card" hidden></section>
+            <section id="cinematic-history" class="lab-history" hidden></section>
+          </div>
         </div>
       </div>
     </section>
@@ -256,5 +308,6 @@
   <script src="/raw.js" type="module"></script>
   <script src="/story.js" type="module"></script>
   <script src="/lab.js" type="module"></script>
+  <script src="/cinematic.js" type="module"></script>
 </body>
 </html>

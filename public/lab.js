@@ -759,7 +759,7 @@ async function execute(side, reason, feedback) {
         case 'compile_error': attempt.compileErrors += 1; side.write(`\n[No compila: ${ev.text}]\n`); side.pending = 'No compiló: corrigiendo…'; side.render(); return;
         case 'tool':
           side.write(`\n[${ev.name === 'buscar_referencias' ? `Busca referencias: «${ev.args?.consulta || ''}»` : `Genera una imagen: ${ev.args?.prompt || ''}`}]\n`);
-          side.pending = ev.name === 'buscar_referencias' ? 'Buscando referencias en Google…' : 'Generando una imagen con nano-banana…';
+          side.pending = ev.name === 'buscar_referencias' ? 'Buscando referencias en Google…' : 'Generando una imagen con Nano Banana 2.1…';
           side.render();
           return;
         case 'search': side.found.push({ query: ev.query, results: ev.results, exec: run.attempts.length }); side.render(); return;
@@ -1270,10 +1270,13 @@ async function start() {
   studio.setLimits({ maxClipSeconds: info.harness?.maxZoneSeconds || 11 });
   harnessPill.textContent = `Harness ${info.harness?.version || ''}${info.mock ? ' · demo' : ''}`;
   const t = info.harness?.tools || {};
-  harnessPill.title = `Mismo harness para los dos modelos.\nRemotion ${info.harness?.remotion} · ${info.harness?.fps} fps · zonas de hasta ${info.harness?.maxZoneSeconds} s\nHerramientas: ${t.search ? `búsqueda de referencias obligatoria (Google Images vía SerpAPI, máx. ${t.maxSearches} por ejecución)` : 'búsqueda desactivada (falta SERPAPI_API_KEY)'} · ${t.images ? `${t.imageModel} (máx. ${t.maxImages} imágenes)` : 'imágenes desactivadas (falta WAVESPEED_API_KEY)'}\nRemotion Agent Skills (remotion-dev/skills @ ${info.harness?.skillsCommit?.slice(0, 7)}):\n${(info.harness?.skills || []).join('\n')}`;
+  harnessPill.title = `Mismo harness para los dos modelos.\nRemotion ${info.harness?.remotion} · ${info.harness?.fps} fps · zonas de hasta ${info.harness?.maxZoneSeconds} s\nHerramientas: ${t.search ? `búsqueda de referencias obligatoria (Google Images vía SerpAPI, máx. ${t.maxSearches} por ejecución)` : 'búsqueda desactivada (falta SERPAPI_API_KEY)'} · ${t.images ? `Nano Banana 2.1 vía WaveSpeed (máx. ${t.maxImages} imágenes)` : 'imágenes desactivadas (falta WAVESPEED_API_KEY)'}\nRemotion Agent Skills (remotion-dev/skills @ ${info.harness?.skillsCommit?.slice(0, 7)}):\n${(info.harness?.skills || []).join('\n')}`;
   // Buscar referencias es obligatorio: sin la clave de SerpAPI, los agentes diseñan sin buscar (y queda en la versión del harness).
-  setupNote.hidden = !!t.search;
-  setupNote.textContent = 'La búsqueda de referencias en internet está desactivada: agregá SERPAPI_API_KEY en .env y reiniciá el servidor. Mientras tanto, los agentes diseñan sin buscar.';
+  const missingTools = [];
+  if (!t.search) missingTools.push('La búsqueda de referencias en internet está desactivada: agregá SERPAPI_API_KEY en .env.');
+  if (!t.images) missingTools.push('La generación de imágenes con Nano Banana 2.1 está desactivada: agregá WAVESPEED_API_KEY en .env.');
+  setupNote.hidden = !missingTools.length;
+  setupNote.textContent = missingTools.length ? `${missingTools.join(' ')} Reiniciá el servidor para activar las herramientas.` : '';
   SIDES.forEach((k) => { sides[k].showPrice(); sides[k].render(); });
   renderRefs();
   refresh();

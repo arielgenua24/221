@@ -794,3 +794,47 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 .lab-cut-grip.r { right: -6px; }
 .lab-swatch { width: 22px; height: 22px; border-radius: 6px; background: var(--sw); border: 1px solid var(--border); flex-shrink: 0; }
 .lab-swatch.off { opacity: .35; outline: 1px dashed var(--muted); outline-offset: 1px; }
+
+/* Laboratorio: carpetas y comparación de video. Los estilos de Motion Design se conservan. */
+.lab-folders { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding-block: 6px; }
+.lab-folders a { color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+.lab-folders a[aria-current="page"] { color: var(--text); border-color: var(--motion); background: var(--surface); }
+.lab-folder-card { color: var(--text); text-decoration: none; padding: 28px; min-height: 220px; }
+.lab-folder-card:hover { border-color: var(--motion); }
+.lab-folder-card h1 { margin: 10px 0 0; font-size: 24px; }
+#lab-motion-folder, #lab-cinematic-folder { display: flex; flex-direction: column; gap: 14px; }
+.cinematic-editor { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; gap: 14px; }
+.cinematic-brief .lab-name { flex: initial; }
+#lab-cinematic-folder input:not([type="checkbox"]):not([type="file"]), #lab-cinematic-folder select { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); padding: 8px 10px; }
+#lab-cinematic-folder .lab-inline input[type="checkbox"] { width: auto; }
+#lab-cinematic-folder .lab-field { font-size: 14px; gap: 6px; }
+.cinematic-file { cursor: pointer; display: inline-flex; align-items: center; }
+.cinematic-chat { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; margin: 12px 0; }
+.cinematic-turn { padding: 10px 12px; }
+.cinematic-turn.user { background: var(--bg); }
+.cinematic-turn p, .cinematic-saved-prompt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cinematic-turn p { margin: 0; }
+.cinematic-turn button { align-self: flex-start; }
+#cinematic-chat-form { display: flex; flex-direction: column; gap: 8px; }
+.cinematic-generator { display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+.cinematic-generators { display: grid; gap: 12px; }
+.cinematic-generator .lab-side-head select { flex: 1; }
+.cinematic-capabilities { white-space: pre-line; margin: 0; line-height: 1.6; }
+.cinematic-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.cinematic-reference { position: relative; width: 110px; margin: 0; }
+.cinematic-reference img { width: 110px; height: 90px; object-fit: cover; border-radius: 10px; }
+.cinematic-reference figcaption { overflow-wrap: anywhere; }
+.cinematic-reference button { position: absolute; top: 2px; right: 2px; background: var(--surface); }
+.cinematic-references { flex-wrap: wrap; gap: 10px; }
+.cinematic-audio { display: flex; flex-direction: column; gap: 6px; width: min(100%, 280px); }
+.cinematic-audio audio { width: 100%; }
+.cinematic-preflight { display: flex; flex-direction: column; gap: 8px; }
+.cinematic-preflight p { margin: 0; }
+.cinematic-compatible { color: var(--ok); }
+.cinematic-results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; align-items: start; }
+.cinematic-result { position: static; }
+.cinematic-result > p { margin: 0; overflow-wrap: anywhere; }
+.cinematic-result video { width: 100%; max-height: 420px; background: #000; border-radius: 12px; }
+.cinematic-result .lab-metrics dd { overflow-wrap: anywhere; }
+#cinematic-comparison textarea { width: 100%; }
+@media (max-width: 800px) { .cinematic-editor { grid-template-columns: minmax(0, 1fr); } }

@@ -189,7 +189,7 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
         if (!out) throw new Error(`La tarea ${id} terminó sin resultado.`);
         return out;
       }
-      if (['failed', 'cancelled', 'canceled', 'timeout'].includes(status)) {
+      if (['failed', 'cancelled', 'canceled', 'timeout', 'deleted'].includes(status)) {
         const e = new Error(`WaveSpeed: la tarea ${id} terminó en "${status}"${data.error ? `: ${String(data.error).slice(0, 300)}` : ''}.`);
         e.final = true; // la tarea murió: no se puede retomar
         throw e;

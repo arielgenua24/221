@@ -92,11 +92,11 @@ function setTab(tab) {
   if (tab !== 'raw') { stopListening(); stopSpeaking(); } else if (current) resumeListening();
 }
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
+  if (b.dataset.tab === 'lab') { history.replaceState(null, '', '#laboratorio'); setTab('lab'); return; }
   if (b.dataset.tab === 'story' && current) window.dispatchEvent(new CustomEvent('story-folder-context', { detail: current.id }));
   setTab(b.dataset.tab);
   if (b.dataset.tab === 'studio') history.replaceState(null, '', '#estudio');
   else if (b.dataset.tab === 'story') history.replaceState(null, '', '#historia');
-  else if (b.dataset.tab === 'lab') history.replaceState(null, '', '#laboratorio');
   else history.replaceState(null, '', current ? `#raw/${current.id}` : '#raw');
 }));
 
@@ -733,10 +733,11 @@ function route() {
   const hash = location.hash.slice(1);
   if (hash === 'estudio' || new URLSearchParams(location.search).get('modo')) return setTab('studio');
   if (/^historia(\/|$)/.test(hash)) return setTab('story');
-  if (hash === 'laboratorio') return setTab('lab');
+  if (/^\/?laboratorio(\/|$)/.test(hash)) return setTab('lab');
   setTab('raw');
   const m = /^raw\/(.+)$/.exec(hash);
   loadFolders().then(() => { if (m && folders.some((f) => f.id === m[1])) openFolder(m[1]); }).catch((err) => showError(err.message));
 }
 route();
+window.addEventListener('hashchange', () => { if (/^\/?laboratorio(\/|$)/.test(location.hash.slice(1))) setTab('lab'); });
 setPhase('idle');

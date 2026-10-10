@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compileMotionLayer, extractCode, ALLOWED_IMPORTS, buildRuntime, REMOTION_VERSION } from '../src/lab/runtime.js';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { labSystem, harnessVersion, SKILL_FILES, briefContent, zonesFor, imageRegistry } from '../src/lab/harness.js';
 import { parseLabBody, runLabAgent, usedReferences, paletteAndObjects, MAX_COMPILE_RETRIES } from '../src/lab/pipeline.js';
 import { mockLabLLM } from '../src/lab/mock.js';
-import { createLabTools, toolDefs, MAX_GENERATED_IMAGES } from '../src/lab/tools.js';
+import { createLabTools, toolDefs, MAX_GENERATED_IMAGES, TOOL_COSTS, IMAGE_MODEL, IMAGE_EDIT_MODEL } from '../src/lab/tools.js';
 import { createMockWaveSpeed } from '../src/wavespeed.js';
 import { frameHtml } from '../src/lab/routes.js';
 import { newRun, runMetrics, modelStats, experimentStatus, isAdjusted } from '../public/lab-stats.js';
@@ -68,7 +68,7 @@ test('el harness incluye las Remotion Agent Skills, el contrato de capa y las he
   assert.match(all, /buscar_referencias/);
   assert.match(all, /generar_imagen/);
   assert.doesNotMatch(none, /buscar_referencias|generar_imagen/);
-  assert.match(harnessVersion({ search: true, images: true }), new RegExp(`^v5 · remotion ${REMOTION_VERSION.replace(/\./g, '\\.')}.*búsqueda obligatoria\\+imagen propia`));
+  assert.match(harnessVersion({ search: true, images: true }), new RegExp(`^v6 · remotion ${REMOTION_VERSION.replace(/\./g, '\\.')}.*búsqueda obligatoria\\+imagen propia`));
   assert.match(all, /OBLIGATORIO/);
   assert.match(all, /PALETA DE COLORES/);
   assert.match(all, /OBJETOS DE REFERENCIA/);
@@ -281,28 +281,112 @@ test('el resultado trae la paleta y los objetos que declaró el agente', async (
   assert.ok(result.objects.length >= 1);
 });
 
-test('generar_imagen llama a la Image API de OpenRouter con nano-banana y usa el costo real', async () => {
-  let req;
+test('las imágenes requieren WaveSpeed; la clave de OpenRouter sola no las habilita', () => {
+  assert.equal(createLabTools({ openrouterKey: 'k' }).available.images, false);
+  assert.equal(createLabTools({ wavespeedKey: 'k' }).available.images, true);
+  assert.equal(createLabTools({ mock: true }).available.images, true);
+});
+
+function waveSpeedFetch({ failure, downloadFailure = false } = {}) {
+  const calls = [];
+  let polls = 0;
   const fetchImpl = async (url, init) => {
-    req = { url, body: JSON.parse(init.body), auth: init.headers.Authorization };
-    return { ok: true, status: 200, json: async () => ({ data: [{ b64_json: 'AAAA', media_type: 'image/png' }], usage: { cost: 0.0421 } }) };
+    calls.push({ url, init });
+    if (url.endsWith('/media/upload/binary')) {
+      assert.ok(init.body instanceof FormData);
+      assert.equal(init.body.get('file').type, 'image/jpeg');
+      return Response.json({ data: { download_url: 'https://cdn.example/ref.jpg' } });
+    }
+    if (init.method === 'POST') return Response.json({ data: { id: 'task-1' } });
+    if (url.endsWith('/predictions/task-1/result')) {
+      if (failure) return Response.json({ data: { status: failure, error: 'rechazada' } });
+      return Response.json({ data: ++polls % 2 ? { status: 'processing' } : { status: 'completed', outputs: ['https://cdn.example/out.png'] } });
+    }
+    assert.equal(url, 'https://cdn.example/out.png');
+    return new Response(Buffer.from('AAAA', 'base64'), { status: downloadFailure ? 404 : 200, headers: { 'Content-Type': 'image/png' } });
   };
-  const tools = createLabTools({ openrouterKey: 'k', fetchImpl });
+  return { fetchImpl, calls };
+}
+
+const imageContext = () => ({ emit: () => {}, registry: new Map([['C1-1', IMG]]), aspect: '9:16', state: { searches: 0, searchSeq: 0, generated: 0, toolCost: 0 } });
+const imageCall = (args) => ({ function: { name: 'generar_imagen', arguments: JSON.stringify(args) } });
+
+test('generar_imagen sube referencias, usa Nano Banana 2.1 edit y entrega una data URL a Remotion', async (t) => {
+  const mediaDir = await mkdtemp(path.join(tmpdir(), 'lab-images-'));
+  t.after(() => rm(mediaDir, { recursive: true, force: true }));
+  const { fetchImpl, calls } = waveSpeedFetch();
+  const tools = createLabTools({ wavespeedKey: 'k', mediaDir, fetchImpl, pollMs: 0 });
   const events = [];
-  const ctx = { emit: (e) => events.push(e), registry: new Map([['C1-1', IMG]]), aspect: '9:16', state: { searches: 0, searchSeq: 0, generated: 0, toolCost: 0 } };
-  const out = await tools.run({ function: { name: 'generar_imagen', arguments: JSON.stringify({ prompt: 'sticker', imagenes: ['C1-1'] }) } }, ctx);
-  assert.match(req.url, /\/images$/);
-  assert.equal(req.body.model, 'google/gemini-nano-banana-2.1');
-  assert.equal(req.body.aspect_ratio, '9:16');
-  assert.deepEqual(req.body.input_references, [{ type: 'image_url', image_url: { url: IMG } }]);
-  assert.equal(req.auth, 'Bearer k');
+  const ctx = { ...imageContext(), emit: (e) => events.push(e) };
+  const out = await tools.run(imageCall({ prompt: 'sticker', imagenes: ['C1-1'] }), ctx);
+  assert.match(calls[0].url, /\/api\/v3\/media\/upload\/binary$/);
+  assert.ok(calls[1].url.endsWith(`/api/v3/${IMAGE_EDIT_MODEL}`));
+  assert.deepEqual(JSON.parse(calls[1].init.body), {
+    prompt: 'sticker', aspect_ratio: '9:16', resolution: '1k', output_format: 'png',
+    enable_web_search: false, enable_image_search: false, images: ['https://cdn.example/ref.jpg'],
+  });
+  for (const call of calls.slice(0, -1)) assert.equal(call.init.headers.Authorization, 'Bearer k');
   assert.match(out.text, /Listo: gen1/);
-  assert.equal(ctx.state.toolCost, 0.0421);
+  assert.equal(ctx.state.toolCost, TOOL_COSTS.image + TOOL_COSTS.imageReference);
   assert.equal(events.find((e) => e.type === 'asset').url, 'data:image/png;base64,AAAA');
-  // Sin imágenes de entrada también genera (solo con el prompt).
-  await tools.run({ function: { name: 'generar_imagen', arguments: JSON.stringify({ prompt: 'otra' }) } }, ctx);
-  assert.equal(req.body.input_references, undefined);
-  assert.equal(ctx.state.generated, 2);
+  assert.equal(ctx.registry.get('gen1'), 'data:image/png;base64,AAAA');
+  assert.equal(out.parts[1].image_url.url, ctx.registry.get('gen1'));
+});
+
+test('sin referencias usa text-to-image, respeta la proporción y conserva el límite de imágenes', async (t) => {
+  const mediaDir = await mkdtemp(path.join(tmpdir(), 'lab-images-'));
+  t.after(() => rm(mediaDir, { recursive: true, force: true }));
+  const { fetchImpl, calls } = waveSpeedFetch();
+  const tools = createLabTools({ wavespeedKey: 'k', mediaDir, fetchImpl, pollMs: 0 });
+  const ctx = imageContext();
+  const out = await tools.run(imageCall({ prompt: 'otra', proporcion: '16:9' }), ctx);
+  assert.ok(calls[0].url.endsWith(`/api/v3/${IMAGE_MODEL}`));
+  const body = JSON.parse(calls[0].init.body);
+  assert.equal(body.aspect_ratio, '16:9');
+  assert.equal(body.images, undefined);
+  assert.match(out.text, /Listo: gen1/);
+  assert.equal(ctx.state.toolCost, TOOL_COSTS.image);
+  await tools.run(imageCall({ prompt: 'segunda' }), ctx);
+  const before = calls.length;
+  assert.match((await tools.run(imageCall({ prompt: 'tercera' }), ctx)).text, /el máximo/);
+  assert.equal(calls.length, before);
+  assert.equal(ctx.state.generated, MAX_GENERATED_IMAGES);
+});
+
+test('referencias inexistentes no envían solicitudes a WaveSpeed', async () => {
+  const tools = createLabTools({ wavespeedKey: 'k', fetchImpl: () => assert.fail('no debe llamar al proveedor') });
+  const ctx = imageContext();
+  assert.match((await tools.run(imageCall({ prompt: 'x', imagenes: ['S99'] }), ctx)).text, /no existen/);
+  assert.equal(ctx.state.generated, 0);
+  assert.equal(ctx.state.toolCost, 0);
+});
+
+test('las fallas de WaveSpeed y descargas no emiten assets ni aumentan el contador', async (t) => {
+  for (const options of [{ failure: 'failed' }, { failure: 'deleted' }, { downloadFailure: true }]) {
+    await t.test(JSON.stringify(options), async () => {
+      const { fetchImpl } = waveSpeedFetch(options);
+      const tools = createLabTools({ wavespeedKey: 'k', fetchImpl, pollMs: 0 });
+      const events = [];
+      const ctx = { ...imageContext(), emit: (e) => events.push(e) };
+      assert.match((await tools.run(imageCall({ prompt: 'x' }), ctx)).text, /Error al generar la imagen.*WaveSpeed/);
+      assert.equal(ctx.state.generated, 0);
+      assert.equal(ctx.state.toolCost, 0);
+      assert.equal(ctx.registry.has('gen1'), false);
+      assert.equal(events.some((e) => e.type === 'asset'), false);
+    });
+  }
+});
+
+test('cancelar la ejecución cancela también la generación de imágenes', async () => {
+  const controller = new AbortController();
+  const tools = createLabTools({ wavespeedKey: 'k', pollMs: 0, fetchImpl: async (_url, init) => {
+    controller.abort();
+    init.signal.throwIfAborted();
+    assert.fail('la solicitud debe abortar');
+  } });
+  const ctx = { ...imageContext(), signal: controller.signal };
+  assert.match((await tools.run(imageCall({ prompt: 'x' }), ctx)).text, /Error al generar la imagen.*abort/i);
+  assert.equal(ctx.state.generated, 0);
 });
 
 test('el runtime del iframe empaqueta React + Remotion y lo inyecta en un documento con CSP', async () => {

@@ -14,8 +14,9 @@ export const SKILLS_COMMIT = '32b241b97f4e0e4ab61fe9a41b05e6e64503f8c5';
 // v3: buscar referencias en internet es obligatorio antes de diseñar (y al revisar).
 // v4: generar al menos una imagen propia (nano-banana por OpenRouter) y usarla; declarar qué referencias usó.
 // v5: las referencias sirven para sacar una paleta de colores y objetos de referencia; los declara en sus notas.
+// v6: Nano Banana 2.1 por WaveSpeed, con text-to-image y edit según las referencias.
 const toolsLabel = (t) => [t?.search && 'búsqueda obligatoria', t?.images && 'imagen propia'].filter(Boolean).join('+') || 'sin herramientas';
-export const harnessVersion = (tools) => `v5 · remotion ${REMOTION_VERSION} · skills ${SKILLS_COMMIT.slice(0, 7)} · ${toolsLabel(tools)}`;
+export const harnessVersion = (tools) => `v6 · remotion ${REMOTION_VERSION} · skills ${SKILLS_COMMIT.slice(0, 7)} · ${toolsLabel(tools)}`;
 
 // Las reglas de las skills que aplican a una capa de motion design sobre un video.
 // (Studio, render por CLI, audio, mapas, 3D y captions quedan afuera: acá no existen.)
@@ -45,7 +46,7 @@ Cada imagen que ves tiene un id: C1-2 (cuadro 2 de la zona C1), C1-R1 (referenci
   1. PALETA DE COLORES. Mirá los colores dominantes y de acento de las referencias que elegiste y armá una paleta de 3 a 6 colores en hex (fondos o placas, texto, acentos). Elegila para que conviva con la luz y el color del video (armonía o contraste a propósito, nunca al azar) y para que el texto se lea sobre los cuadros reales. Usá ESOS hex en el código, no colores genéricos.
   2. OBJETOS DE REFERENCIA (si los hay). Fijate qué objetos, formas o elementos gráficos se repiten o identifican al tema (ej. una pelota, una taza, hojas, un ticket, un sello, flechas, marcos, un tipo de ícono). Usalos como motivos de la animación: dibujalos con código (formas, SVG, @remotion/shapes) o, si hace falta una pieza con más detalle, pedila con generar_imagen. Si las referencias no muestran objetos útiles, no los inventes.
   Podés buscar a propósito para cualquiera de los dos usos (ej. "autumn coffee color palette", "vintage toy ball illustration").` : ''}${tools.images ? `
-- generar_imagen(prompt, imagenes?, proporcion?): genera UNA imagen con nano-banana para usar DENTRO de la animación como \`images.gen1\` / \`images.gen2\` con \`<Img>\` de remotion. Esperamos que generes AL MENOS UNA y que sea protagonista: es lo que lleva la animación de "texto que se mueve" a una pieza con concepto. Pensala desde las referencias que encontraste: una ilustración con estilo propio, un objeto o personaje, el producto recortado y estilizado, una textura o un fondo gráfico para un título. Dale dirección de arte concreta en el prompt (estilo, paleta, luz, encuadre) y, si va encima del video, pedí fondo liso de un color o una pieza pensada para superponerse. Después animala (entrada, movimiento, salida) e integrala con la tipografía. Máx. ${MAX_GENERATED_IMAGES} en todo el trabajo (incluidas las revisiones).` : ''}
+- generar_imagen(prompt, imagenes?, proporcion?): genera UNA imagen con Nano Banana 2.1 vía WaveSpeed para usar DENTRO de la animación como \`images.gen1\` / \`images.gen2\` con \`<Img>\` de remotion. Esperamos que generes AL MENOS UNA y que sea protagonista: es lo que lleva la animación de "texto que se mueve" a una pieza con concepto. Pensala desde las referencias que encontraste: una ilustración con estilo propio, un objeto o personaje, el producto recortado y estilizado, una textura o un fondo gráfico para un título. Dale dirección de arte concreta en el prompt (estilo, paleta, luz, encuadre) y, si va encima del video, pedí fondo liso de un color o una pieza pensada para superponerse. Después animala (entrada, movimiento, salida) e integrala con la tipografía. Máx. ${MAX_GENERATED_IMAGES} en todo el trabajo (incluidas las revisiones).` : ''}
 Si usás herramientas, terminá igual con el componente completo en un bloque \`\`\`tsx.`;
 }
 

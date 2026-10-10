@@ -5,7 +5,7 @@
 import { parseLabBody, runLabAgent, MAX_COMPILE_RETRIES, MAX_BRIEF_REFS, MAX_ZONE_SECONDS, MAX_TOOL_ROUNDS } from './pipeline.js';
 import { buildRuntime, runtimeInfo, GOOGLE_FONTS } from './runtime.js';
 import { harnessVersion, SKILL_FILES, SKILLS_COMMIT } from './harness.js';
-import { createLabTools, TOOL_COSTS, IMAGE_MODEL, MAX_GENERATED_IMAGES, MAX_SEARCHES } from './tools.js';
+import { createLabTools, TOOL_COSTS, IMAGE_MODEL, IMAGE_EDIT_MODEL, MAX_GENERATED_IMAGES, MAX_SEARCHES } from './tools.js';
 import { mockLabLLM } from './mock.js';
 import { readFile } from 'node:fs/promises';
 
@@ -37,10 +37,10 @@ async function visionModels() {
   }
 }
 
-// openrouterKey: la de los modelos (también genera las imágenes); serpKey: la de SerpAPI (búsqueda de referencias).
-export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, openrouterKey, serpKey = process.env.SERPAPI_API_KEY }) {
+// wavespeedKey: imágenes; serpKey: búsqueda de referencias. Los modelos de los agentes siguen en OpenRouter.
+export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, wavespeedKey, mediaDir, serpKey = process.env.SERPAPI_API_KEY }) {
   const labLlm = mock ? mockLabLLM : llm;
-  const tools = createLabTools({ serpKey, openrouterKey, mock });
+  const tools = createLabTools({ serpKey, wavespeedKey, mediaDir, mock });
 
   async function run(req, res) {
     let input;
@@ -72,7 +72,7 @@ export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, ope
       harness: {
         version: harnessVersion(tools.available), skillsCommit: SKILLS_COMMIT, skills: SKILL_FILES, maxCompileRetries: MAX_COMPILE_RETRIES, maxBriefRefs: MAX_BRIEF_REFS,
         maxZoneSeconds: MAX_ZONE_SECONDS, fonts: GOOGLE_FONTS, ...runtimeInfo(),
-        tools: { ...tools.available, imageModel: IMAGE_MODEL, maxImages: MAX_GENERATED_IMAGES, maxSearches: MAX_SEARCHES, maxRounds: MAX_TOOL_ROUNDS, costs: TOOL_COSTS },
+        tools: { ...tools.available, imageProvider: 'wavespeed', imageModel: IMAGE_MODEL, imageEditModel: IMAGE_EDIT_MODEL, maxImages: MAX_GENERATED_IMAGES, maxSearches: MAX_SEARCHES, maxRounds: MAX_TOOL_ROUNDS, costs: TOOL_COSTS },
       },
     });
   }
