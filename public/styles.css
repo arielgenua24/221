@@ -861,8 +861,6 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 .table-seat-status { color: var(--muted); white-space: nowrap; }
 .table-seat[data-state="speaking"] .table-seat-status { color: var(--seat); font-weight: 700; }
 .table-seat[data-state="done"] .table-seat-status { color: var(--ok); }
-.table-bubble { background: var(--bg); border: 1px solid var(--border); border-left: 3px solid var(--seat); border-radius: 12px; padding: 8px 10px; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; }
-.table-bubble.pass { color: var(--muted); font-style: italic; }
 .table-say { display: flex; flex-direction: column; gap: 6px; }
 .drop-over { outline: 2px dashed var(--accent); outline-offset: 3px; }
 .table-file-chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -894,3 +892,222 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 .table-final-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 @media (max-width: 1100px) { .table-board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "center center" "a b" "d c"; } }
 @media (max-width: 640px) { .table-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: "center" "a" "b" "c" "d"; } }
+
+/* Mesa de agentes · la sala (table-scene.js). Una luz por agente: lo que está encendido es lo que importa ahora. */
+.table-stage { padding: 0; gap: 0; overflow: hidden; }
+.table-scene {
+  --room: #efe6d8; --room-2: #e4d8c5; --tile: rgba(120, 90, 50, .07); --rug: #ddd0bb; --rug-line: rgba(120, 85, 45, .18);
+  --wood-hi: #c78c58; --wood-lo: #a46a3c; --wood-side: #7a4a28; --grain: rgba(90, 50, 20, .14); --rim: rgba(255, 235, 205, .45);
+  --paper: #fffdf8; --ink: rgba(60, 50, 40, .35); --note: #ffe27a; --dim: #1c120a; --plate: rgba(255, 255, 255, .86); --cloud: rgba(255, 255, 255, .94);
+  position: relative; aspect-ratio: 1200 / 610; container-type: inline-size; background: var(--room); user-select: none; -webkit-user-select: none;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .table-scene {
+  --room: #1a1714; --room-2: #211d19; --tile: rgba(255, 230, 200, .045); --rug: #28221d; --rug-line: rgba(255, 220, 180, .08);
+  --wood-hi: #7d5232; --wood-lo: #5a3820; --wood-side: #3b2415; --grain: rgba(0, 0, 0, .25); --rim: rgba(255, 210, 160, .16);
+  --paper: #ece6d9; --ink: rgba(40, 32, 24, .45); --note: #e9c95a; --dim: #000; --plate: rgba(34, 31, 28, .88); --cloud: rgba(38, 35, 31, .95);
+} }
+:root[data-theme="dark"] .table-scene {
+  --room: #1a1714; --room-2: #211d19; --tile: rgba(255, 230, 200, .045); --rug: #28221d; --rug-line: rgba(255, 220, 180, .08);
+  --wood-hi: #7d5232; --wood-lo: #5a3820; --wood-side: #3b2415; --grain: rgba(0, 0, 0, .25); --rim: rgba(255, 210, 160, .16);
+  --paper: #ece6d9; --ink: rgba(40, 32, 24, .45); --note: #e9c95a; --dim: #000; --plate: rgba(34, 31, 28, .88); --cloud: rgba(38, 35, 31, .95);
+}
+.ts-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.ts-floor { fill: var(--room); }
+.ts-tile-line { stroke: var(--tile); stroke-width: 1.5; }
+.ts-rug { fill: var(--rug); }
+.ts-rug-line { fill: none; stroke: var(--rug-line); stroke-width: 3; stroke-dasharray: 2 9; stroke-linecap: round; }
+.ts-wood-hi { stop-color: var(--wood-hi); } .ts-wood-lo { stop-color: var(--wood-lo); }
+.ts-table { cursor: copy; outline: none; }
+.ts-table-side { fill: var(--wood-side); }
+.ts-grain { fill: none; stroke: var(--grain); stroke-width: 1.2; }
+.ts-table-rim { fill: none; stroke: var(--rim); stroke-width: 3; }
+.ts-table-drop { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 10 10; opacity: 0; transition: opacity .2s; }
+.ts-table:hover .ts-table-drop, .ts-table:focus-visible .ts-table-drop { opacity: .35; }
+.ts-table.drop-over .ts-table-drop { opacity: 1; animation: ts-march 1s linear infinite; }
+@keyframes ts-march { to { stroke-dashoffset: -20; } }
+
+/* Papeles: archivos y mensajes tuyos. Caen sobre la mesa y se levantan al tocarlos. */
+.ts-paper { cursor: pointer; outline: none; transition: transform .6s cubic-bezier(.2, .8, .2, 1); }
+.ts-lift { transition: transform .18s ease-out; }
+.ts-paper:hover .ts-lift, .ts-paper:focus-visible .ts-lift { transform: translateY(-7px); }
+.ts-paper:focus-visible .ts-sheet, .ts-paper:focus-visible .ts-note { stroke: var(--accent); stroke-width: 3; }
+.ts-paper.dropped .ts-lift { animation: ts-drop .55s cubic-bezier(.2, .9, .3, 1.2); }
+@keyframes ts-drop { from { transform: translateY(-60px); opacity: 0; } 60% { opacity: 1; } }
+.ts-sheet { fill: var(--paper); stroke: rgba(0, 0, 0, .08); stroke-width: 1; }
+.ts-paper-shadow { fill: rgba(0, 0, 0, .18); }
+.ts-note { fill: var(--note); }
+.ts-paper.private .ts-note { fill: color-mix(in srgb, var(--seat) 30%, var(--note)); }
+.ts-ink { stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; }
+.ts-fold { fill: rgba(0, 0, 0, .1); }
+.ts-pdf-band { fill: #d64545; } .ts-txt-band { fill: #5c6f86; }
+.ts-band-text { fill: #fff; font: 800 9px var(--font); text-anchor: middle; }
+.ts-code { fill: rgba(40, 30, 20, .7); font: 700 10px var(--font); }
+.ts-missing { fill: rgba(0, 0, 0, .12); }
+.ts-lock { fill: var(--seat); stroke: var(--paper); stroke-width: 2; }
+
+/* La misión: la hoja del centro. Se enciende cuando el relator escribe y se sella al terminar. */
+.ts-mission { cursor: pointer; outline: none; }
+.ts-mission-title { fill: rgba(40, 30, 20, .8); font: 800 15px var(--font); letter-spacing: 3px; }
+.ts-mission-text { fill: rgba(40, 30, 20, .62); font: 600 12px var(--font); }
+.ts-mission[data-state="empty"] .ts-mission-text { fill: var(--accent); }
+.ts-mission-glow { fill: none; stroke: #ffd77a; stroke-width: 10; opacity: 0; transition: opacity .6s; }
+.ts-mission:hover .ts-mission-glow, .ts-mission:focus-visible .ts-mission-glow { opacity: .35; }
+.ts-mission[data-state="writing"] .ts-mission-glow { animation: ts-breathe 1.8s ease-in-out infinite; }
+.ts-mission[data-state="done"] .ts-mission-glow { stroke: var(--ok); opacity: .45; }
+.ts-seal { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.ts-seal circle { fill: var(--ok); } .ts-seal path { stroke: #fff; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+.ts-mission[data-state="done"] .ts-seal { opacity: 1; animation: ts-stamp .5s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes ts-stamp { from { opacity: 0; scale: 2.2; } }
+@keyframes ts-breathe { 50% { opacity: .9; } from, to { opacity: .25; } }
+
+/* Ambiente: cuando la mesa trabaja, la sala baja la luz y mandan las lámparas. */
+.ts-dim { fill: var(--dim); opacity: 0; pointer-events: none; transition: opacity 1.4s ease; }
+[data-phase="running"] .ts-dim { opacity: .18; }
+[data-phase="paused"] .ts-dim { opacity: .12; }
+[data-phase="synthesis"] .ts-dim { opacity: .26; }
+[data-phase="done"] .ts-dim { opacity: .1; }
+.ts-light { pointer-events: none; mix-blend-mode: screen; }
+.ts-cone, .ts-pool { opacity: 0; transition: opacity .7s ease; }
+.ts-cone[data-state="speaking"] { opacity: .75; } .ts-pool[data-state="speaking"] { opacity: 1; }
+.ts-cone[data-state="thinking"], .ts-pool[data-state="thinking"] { animation: ts-flicker 1.1s ease-in-out infinite; }
+.ts-cone[data-state="focus"] { opacity: .4; } .ts-pool[data-state="focus"] { opacity: .55; }
+.ts-pool[data-state="done"] { opacity: .35; }
+.ts-pool[data-state="listening"], .ts-pool[data-state="waiting"], .ts-pool[data-state="ready"] { opacity: .12; }
+@keyframes ts-flicker { 0%, 100% { opacity: .15; } 40% { opacity: .6; } 55% { opacity: .3; } }
+
+/* Lámparas: el cuerpo es del color del agente; la cabeza gira hacia donde presta atención. */
+.ts-lamp { cursor: pointer; outline: none; }
+.ts-lamp-shadow { fill: rgba(0, 0, 0, .22); pointer-events: none; }
+.ts-tone { fill: var(--seat); }
+.ts-dark { fill: color-mix(in srgb, var(--seat) 60%, #000); }
+.ts-hi { fill: rgba(255, 255, 255, .28); stroke: rgba(255, 255, 255, .4); stroke-width: 2; stroke-linecap: round; }
+.ts-arm { stroke: color-mix(in srgb, var(--seat) 80%, #000); stroke-width: 7; stroke-linecap: round; }
+.ts-spring { stroke: color-mix(in srgb, var(--seat) 40%, #fff); stroke-width: 1.5; stroke-dasharray: 2 2.5; opacity: .7; }
+.ts-joint { fill: color-mix(in srgb, var(--seat) 45%, #000); }
+.ts-head { transition: transform .9s cubic-bezier(.3, .9, .3, 1); }
+.ts-bulb { fill: #6f675c; transition: fill .4s; }
+.ts-glow { opacity: 0; transition: opacity .6s; pointer-events: none; }
+.ts-lamp[data-state="speaking"] .ts-bulb, .ts-lamp[data-state="thinking"] .ts-bulb, .ts-lamp[data-state="focus"] .ts-bulb { fill: #fffbea; }
+.ts-lamp[data-state="speaking"] .ts-glow { opacity: 1; }
+.ts-lamp[data-state="thinking"] .ts-glow { animation: ts-flicker 1.1s ease-in-out infinite; }
+.ts-lamp[data-state="focus"] .ts-glow { opacity: .6; }
+.ts-lamp:is([data-state="ready"], [data-state="waiting"], [data-state="listening"], [data-state="done"]) .ts-bulb { fill: #ffe6a6; }
+.ts-lamp:is([data-state="ready"], [data-state="waiting"], [data-state="listening"]) .ts-glow { opacity: .22; }
+.ts-lamp[data-state="done"] .ts-glow { opacity: .45; }
+.ts-lamp[data-state="off"] .ts-tone, .ts-lamp[data-state="off"] .ts-arm { filter: saturate(.35); }
+.ts-lamp[data-state="pass"] { opacity: .78; }
+.ts-bob { transform-box: view-box; }
+.ts-lamp[data-state="speaking"] .ts-bob { animation: ts-talk .5s ease-in-out infinite alternate; }
+.ts-lamp[data-state="thinking"] .ts-bob { animation: ts-ponder 2.4s ease-in-out infinite; }
+@keyframes ts-talk { to { transform: rotate(-4deg); } }
+@keyframes ts-ponder { 50% { transform: rotate(-9deg); } }
+.ts-focus-ring { fill: none; stroke: var(--seat); stroke-width: 3; opacity: 0; }
+.ts-lamp:hover .ts-focus-ring, .ts-lamp:focus-visible .ts-focus-ring { opacity: .6; }
+.ts-lamp.drop-over .ts-focus-ring { opacity: 1; stroke-dasharray: 6 6; animation: ts-march 1s linear infinite; }
+.ts-lamp.drop-over .ts-bulb { fill: #fffbea; } .ts-lamp.drop-over .ts-glow { opacity: 1; }
+.ts-stack { cursor: pointer; outline: none; }
+.ts-stack:hover, .ts-stack:focus-visible { filter: drop-shadow(0 0 4px var(--seat)); }
+
+/* Ficha de turno. */
+.ts-token { pointer-events: none; transition: transform .9s cubic-bezier(.5, 0, .2, 1); }
+.ts-token-side { fill: color-mix(in srgb, var(--seat) 55%, #000); }
+.ts-token-top { fill: var(--seat); stroke: rgba(255, 255, 255, .7); stroke-width: 2; }
+.ts-token-mark { fill: #fff; }
+
+/* Capa HTML: carteles, nubes y avisos (texto nítido, a escala de la sala). */
+.ts-overlay { position: absolute; inset: 0; pointer-events: none; font-size: clamp(11px, 1.12cqi, 14px); }
+.ts-overlay > * { pointer-events: auto; position: absolute; margin: 0; }
+.ts-plate { transform: translate(-50%, 0); display: flex; align-items: center; gap: 6px; max-width: 18%; padding: 3px 10px 3px 3px; border: 1px solid var(--border); border-radius: 99px; background: var(--plate); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); font-size: .92em; line-height: 1.2; cursor: pointer; white-space: nowrap; color: var(--text); transition: box-shadow .3s, transform .3s; }
+.ts-plate b { display: grid; place-items: center; width: 1.7em; height: 1.7em; flex-shrink: 0; border-radius: 50%; background: var(--seat); color: #fff; font-size: .85em; }
+.ts-plate-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+.ts-plate-state { color: var(--muted); font-size: .88em; }
+.ts-plate[data-state="speaking"], .ts-plate[data-state="thinking"] { box-shadow: 0 0 0 2px var(--seat), 0 6px 18px color-mix(in srgb, var(--seat) 40%, transparent); transform: translate(-50%, -3px); }
+.ts-plate[data-state="speaking"] .ts-plate-state, .ts-plate[data-state="thinking"] .ts-plate-state { color: var(--seat); font-weight: 700; }
+.ts-plate[data-state="done"] .ts-plate-state { color: var(--ok); font-weight: 700; }
+.ts-plate[data-state="off"] .ts-plate-name { color: var(--muted); font-weight: 600; }
+.ts-plate:focus-visible, .ts-cloud:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.ts-cloud { --w: 28%; width: var(--w); max-height: 8.4em; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; padding: .6em .85em; border: 1px solid var(--border); border-radius: 1.3em; background: var(--cloud); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 8px 24px rgba(0, 0, 0, .14); color: var(--text); text-align: left; font-size: 1em; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; white-space: pre-wrap; transition: opacity .4s, transform .4s; animation: ts-cloud-in .4s cubic-bezier(.2, .9, .3, 1.2); }
+.ts-cloud::before, .ts-cloud::after { content: ""; position: absolute; border-radius: 50%; background: var(--cloud); border: 1px solid var(--border); }
+.ts-cloud::before { width: .9em; height: .9em; } .ts-cloud::after { width: .55em; height: .55em; }
+@keyframes ts-cloud-in { from { opacity: 0; transform: scale(.92) translateY(6px); } }
+/* Cada nube cerca de su lámpara, en el aire libre de la sala. Las colitas apuntan a la cabeza. */
+.ts-cloud.seat-a { right: 67.6%; top: 18%; transform: translateY(-100%); overflow: visible; }
+.ts-cloud.seat-b { left: 67.6%; top: 18%; transform: translateY(-100%); overflow: visible; }
+.ts-cloud.seat-d { --w: 22%; right: 75.5%; top: 53%; overflow: visible; }
+.ts-cloud.seat-c { --w: 22%; left: 75.5%; top: 53%; overflow: visible; }
+.ts-cloud.final { --w: 27%; left: 50%; top: 2.5%; transform: translateX(-50%); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.ts-cloud.seat-a::before { right: -.3em; bottom: -.9em; } .ts-cloud.seat-a::after { right: -1.1em; bottom: -1.7em; }
+.ts-cloud.seat-b::before { left: -.3em; bottom: -.9em; } .ts-cloud.seat-b::after { left: -1.1em; bottom: -1.7em; }
+.ts-cloud.seat-d::before { right: -1em; top: .2em; } .ts-cloud.seat-d::after { right: -1.8em; top: -.5em; }
+.ts-cloud.seat-c::before { left: -1em; top: .2em; } .ts-cloud.seat-c::after { left: -1.8em; top: -.5em; }
+.ts-cloud.final::before, .ts-cloud.final::after { display: none; }
+.ts-cloud-text { display: block; max-height: 7em; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; }
+.ts-cloud.active { border-color: var(--seat, var(--ok)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--seat, var(--ok)) 35%, transparent), 0 10px 30px rgba(0, 0, 0, .18); z-index: 2; }
+.ts-cloud.active .ts-cloud-text { -webkit-line-clamp: unset; display: flex; flex-direction: column; justify-content: flex-end; }
+.ts-cloud.past { opacity: .78; font-size: .9em; }
+.ts-cloud.past .ts-cloud-text { -webkit-line-clamp: 3; }
+.ts-cloud.pass { font-style: italic; color: var(--muted); }
+.ts-cloud.done .ts-cloud-text::after { content: "  ✓ listo"; color: var(--ok); font-style: normal; font-weight: 700; }
+.ts-cloud.final.done .ts-cloud-text::after { content: none; }
+.ts-cloud.hint { opacity: .7; font-size: .88em; color: var(--muted); border-style: dashed; }
+.ts-cloud.hint .ts-cloud-text { -webkit-line-clamp: 3; }
+.ts-cloud small { color: var(--muted); font-size: .85em; margin-top: .3em; }
+.ts-dots { display: flex; gap: .35em; padding: .35em 0; }
+.ts-dots i { width: .5em; height: .5em; border-radius: 50%; background: var(--seat, var(--ok)); animation: ts-dot 1.1s ease-in-out infinite; }
+.ts-dots i:nth-child(2) { animation-delay: .15s; } .ts-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes ts-dot { 0%, 60%, 100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-.35em); opacity: 1; } }
+.ts-hint { transform: translate(-50%, 0); color: var(--muted); font-size: .9em; white-space: nowrap; pointer-events: none !important; }
+.ts-drop-hint { left: 50%; bottom: 4%; transform: translateX(-50%); padding: .5em 1.1em; border-radius: 99px; background: var(--text); color: var(--bg); font-weight: 700; white-space: nowrap; pointer-events: none !important; box-shadow: 0 8px 24px rgba(0, 0, 0, .2); }
+
+/* HUD: estado, rondas y controles, como la barra de un reproductor. */
+.table-hud { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto; align-items: center; gap: 12px 18px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.table-hud .table-progress p { margin: 4px 0 0; color: var(--muted); }
+.table-hud .table-controls { flex-wrap: nowrap; }
+.table-hud .table-controls .primary { min-height: 40px; padding: 8px 16px; }
+.table-status { display: flex; align-items: center; gap: 8px; margin: 0; padding: 6px 14px 6px 10px; border-radius: 99px; background: var(--surface-2); font-weight: 600; white-space: nowrap; }
+.table-wave { display: flex; align-items: center; gap: 2px; height: 16px; flex-shrink: 0; }
+.table-wave i { width: 3px; height: 4px; border-radius: 2px; background: var(--muted); }
+.table-status[data-phase="running"] .table-wave i, .table-status[data-phase="synthesis"] .table-wave i { background: var(--accent); animation: table-wave 1s ease-in-out infinite; }
+.table-wave i:nth-child(2) { animation-delay: .2s !important; } .table-wave i:nth-child(3) { animation-delay: .4s !important; } .table-wave i:nth-child(4) { animation-delay: .1s !important; }
+.table-status[data-phase="done"] .table-wave i { background: var(--ok); height: 10px; }
+@keyframes table-wave { 50% { height: 15px; } }
+.table-composer { flex-direction: row; align-items: flex-end; gap: 8px; padding: 0 16px 14px; }
+.table-composer textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); padding: 9px 12px; min-height: 40px; }
+.table-composer .actions { flex-wrap: nowrap; }
+.table-composer .small-btn { align-self: auto; }
+.table-seat.flash, .table-entry.flash, .table-center.flash, .table-final.flash { animation: table-flash 1.2s ease; }
+@keyframes table-flash { 20% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--seat, var(--accent)) 45%, transparent); } }
+
+/* Vista previa de un papel de la mesa. */
+.table-preview { width: min(860px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); padding: 16px; flex-direction: column; gap: 12px; }
+.table-preview[open] { display: flex; }
+.table-preview::backdrop { background: rgba(10, 8, 6, .55); backdrop-filter: blur(3px); }
+.table-preview-body { min-height: 0; overflow: auto; }
+.table-preview-body img { display: block; max-width: 100%; max-height: 70dvh; margin: 0 auto; border-radius: 10px; }
+.table-preview-body iframe { width: 100%; height: 70dvh; border: 0; border-radius: 10px; background: #fff; }
+.table-preview-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.5 var(--font); }
+
+@media (max-width: 900px) {
+  .table-hud { grid-template-columns: minmax(0, 1fr) auto; }
+  .table-hud .table-progress { grid-column: 1 / -1; grid-row: 2; }
+}
+/* Sala chica (teléfono): las nubes no entran al lado de cada lámpara; queda solo la que está hablando, abajo. */
+@container (max-width: 640px) {
+  .ts-overlay { font-size: 11px; }
+  .ts-cloud { display: none; }
+  .ts-cloud.active { display: flex; left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 5.8em; transform: none; }
+  .ts-cloud.active::before, .ts-cloud.active::after { display: none; }
+  .ts-plate { padding: 2px; max-width: none; } .ts-plate-name, .ts-plate-state { display: none; }
+  .ts-hint { display: none; }
+}
+@media (max-width: 640px) {
+  .table-composer { flex-direction: column; align-items: stretch; }
+  .table-hud { grid-template-columns: minmax(0, 1fr); }
+  .table-hud .table-progress { grid-row: auto; }
+  .table-hud .table-controls { flex-wrap: wrap; }
+  .table-status { justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .table-scene *, .table-scene *::before, .table-scene *::after, .table-wave i { animation: none !important; transition: none !important; }
+}

@@ -32,6 +32,9 @@ try {
   assert.equal(await page.locator('#lab-motion-folder').isVisible(), false);
   assert.equal(await page.locator('#lab-cinematic-folder').isVisible(), false);
   assert.equal(await page.locator('.table-seat').count(), 4);
+  // La sala: cuatro lámparas apagadas hasta que cada agente tenga nombre y modelo.
+  assert.equal(await page.locator('.ts-lamp[data-state="off"]').count(), 4);
+  assert.equal(await page.locator('.ts-drop-hint').isVisible(), false);
 
   // Sin configurar no arranca.
   await page.click('#table-start');
@@ -49,11 +52,32 @@ try {
   await page.setInputFiles('.seat-b input[type="file"]', brief);
   await page.locator('.seat-b .table-file').waitFor();
   assert.match(await page.locator('.seat-b .table-file').textContent(), /B1 · brief\.md/);
+  assert.equal(await page.locator('.ts-lamp[data-state="ready"]').count(), 4);
+  assert.equal(await page.locator('.ts-paper.private').count(), 1);
+  // Soltar un archivo sobre la lámpara de D: privado para D.
+  await page.locator('.ts-lamp[data-seat="D"]').evaluate((lamp) => {
+    const data = new DataTransfer(); data.items.add(new File(['Nota para D'], 'nota-d.txt', { type: 'text/plain' }));
+    lamp.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }));
+    lamp.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+  });
+  await page.locator('.seat-d .table-file').waitFor();
+  assert.match(await page.locator('.seat-d .table-file').textContent(), /D1 · nota-d\.txt/);
+  assert.equal(await page.locator('.ts-drop-hint').isVisible(), false);
+  await page.click('.seat-d .table-file button');
+  // Tocar la mesa abre el selector de archivos para los cuatro.
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator('.ts-table').click({ position: { x: 120, y: 260 } })]);
+  assert.equal(chooser.isMultiple(), true);
+  // Tocar un papel lo muestra (y dice quién lo ve).
+  await page.locator('.ts-paper.private').click();
+  assert.match(await page.locator('#table-preview[open]').textContent(), /B1 · brief\.md.*Solo lo ve B/);
+  await page.click('#table-preview >> text=Cerrar');
 
   // Ronda 1: los cuatro hablan una vez y la mesa se pausa.
   await page.click('#table-start');
+  await page.locator('.ts-lamp[data-state="speaking"]').waitFor({ timeout: 20000 });
   await page.locator('#table-continue').waitFor({ state: 'visible', timeout: 20000 });
   assert.equal(await page.locator('.table-entry:not(.user)').count(), 4);
+  assert.equal(await page.locator('.ts-stack:not([hidden])').count(), 4);
   assert.equal(await page.locator('.seat-b input, .seat-b textarea').first().isDisabled(), true);
   const starter = requests[0].seat;
   assert.deepEqual(requests.map((r) => r.seat), [starter, ...['A', 'B', 'C', 'D', 'A', 'B', 'C'].slice('ABCD'.indexOf(starter) + 1, 'ABCD'.indexOf(starter) + 4)]);
@@ -83,6 +107,8 @@ try {
   assert.equal(requests.at(-1).reason, 'consensus');
   assert.match(await page.locator('#table-final').textContent(), /Entrega final/);
   assert.equal(await page.locator('#table-say-text').isDisabled(), true);
+  assert.equal(await page.locator('.ts-mission[data-state="done"]').count(), 1);
+  assert.equal(await page.locator('.ts-lamp[data-state="focus"]').count(), 4);
   await page.screenshot({ path: process.env.SCREENSHOT || path.join(dir, 'table.png'), fullPage: true });
   if (process.env.SCREENSHOT) { await page.locator('.table-log-card').scrollIntoViewIfNeeded(); await page.screenshot({ path: process.env.SCREENSHOT.replace('.png', '-log.png') }); }
 

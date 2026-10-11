@@ -1,6 +1,7 @@
 import { $, el, streamEvents } from './shared.js';
 import * as store from './table-store.js';
 import { SEATS, MAX_ROUNDS, speakingOrder, drawStarter, nextStep, advance, parseReply, nextFileCode, totalCost } from './table-core.js';
+import { createScene } from './table-scene.js';
 
 // Laboratorio · Mesa de agentes. El navegador orquesta las rondas: cada turno es un POST a
 // /api/lab/table/turn con el registro completo, así el usuario puede intervenir entre dos turnos cualquiera.
@@ -10,8 +11,8 @@ const MAX_TEXT = 60000;
 const MAX_PDF = 12 * 1024 * 1024;
 const TEXT_FILE = /\.(md|txt|csv|json|srt|vtt|ya?ml|xml|html?)$/i;
 
-let started = false, session = null, fileData = {}, controller = null, looping = false, pauseRequested = false, streaming = null, historyVisible = false;
-const seats = {}; // seat → { card, inputs, status, bubble, files, whisper }
+let started = false, scene = null, session = null, fileData = {}, controller = null, looping = false, pauseRequested = false, streaming = null, historyVisible = false;
+const seats = {}; // seat → { card, inputs, status, files, whisper }
 
 const error = (text = '') => { $('table-error').textContent = text; $('table-error').hidden = !text; };
 const money = (v) => `US$ ${(Number(v) || 0).toFixed(4)}`;
@@ -226,7 +227,6 @@ function buildSeat(seat) {
   const notesLabel = el('label', 'lab-field small', 'Lo que quieras sumarle (tono, límites, conocimiento…)');
   const notes = el('textarea'); notes.rows = 2; notes.maxLength = 4000;
   notesLabel.append(notes);
-  const bubble = el('div', 'table-bubble');
   const files = el('div', 'table-files');
   const whisper = el('form', 'table-say');
   const text = el('textarea'); text.rows = 1; text.maxLength = 20000; text.setAttribute('aria-label', `Mensaje privado para ${seat}`);
@@ -241,8 +241,8 @@ function buildSeat(seat) {
   text.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer: fine)').matches) { e.preventDefault(); whisper.requestSubmit(); } });
   const bind = (input, key) => input.addEventListener('input', () => { if (session.status !== 'setup') return; agentOf(seat)[key] = input.value; save(); updateHeader(); });
   bind(name, 'name'); bind(model, 'model'); bind(mission, 'mission'); bind(notes, 'notes');
-  card.append(head, modelLabel, ...(all ? [all] : []), missionLabel, notesLabel, files, bubble, whisper);
-  seats[seat] = { card, name, model, mission, notes, all, status, bubble, files, whisper, text };
+  card.append(head, modelLabel, ...(all ? [all] : []), missionLabel, notesLabel, files, whisper);
+  seats[seat] = { card, name, model, mission, notes, all, status, files, whisper, text };
   return card;
 }
 
@@ -285,11 +285,6 @@ function renderSeats() {
     const [state, text] = seatState(seat);
     s.card.dataset.state = state; s.status.textContent = text;
     s.files.replaceChildren(filesRow(seat));
-    const last = lastOf(seat);
-    const live = streaming?.seat === seat;
-    s.bubble.hidden = !live && !last;
-    s.bubble.textContent = live ? (streaming.text || '…') : last ? (last.action === 'pass' ? `[pasó]${last.text ? ` ${last.text}` : ''}` : last.text) : '';
-    s.bubble.classList.toggle('pass', !live && last?.action === 'pass');
   }
   updateHeader();
 }
@@ -329,6 +324,9 @@ function renderControls() {
   ['table-name', 'table-goal', 'table-synthesis-model'].forEach((id) => { $(id).disabled = st !== 'setup'; });
   $('table-say').querySelectorAll('textarea, button, input').forEach((n) => { n.disabled = st === 'done'; });
   $('table-files-table').replaceChildren(filesRow('table'));
+  const status = { setup: 'Mesa lista para empezar', running: 'Los agentes están conversando…', paused: 'En pausa', synthesis: 'Escribiendo la entrega…', done: 'Entrega lista' };
+  $('table-status').dataset.phase = st;
+  $('table-status-text').textContent = st === 'running' && pauseRequested ? 'Pausa al terminar el turno…' : status[st];
   const cost = totalCost(session);
   $('table-cost').textContent = session.log.some((e) => e.type === 'agent') ? `Costo total: ${money(cost)}` : '';
 }
@@ -346,6 +344,7 @@ function entryNode(e) {
     return node;
   }
   node.classList.add(`seat-${e.seat.toLowerCase()}`);
+  node.dataset.seat = e.seat;
   if (e.action === 'pass') node.classList.add('pass');
   head.append(el('span', 'lab-badge', e.seat), el('strong', null, agentOf(e.seat).name), el('span', 'muted', `ronda ${e.round}`));
   if (e.action === 'pass') head.append(el('span', 'table-tag', 'pasó'));
@@ -392,10 +391,9 @@ function renderFinal() {
 
 function updateLive() {
   if (!streaming) return;
-  if (streaming.seat === 'final') { const t = $('table-final').querySelector('.table-final-text'); if (t) t.textContent = streaming.text || streaming.note || 'Redactando…'; return; }
-  const s = seats[streaming.seat];
-  s.bubble.hidden = false; s.bubble.textContent = streaming.text || '…';
-  s.status.textContent = streaming.note || 'Hablando…';
+  if (streaming.seat === 'final') { scene?.live(streaming); const t = $('table-final').querySelector('.table-final-text'); if (t) t.textContent = streaming.text || streaming.note || 'Redactando…'; return; }
+  scene?.live(streaming);
+  seats[streaming.seat].status.textContent = streaming.note || 'Hablando…';
   if (liveNode) {
     const p = liveNode.querySelector('p') || liveNode.appendChild(el('p'));
     p.textContent = streaming.text || '…';
@@ -407,6 +405,7 @@ function updateLive() {
 function render() {
   if (!session) return;
   renderSeats(); renderProgress(); renderControls(); renderLog(); renderFinal();
+  scene?.render({ session, streaming, fileData, last: lastOf });
 }
 
 function download() {
@@ -422,6 +421,72 @@ function download() {
   const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/markdown' }));
   const a = el('a'); a.href = url; a.download = `${(session.name || 'mesa-de-agentes').replace(/[^\w\-áéíóúñ ]+/gi, '').trim().replace(/\s+/g, '-') || 'mesa'}.md`; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- La sala: lo que pasa al tocar cada objeto ----------
+const flash = (node) => { node.classList.remove('flash'); void node.offsetWidth; node.classList.add('flash'); };
+
+// Lámpara o cartel: el asiento de ese agente (para configurarlo antes, o para hablarle en privado después).
+function focusSeat(seat) {
+  const s = seats[seat];
+  s.card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  flash(s.card);
+  const target = session.status === 'setup' ? (s.name.value.trim() ? s.mission : s.name) : session.status !== 'done' ? s.text : null;
+  target?.focus({ preventScroll: true });
+}
+
+// Nube o pila de aportes: lo último que dijo ese agente, en la conversación.
+function showLast(seat) {
+  const node = streaming?.seat === seat ? liveNode : [...$('table-log').querySelectorAll(`.table-entry[data-seat="${seat}"]`)].at(-1);
+  if (!node) return focusSeat(seat);
+  node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  flash(node);
+}
+
+// Hoja del centro: la misión (se edita antes de empezar) o, al final, la entrega.
+function showMission() {
+  const target = session.final || streaming?.seat === 'final' ? $('table-final') : $('table-center');
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  flash(target);
+  if (session.status === 'setup') $('table-goal').focus({ preventScroll: true });
+}
+
+function openTable() {
+  if (session.status === 'done') return showMission();
+  $('table-file').click();
+}
+
+// Papeles sobre la mesa: un archivo (f:M1) o un mensaje tuyo (n:índice del registro).
+async function preview(key) {
+  const box = $('table-preview');
+  const [type, id] = [key.slice(0, 1), key.slice(2)];
+  const audience = (to) => (to === 'table' ? 'Lo ven los cuatro' : `Solo lo ve ${labelOf(to)}`);
+  const head = el('div', 'lab-side-head');
+  const body = el('div', 'table-preview-body');
+  const actions = el('div', 'actions compact');
+  let url = null;
+  if (type === 'n') {
+    const entry = session.log[Number(id)];
+    if (!entry) return;
+    head.append(el('strong', null, entry.to === 'table' ? 'Tu mensaje a la mesa' : 'Tu mensaje privado'), el('span', 'muted small', `${audience(entry.to)} · ${entry.round ? `ronda ${entry.round}` : 'antes de empezar'}`));
+    body.append(el('p', 'table-preview-text', entry.text));
+  } else {
+    const file = session.files.find((f) => f.code === id);
+    if (!file) return;
+    head.append(el('strong', null, `${file.code} · ${file.name}`), el('span', 'muted small', audience(file.to)));
+    const data = fileData[file.code];
+    if (!data) body.append(el('p', 'muted', 'El contenido no está en este navegador: no se envía a los agentes.'));
+    else if (file.kind === 'image') { const img = el('img'); img.src = data; img.alt = file.name; body.append(img); }
+    else if (file.kind === 'pdf') { url = URL.createObjectURL(await (await fetch(data)).blob()); const frame = el('iframe'); frame.src = url; frame.title = file.name; body.append(frame); }
+    else body.append(el('pre', 'table-preview-text', data));
+    if (session.status === 'setup') actions.append(button('Sacar de la mesa', () => { box.close(); removeFile(file.code); }));
+  }
+  head.querySelector('strong').id = 'table-preview-title';
+  actions.append(button('Cerrar', () => box.close()));
+  box.replaceChildren(head, body, actions);
+  box.onclose = () => { if (url) URL.revokeObjectURL(url); };
+  box.onclick = (e) => { if (e.target === box) box.close(); };
+  box.showModal();
 }
 
 // ---------- Historial ----------
@@ -478,6 +543,7 @@ function start() {
   started = true;
   const board = $('table-board');
   SEATS.forEach((seat) => board.append(buildSeat(seat)));
+  scene = createScene($('table-scene'), { seat: focusSeat, cloud: showLast, mission: showMission, table: openTable, paper: preview });
   fetch('/api/lab/models').then((r) => r.json()).then((d) => {
     $('table-llms').replaceChildren(...(d.models || []).map((m) => { const o = el('option'); o.value = m.id; o.label = m.prompt || m.completion ? `${m.name} · US$ ${m.prompt.toFixed(2)} / ${m.completion.toFixed(2)} por 1M` : m.name; return o; }));
   }).catch(() => {});
@@ -511,13 +577,16 @@ const dropTarget = (e) => e.target.closest?.('[data-drop]')?.dataset.drop || 'ta
 window.addEventListener('dragover', (e) => {
   if (document.body.dataset.tab !== 'table') return;
   e.preventDefault();
-  document.querySelectorAll('#lab-table-folder [data-drop]').forEach((n) => n.classList.toggle('drop-over', n.dataset.drop === dropTarget(e)));
+  const to = dropTarget(e);
+  document.querySelectorAll('#lab-table-folder [data-drop]').forEach((n) => n.classList.toggle('drop-over', n.dataset.drop === to));
+  if (session && !historyVisible) scene?.drag(to, Object.fromEntries(session.agents.map((a) => [a.seat, a.name])));
 });
-window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.querySelectorAll('#lab-table-folder .drop-over').forEach((n) => n.classList.remove('drop-over')); });
+const endDrag = () => { document.querySelectorAll('#lab-table-folder .drop-over').forEach((n) => n.classList.remove('drop-over')); scene?.drag(null); };
+window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) endDrag(); });
 window.addEventListener('drop', (e) => {
   if (document.body.dataset.tab !== 'table') return;
   e.preventDefault();
-  document.querySelectorAll('#lab-table-folder .drop-over').forEach((n) => n.classList.remove('drop-over'));
+  endDrag();
   if (!session || historyVisible) return;
   const to = dropTarget(e);
   const files = [...(e.dataTransfer?.files || [])];

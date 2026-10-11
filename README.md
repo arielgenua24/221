@@ -147,6 +147,13 @@ Ronda 1..10: en su turno cada agente escucha todo lo anterior y elige UNA cosa:
 Relator (el modelo que elijas, o el de A) → la entrega final, en Markdown, lista para copiar o descargar con toda la conversación
 ```
 
+- **La sala** (`public/table-scene.js`): la mesa se ve como una sala isométrica donde cada lámpara es un agente, y cada objeto significa algo:
+  - **Luz**: se enciende la lámpara de quien habla (titila mientras piensa, antes de la primera palabra); las demás quedan tenues y **giran la cabeza hacia quien habla**. Si pasó, se apaga y baja la cabeza; si dijo [LISTO], queda con luz suave. Con la mesa trabajando, la sala baja su luz.
+  - **Nubes**: sobre cada lámpara, lo que está diciendo en vivo (o lo último que dijo). Tocarla lleva a ese mensaje en la conversación. Antes de empezar, muestra su misión, o invita a configurarlo.
+  - **Mesa**: tocarla agrega archivos para los cuatro; soltarlos encima, lo mismo. Soltarlos sobre una lámpara (o su cartel) los deja **privados** para ese agente. Los archivos y tus mensajes quedan como papeles sobre la mesa (los privados, en la luz de su dueño, con un punto de su color); tocarlos los muestra.
+  - **Hoja del centro**: la misión final. Se ilumina cuando el relator escribe y se sella al terminar; tocarla abre la entrega.
+  - **Ficha de turno**: nace en el centro con el sorteo y se desliza hasta quien habla o habla después. **Pila de hojas** junto a cada lámpara: cuántos aportes hizo (tocarla lleva al último).
+  - **Carteles**: nombre y estado de cada agente; tocarlos (o la lámpara) lleva a su asiento para configurarlo o hablarle en privado.
 - **Lo que ve cada agente**: el registro de la mesa, sus propios mensajes y archivos privados, y nada de lo privado de los demás. El relator ve solo lo público. El servidor arma esa vista en cada turno (`src/table/prompts.js`); las reglas de rondas, turnos y consenso son puras y compartidas con el navegador (`public/table-core.js`).
 - **Archivos**: imágenes (se reducen a 1280 px), texto (`.md`, `.txt`, `.csv`, `.json`…, hasta 60.000 caracteres) y PDF (hasta 12 MB). Hasta 40 por mesa; cada agente recibe las 16 imágenes más recientes que le corresponden. Video y audio todavía no.
 - **Turnos sin estado**: cada turno es un `POST /api/lab/table/turn` con el registro completo (respuesta NDJSON en streaming), así se puede pausar, cortar un turno, reintentar uno que falló o intervenir entre dos turnos cualquiera. Los archivos se reenvían en cada turno: con muchas imágenes, el costo crece por turno.
