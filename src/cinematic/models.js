@@ -37,6 +37,8 @@ export function demoVideoCatalog() {
     { ...settings, id: 'alibaba/wan-3.0-prime', name: 'Wan 3.0 Prime · demo', provider: 'openrouter', references: false, audioReference: false },
     { ...settings, id: 'bytedance/seedance-2.5/text-to-video', name: 'Seedance 2.5 · demo', provider: 'wavespeed', firstFrame: false, schema },
     { ...settings, id: 'alibaba/wan-3.0-prime/reference-to-video', name: 'Wan 3.0 Prime · demo', provider: 'wavespeed', firstFrame: false, schema },
+    // La mesa de agentes anima el cuadro de cada toma (image→video).
+    { ...settings, durations: [2, 3, 4, 5, 6, 7, 8, 9, 10], id: 'alibaba/wan-3.0-prime/image-to-video', name: 'Wan 3.0 Prime i2v · demo', provider: 'wavespeed', references: false, audioReference: false, schema: { ...schema, properties: { ...schema.properties, image: {} } } },
   ], warnings: ['Catálogo de demostración; no se envían generaciones reales.'] };
 }
 export function createVideoCatalog({ wavespeedKey, fetchImpl = fetch, mock = false }) {

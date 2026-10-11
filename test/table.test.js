@@ -134,5 +134,6 @@ test('Mesa: el modo demo responde, pasa y da por resuelta la misión', async () 
   const done = (await post(handle, body({ seat: 'A', round: 3 }))).events().at(-1);
   assert.equal(parseReply(done.text).done, true);
   const final = (await post(handle, body({ kind: 'synthesis', reason: 'rounds' }))).events().at(-1);
-  assert.match(final.text, /Entrega final/);
+  assert.equal(final.delivery.shots.length, 3);
+  assert.match(final.delivery.pendientes[0], /modo demo/);
 });

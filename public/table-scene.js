@@ -100,7 +100,8 @@ function buildLamp(seat, layer) {
 
 // Un papel en el plano de la mesa: se ve achatado como la mesa y se levanta al pasarle el mouse.
 function paperNode(item) {
-  const g = svg('g', { class: `ts-paper kind-${item.kind}${item.to !== 'table' ? ' private' : ''}`, role: 'button', tabindex: '0', style: `--seat: var(--seat-${item.to === 'table' ? 'a' : item.to.toLowerCase()})` });
+  const tint = item.gen || (item.to === 'table' ? 'a' : item.to);
+  const g = svg('g', { class: `ts-paper kind-${item.kind}${item.to !== 'table' ? ' private' : ''}${item.gen ? ' generated' : ''}`, role: 'button', tabindex: '0', style: `--seat: var(--seat-${tint.toLowerCase()})` });
   const lift = svg('g', { class: 'ts-lift' }, g);
   const flat = svg('g', { transform: `scale(1 ${RY / RX}) rotate(${item.rot})` }, lift);
   const box = (w, h, cls) => { svg('rect', { class: 'ts-paper-shadow', x: -w / 2 + 3, y: -h / 2 + 4, width: w, height: h, rx: 2 }, flat); return svg('rect', { class: cls, x: -w / 2, y: -h / 2, width: w, height: h, rx: 2 }, flat); };
@@ -113,6 +114,11 @@ function paperNode(item) {
     if (item.data) svg('image', { href: item.data, x: -38, y: -31, width: 76, height: 52, preserveAspectRatio: 'xMidYMid slice' }, flat);
     else svg('rect', { class: 'ts-missing', x: -38, y: -31, width: 76, height: 52 }, flat);
     svg('text', { class: 'ts-code', x: -38, y: 31 }, flat).textContent = item.code;
+  } else if (item.kind === 'audio') {
+    // Voz o sonido generado: una tarjeta con su onda.
+    box(64, 52, 'ts-sheet');
+    [10, 22, 14, 26, 18, 8, 20, 12].forEach((hgt, i) => svg('rect', { class: 'ts-wave', x: -24 + i * 6.2, y: -6 - hgt / 2, width: 3.4, height: hgt, rx: 1.5 }, flat));
+    svg('text', { class: 'ts-code', x: -26, y: 22 }, flat).textContent = item.code;
   } else {
     box(58, 74, 'ts-sheet');
     svg('path', { class: 'ts-fold', d: 'M 17 -37 L 29 -25 L 17 -25 Z' }, flat);
@@ -122,6 +128,7 @@ function paperNode(item) {
     svg('text', { class: 'ts-code', x: -24, y: 33 }, flat).textContent = item.code;
   }
   if (item.to !== 'table') svg('circle', { class: 'ts-lock', cx: 0, cy: 0, r: 6, transform: `translate(${item.kind === 'note' ? 24 : 30} -${item.kind === 'note' ? 24 : 28})` }, flat);
+  if (item.gen) svg('circle', { class: 'ts-lock', cx: 0, cy: 0, r: 6, transform: `translate(${item.kind === 'audio' ? 26 : 36} -${item.kind === 'audio' ? 20 : 29})` }, flat);
   titled(g, item.title);
   return g;
 }
@@ -298,6 +305,11 @@ export function createScene(mount, on) {
   function renderPapers(view) {
     const { session, fileData } = view;
     const items = session.files.map((f) => ({ key: `f:${f.code}`, kind: f.kind, to: f.to, code: f.code, data: fileData[f.code], title: `${f.code} · ${f.name} — ${f.to === 'table' ? 'lo ven los cuatro' : `solo lo ve ${f.to}`}` }));
+    // Lo que generaron los agentes: sobre la mesa, con el punto de color de quien lo generó.
+    for (const a of session.assets || []) {
+      const what = a.kind === 'image' ? 'imagen' : a.kind === 'voice' ? 'voz' : 'sonido';
+      items.push({ key: `g:${a.code}`, kind: a.kind === 'image' ? 'image' : 'audio', to: 'table', gen: a.seat, code: a.code, data: a.kind === 'image' ? a.url : null, title: `${a.code} · ${what} generada por ${a.seat} — la conocen los cuatro` });
+    }
     const notes = session.log.map((e, i) => ({ e, i })).filter(({ e }) => e.type === 'user' && e.text);
     const keep = (list, to, n) => list.filter(({ e }) => e.to === to).slice(-n);
     for (const { e, i } of [...keep(notes, 'table', 4), ...SEATS.flatMap((s) => keep(notes, s, 2))]) {

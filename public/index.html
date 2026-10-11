@@ -281,9 +281,15 @@
                 <section id="table-center" class="lab-card table-center" data-drop="table" aria-label="Misión de la mesa">
                   <div class="lab-side-head"><strong>Misión</strong><span class="muted small">la hoja del centro de la mesa</span></div>
                   <label class="lab-field">Nombre de la mesa<input id="table-name" maxlength="120" placeholder="Ej. Spot de 30 s para la cafetería"></label>
-                  <label class="lab-field">Misión final (lo que la mesa tiene que entregar)<textarea id="table-goal" rows="3" maxlength="4000" placeholder="Ej. Un guion de video de 30 s, plano por plano, con prompts listos para generar cada toma."></textarea></label>
+                  <label class="lab-field">Misión final (lo que la mesa tiene que entregar)<textarea id="table-goal" rows="3" maxlength="4000" placeholder="Ej. Un spot de 20 s para la cafetería: una clienta habitual, voz en off cálida, tomas de hasta 6 s."></textarea></label>
                   <label class="lab-field">Relator de la entrega final (vacío = el modelo de A)<input id="table-synthesis-model" class="lab-model" list="table-llms" placeholder="Modelo de OpenRouter" autocomplete="off"></label>
                   <label class="lab-inline"><input id="table-autopause" type="checkbox" checked> Pausar al terminar cada ronda</label>
+                  <div class="table-produce">
+                    <label class="lab-field">Formato de la pieza<select id="table-aspect"><option value="9:16">9:16 · vertical</option><option value="16:9">16:9 · horizontal</option><option value="1:1">1:1 · cuadrado</option><option value="3:4">3:4</option><option value="4:3">4:3</option></select></label>
+                    <label class="lab-field">Presupuesto para generar en las rondas (US$)<input id="table-budget" type="number" min="0" max="50" step="0.1" inputmode="decimal"></label>
+                  </div>
+                  <label class="lab-inline"><input id="table-tools" type="checkbox" checked> Los agentes pueden generar imágenes, voces y sonidos</label>
+                  <p id="table-media-note" class="muted small"></p>
                   <div class="table-files" id="table-files-table"></div>
                 </section>
               </div>

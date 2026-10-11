@@ -78,6 +78,14 @@ try {
   await page.locator('#table-continue').waitFor({ state: 'visible', timeout: 20000 });
   assert.equal(await page.locator('.table-entry:not(.user)').count(), 4);
   assert.equal(await page.locator('.ts-stack:not([hidden])').count(), 4);
+  // En demo, cada agente generó una pieza en la ronda 1: queda en su mensaje y sobre la mesa.
+  assert.equal(await page.locator('.table-entry .table-asset').count(), 4);
+  assert.equal(await page.locator('.ts-paper.generated').count(), 4);
+  assert.match(await page.locator('#table-cost').textContent(), /generado en la mesa/);
+  assert.ok(requests.at(-1).assets.length >= 3, 'el último turno conoce lo generado');
+  await page.locator('.ts-paper.generated.kind-image').first().click();
+  assert.match(await page.locator('#table-preview[open]').textContent(), /imagen de/);
+  await page.click('#table-preview >> text=Cerrar');
   assert.equal(await page.locator('.seat-b input, .seat-b textarea').first().isDisabled(), true);
   const starter = requests[0].seat;
   assert.deepEqual(requests.map((r) => r.seat), [starter, ...['A', 'B', 'C', 'D', 'A', 'B', 'C'].slice('ABCD'.indexOf(starter) + 1, 'ABCD'.indexOf(starter) + 4)]);
@@ -99,13 +107,46 @@ try {
   const lastTurn = requests.at(-1);
   assert.equal(lastTurn.log.filter((e) => e.type === 'user' && e.to === 'C').length, 1);
 
-  // Al continuar, el relator redacta la entrega final.
+  // Al continuar, el relator arma la entrega de producción: tomas con sus partes, cada una con dueño.
   await page.click('#table-continue');
-  await page.locator('#table-final .table-final-text').waitFor({ timeout: 20000 });
-  await page.waitForFunction(() => document.querySelector('#table-final').textContent.includes('Relator'));
+  await page.locator('#table-final .prod-shot').first().waitFor({ timeout: 20000 });
   assert.equal(requests.at(-1).kind, 'synthesis');
   assert.equal(requests.at(-1).reason, 'consensus');
-  assert.match(await page.locator('#table-final').textContent(), /Entrega final/);
+  assert.match(await page.locator('#table-final').textContent(), /Entrega de producción/);
+  assert.equal(await page.locator('.prod-shot:not(.prod-music)').count(), 3);
+  assert.ok(await page.locator('.prod-part:not(.empty)').count() >= 10);
+  // Lo que la mesa ya generó se reutiliza (no se vuelve a pagar).
+  assert.ok(await page.locator('.prod-part >> text=de la mesa:').count() >= 1);
+
+  // RUN de un cuadro: el resultado aparece en su tarjeta.
+  const frame = page.locator('.prod-shot[data-shot="S2"] .prod-part.kind-cuadro');
+  await frame.locator('.prod-run').click();
+  await frame.locator('img.prod-media').waitFor({ timeout: 20000 });
+
+  // Feedback al dueño de la parte, con la mesa ya cerrada: responde y deja una versión nueva.
+  await frame.locator('text=Hablar con').click();
+  await frame.locator('.prod-say textarea').fill('Más luz de mañana, por favor');
+  await frame.locator('.prod-say button[type="submit"]').click();
+  await frame.locator('.prod-msg.agent:not(.live)').waitFor({ timeout: 20000 });
+  assert.match(await frame.textContent(), /v2\/2/);
+  assert.match(await frame.locator('.prod-prompt').textContent(), /Más luz de mañana/);
+  assert.equal(await frame.locator('img.prod-media').count(), 0, 'la versión nueva todavía no se corrió');
+  assert.equal(requests.at(-1).kind, 'part');
+  assert.equal(requests.at(-1).part.owner, 'B');
+
+  // Video: se aprueba explícitamente (motor, duración, costo) y se genera desde el cuadro.
+  const clip = page.locator('.prod-shot[data-shot="S1"] .prod-part.kind-video');
+  await clip.locator('.prod-run').click();
+  assert.match(await clip.locator('.prod-approve').textContent(), /Wan 3\.0 Prime.*HeyGen/);
+  await clip.locator('.prod-approve .primary').click();
+  await page.waitForFunction(() => document.querySelector('.prod-shot[data-shot="S1"] .prod-part.kind-video').textContent.includes('Demo: no se genera el archivo'), null, { timeout: 20000 });
+
+  // La película: las tomas en orden con su voz y su sonido.
+  await page.click('text=▶ Ver la película');
+  await page.locator('.prod-stage').waitFor();
+  assert.equal(await page.locator('.prod-seg').count(), 3);
+  await page.waitForFunction(() => /0:0[1-9]/.test(document.querySelector('.prod-player-controls').textContent), null, { timeout: 8000 });
+  await page.click('.prod-player-controls >> text=Pausa');
   assert.equal(await page.locator('#table-say-text').isDisabled(), true);
   assert.equal(await page.locator('.ts-mission[data-state="done"]').count(), 1);
   assert.equal(await page.locator('.ts-lamp[data-state="focus"]').count(), 4);
@@ -113,8 +154,9 @@ try {
   if (process.env.SCREENSHOT) { await page.locator('.table-log-card').scrollIntoViewIfNeeded(); await page.screenshot({ path: process.env.SCREENSHOT.replace('.png', '-log.png') }); }
 
   // Se guarda en el navegador: al recargar sigue ahí y aparece en el historial.
-  await page.reload(); await page.locator('#table-final').waitFor({ state: 'visible' });
+  await page.reload(); await page.locator('#table-final .prod-shot').first().waitFor({ state: 'visible' });
   assert.equal(await page.locator('.table-entry:not(.user)').count(), 12);
+  assert.match(await page.locator('.prod-shot[data-shot="S2"] .prod-part.kind-cuadro').textContent(), /v2\/2/);
   await page.click('#table-history-toggle');
   assert.match(await page.locator('#table-history').textContent(), /Spot cafetería/);
   await page.setViewportSize({ width: 390, height: 900 });

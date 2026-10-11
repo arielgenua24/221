@@ -131,34 +131,51 @@ Pruebas: `npm test`. Flujo de navegador: `PLAYWRIGHT_MODULE=/ruta/a/playwright/i
 
 ## Laboratorio · Mesa de agentes
 
-`#laboratorio/mesa-de-agentes`. Cuatro agentes, cada uno con su **nombre, misión/rol, indicaciones y modelo de OpenRouter**, sentados alrededor de una mesa con una **misión final** que también escribís vos. Conversan por turnos hasta cumplirla.
+`#laboratorio/mesa-de-agentes`. Cuatro agentes, cada uno con su **nombre, misión/rol, indicaciones y modelo de OpenRouter**, sentados alrededor de una mesa con una **misión final** que también escribís vos. Conversan por turnos y, mientras conversan, **producen de verdad** (imágenes, voces y sonidos en WaveSpeed). Al final no entregan un prompt para copiar y pegar: entregan una **producción por tomas** que se corre parte por parte desde la misma pantalla.
 
 ```
 Asiento A ─────────── MESA ─────────── Asiento B      soltar en un asiento → privado para ese agente (A1, B2…)
-   │          misión final + archivos M1…   │         soltar en la mesa     → lo ven los cuatro (M1, M2…)
+   │   misión final + formato + presupuesto  │         soltar en la mesa     → lo ven los cuatro (M1, M2…)
 Asiento D ──────────────────────────── Asiento C
   ▼ "Sentarse y empezar": sorteo → empieza uno al azar y siguen en sentido horario
 Ronda 1..10: en su turno cada agente escucha todo lo anterior y elige UNA cosa:
-   aportar algo nuevo · responder/corregir a otro · pasar ([PASO]) · y marcar [LISTO] si cree que la misión ya está resuelta
+   aportar · responder/corregir a otro · pasar ([PASO]) · y marcar [LISTO] si cree que la misión ya está resuelta
+   🛠 y, si le sirve, GENERA (los cuatro tienen las mismas herramientas, máximo 2 piezas por turno, con tope de US$ de la mesa):
+      generar_imagen → Nano Banana 2.1 (cuadro de storyboard, personaje, look; puede partir de M1, A2, G3…)
+      generar_voz    → ElevenLabs v4 (la línea de un personaje, con [whispers], [laughs]…)
+      generar_sonido → ElevenLabs Sound Effects v2 (efecto, ambiente o música, hasta 22 s)
+      lo generado queda sobre la mesa como G1, G2…: los demás VEN las imágenes y LEEN cómo es cada audio
    ✋ VOS, en cualquier momento: un mensaje o archivo a toda la mesa, o en privado a un agente
-      (lo toma el próximo turno; por defecto la mesa se pausa al terminar cada ronda)
-  ▼ se cierra cuando pasan las 10 rondas, o antes si en una ronda completa los cuatro pasaron o dijeron [LISTO]
-    (sin que vos hayas sumado nada en esa ronda), o cuando tocás "Cerrar y redactar entrega"
-Relator (el modelo que elijas, o el de A) → la entrega final, en Markdown, lista para copiar o descargar con toda la conversación
+  ▼ se cierra a las 10 rondas, antes por consenso, o cuando tocás "Cerrar y redactar entrega"
+Relator → ENTREGA DE PRODUCCIÓN (JSON validado): tomas S1, S2… de 2 a 6 s, cada una con
+   cuadro · voz · sonido · video (+ música para toda la pieza); cada parte con su DUEÑO (un agente) y su especificación exacta
+  ▼ cada parte es una tarjeta:
+   ▶ RUN         → corre exactamente esa especificación (imagen/voz/sonido al instante)
+   ▶ RUN · video → abre la APROBACIÓN: Wan 3.0 Prime (WaveSpeed) o HeyGen Video 1 (OpenRouter), 480p, ≤ 6 s,
+                   arrancando del cuadro de la toma, con el costo estimado. Sin tu aprobación no se genera ningún video.
+   💬 feedback   → le hablás al dueño de esa parte aunque la mesa haya terminado; si cambia algo, queda una versión nueva (‹ v2/3 ›)
+   ▶ Ver la película → las tomas en orden, con su voz y su sonido encima, la música de fondo y la línea como subtítulo
 ```
 
+- **Herramientas** (`src/table/tools.js`, `src/table/media.js`): las descripciones son el manual que lee cada modelo (cómo escribir un prompt de cuadro, cómo dirigir una voz con etiquetas, cómo describir un sonido) e incluyen el costo estimado. El turno corre un bucle de *tool calling* (hasta 3 idas y vueltas; la última con `tool_choice: none`): el agente pide una pieza, la ve (si es imagen) y recién después habla. Si un modelo no acepta herramientas en OpenRouter, ese turno sigue sin generar y la pantalla lo avisa. Sin `WAVESPEED_API_KEY` (o con la casilla apagada) los agentes no generan, pero la entrega igual sale por tomas.
+- **Presupuesto**: lo fijás en la mesa (por defecto US$ 1.50; se puede subir durante la mesa). Cada pieza descuenta su costo **estimado** (WaveSpeed no informa el costo real por tarea; los valores se ajustan con `TABLE_*_COST`). Lo que se corre con RUN no sale de ese presupuesto: lo aprobás vos al tocar.
+- **Qué ven los agentes de lo generado**: las 6 imágenes generadas más recientes van adjuntas en cada turno; las voces y los sonidos, como una línea con su texto, voz y descripción (los modelos de la mesa no los escuchan).
+- **La entrega** (`src/table/delivery.js`): el relator devuelve JSON con forma fija; el servidor lo valida (duraciones de 2 a 6 s, hasta 12 tomas, dueños A–D, todas las tomas con cuadro y video) y, si viene roto, le pide una corrección. `base`: si una parte ya se generó en la mesa (G2…), se usa esa pieza real (su especificación manda sobre lo que copie el relator) y no se vuelve a pagar.
+- **Feedback por parte**: `POST /api/lab/table/turn` con `kind: 'part'`. Responde el dueño, con su misión, la conversación de la mesa, la entrega vigente, el hilo con vos y (si es un cuadro) la imagen actual. Devuelve su respuesta y, si cambia algo, la parte completa revisada.
+- **Video** (`POST /api/lab/table/video`, `GET /api/lab/table/video?id=`, `POST /api/lab/table/video/recover`): usa las mismas tareas persistentes que Cinematic Videos (`src/cinematic/jobs.js`, en `runs/table-videos/`): el ID del proveedor se guarda apenas llega, así que recargar la página o reiniciar el servidor no corta ni vuelve a cobrar. Se verifica contra el catálogo del proveedor (duración, 480p, formato, primer cuadro) y, si el modelo no lo admite, no se envía. Con HeyGen, si el catálogo dice que acepta audio de referencia, se puede sincronizar con la voz de la toma.
+- **La película** (`public/table-player.js`): vista previa en el navegador, sin exportar. Si una toma tiene video se ve el video; si solo tiene cuadro, el cuadro con un movimiento lento; cada toma dura lo que dice la entrega o lo que dure su voz.
 - **La sala** (`public/table-scene.js`): la mesa se ve como una sala isométrica donde cada lámpara es un agente, y cada objeto significa algo:
   - **Luz**: se enciende la lámpara de quien habla (titila mientras piensa, antes de la primera palabra); las demás quedan tenues y **giran la cabeza hacia quien habla**. Si pasó, se apaga y baja la cabeza; si dijo [LISTO], queda con luz suave. Con la mesa trabajando, la sala baja su luz.
-  - **Nubes**: sobre cada lámpara, lo que está diciendo en vivo (o lo último que dijo). Tocarla lleva a ese mensaje en la conversación. Antes de empezar, muestra su misión, o invita a configurarlo.
-  - **Mesa**: tocarla agrega archivos para los cuatro; soltarlos encima, lo mismo. Soltarlos sobre una lámpara (o su cartel) los deja **privados** para ese agente. Los archivos y tus mensajes quedan como papeles sobre la mesa (los privados, en la luz de su dueño, con un punto de su color); tocarlos los muestra.
+  - **Nubes**: sobre cada lámpara, lo que está diciendo en vivo (o lo último que dijo). Tocarla lleva al mensaje en la conversación. Antes de empezar, muestra su misión, o invita a configurarlo.
+  - **Mesa**: tocarla agrega archivos para los cuatro; soltarlos encima, lo mismo. Soltarlos sobre una lámpara (o su cartel) los deja **privados** para ese agente. Los archivos, tus mensajes y **lo que generan los agentes** (G1, G2…, con el punto de color de quien lo generó) quedan como papeles sobre la mesa; tocarlos los muestra (o los hace sonar).
   - **Hoja del centro**: la misión final. Se ilumina cuando el relator escribe y se sella al terminar; tocarla abre la entrega.
   - **Ficha de turno**: nace en el centro con el sorteo y se desliza hasta quien habla o habla después. **Pila de hojas** junto a cada lámpara: cuántos aportes hizo (tocarla lleva al último).
   - **Carteles**: nombre y estado de cada agente; tocarlos (o la lámpara) lleva a su asiento para configurarlo o hablarle en privado.
-- **Lo que ve cada agente**: el registro de la mesa, sus propios mensajes y archivos privados, y nada de lo privado de los demás. El relator ve solo lo público. El servidor arma esa vista en cada turno (`src/table/prompts.js`); las reglas de rondas, turnos y consenso son puras y compartidas con el navegador (`public/table-core.js`).
-- **Archivos**: imágenes (se reducen a 1280 px), texto (`.md`, `.txt`, `.csv`, `.json`…, hasta 60.000 caracteres) y PDF (hasta 12 MB). Hasta 40 por mesa; cada agente recibe las 16 imágenes más recientes que le corresponden. Video y audio todavía no.
-- **Turnos sin estado**: cada turno es un `POST /api/lab/table/turn` con el registro completo (respuesta NDJSON en streaming), así se puede pausar, cortar un turno, reintentar uno que falló o intervenir entre dos turnos cualquiera. Los archivos se reenvían en cada turno: con muchas imágenes, el costo crece por turno.
-- **Guardado**: las mesas viven en este navegador (localStorage + IndexedDB para los archivos), con historial, costo por turno y total. "Usar sus agentes en una mesa nueva" reutiliza el elenco.
-- **Demo** (`MOCK=1` o sin `OPENROUTER_API_KEY`): respuestas simuladas; en la ronda 2 un agente pasa y en la 3 todos dan la misión por resuelta, para ver el cierre por consenso.
+- **Lo que ve cada agente**: el registro de la mesa, sus propios mensajes y archivos privados, lo generado, y nada de lo privado de los demás (tampoco puede usar como referencia una imagen privada de otro). El relator ve solo lo público. El servidor arma esa vista en cada turno (`src/table/prompts.js`); las reglas de rondas, turnos, consenso y la producción (versiones, costos) son puras y compartidas con el navegador (`public/table-core.js`).
+- **Archivos**: imágenes (se reducen a 1280 px), texto (`.md`, `.txt`, `.csv`, `.json`…, hasta 60.000 caracteres) y PDF (hasta 12 MB). Hasta 40 por mesa; cada agente recibe las 16 imágenes más recientes que le corresponden. Lo generado se guarda en `runs/media/` y se sirve en `/media/…`.
+- **Turnos sin estado**: cada turno es un `POST /api/lab/table/turn` con el registro completo (respuesta NDJSON en streaming), así se puede pausar, cortar un turno, reintentar uno que falló o intervenir entre dos turnos cualquiera. Una pieza generada en un turno que después falla queda en la mesa (ya se pagó).
+- **Guardado**: las mesas viven en este navegador (localStorage + IndexedDB para los archivos), con historial, costo por turno, por pieza y total. "Usar sus agentes en una mesa nueva" reutiliza el elenco, el formato y el presupuesto. Las mesas cerradas antes de la entrega por tomas pueden pedirla de nuevo con la misma conversación.
+- **Demo** (`MOCK=1` o sin `OPENROUTER_API_KEY`): respuestas simuladas; en la ronda 1 cada agente genera una pieza de demo (imágenes SVG y audios WAV sintéticos, sin costo), en la ronda 2 un agente pasa y en la 3 todos dan la misión por resuelta; la entrega trae 3 tomas, RUN y el feedback funcionan, y el video de demo no genera archivo (en la película se ve el cuadro animado).
 - Prueba de navegador: `PLAYWRIGHT_MODULE=… node test/browser/agent-table.mjs`.
 
 ## Cómo correrlo
@@ -325,6 +342,11 @@ Fotos + texto
 | `src/lab/pipeline.js` / `src/lab/routes.js` | Laboratorio: una ejecución de un agente con corrección automática; `POST /api/lab/run`, `GET /api/lab/models`, `GET /api/lab/frame.html` |
 | `src/lab/tools.js` | Laboratorio: herramientas de los agentes (búsqueda en SerpAPI, imágenes con nano-banana) |
 | `src/lab/frame.js` | Laboratorio: dentro del iframe aislado, monta el `<Player>` de Remotion y hace la prueba de humo |
+| `src/table/prompts.js` / `src/table/routes.js` | Mesa de agentes: qué ve cada agente, el turno con herramientas, la entrega por tomas, el feedback por parte, RUN y video |
+| `src/table/media.js` / `src/table/tools.js` | Mesa de agentes: imagen (Nano Banana 2.1), voz (ElevenLabs v4) y sonido (Sound Effects v2) en WaveSpeed, y las herramientas de cada turno con presupuesto |
+| `src/table/delivery.js` / `src/table/mock.js` | Mesa de agentes: forma y validación de la entrega de producción; modelos simulados del demo |
+| `public/table.js` / `public/table-core.js` / `public/table-scene.js` | Mesa de agentes: la pestaña, las reglas puras (rondas, producción, costos) y la sala |
+| `public/table-delivery.js` / `public/table-player.js` | Mesa de agentes: las tarjetas de la entrega (RUN, aprobación de video, feedback, versiones) y la película |
 | `public/lab.js` / `public/lab-stats.js` / `public/lab-store.js` | Laboratorio: la pestaña, las métricas y el historial (localStorage + IndexedDB) |
 | `src/knowledge.js` | Manual de contenido compartido por todos los agentes |
 | `src/prompts.js` | Rol de cada agente y encargo de cada etapa |
@@ -366,6 +388,10 @@ Fotos + texto
 | `STORY_FRAME_MODEL` / `STORY_FRAME_EDIT_MODEL` | GPT Image 2.5 Flare text-to-image / edit | Cuadros del storyboard (sin / con material de referencia). |
 | `STORY_VIDEO_MODEL` / `STORY_VIDEO_RESOLUTION` | `alibaba/wan-3.0-prime/image-to-video` / `480p` | Video de cada toma (5 s). |
 | `OPENROUTER_RETRIES` | `3` | Reintentos ante errores pasajeros (429 del pool compartido, 5xx, cortes de red) |
+| `TABLE_IMAGE_MODEL` / `TABLE_IMAGE_EDIT_MODEL` | `google/nano-banana-2.1/text-to-image` / `…/edit` | Mesa de agentes: imágenes (sin / con referencias de la mesa). |
+| `TABLE_VOICE_MODEL` / `TABLE_SOUND_MODEL` | `elevenlabs/eleven-v4` / `elevenlabs/sound-effects-v2` | Mesa de agentes: voces y sonidos (los campos se adaptan al schema publicado en WaveSpeed). |
+| `TABLE_WAN_MODEL` / `TABLE_HEYGEN_MODEL` | `alibaba/wan-3.0-prime/image-to-video` / `heygen/heygen-video-1` | Mesa de agentes: video de cada toma (WaveSpeed / OpenRouter), 480p, hasta 6 s. |
+| `TABLE_IMAGE_COST` / `TABLE_IMAGE_REFERENCE_COST` / `TABLE_VOICE_COST_PER_1K` / `TABLE_SOUND_COST` / `TABLE_VIDEO_COST_PER_SECOND` | `0.04` / `0.002` / `0.10` / `0.03` / `0.075` | Mesa de agentes: costos **estimados** en US$ (presupuesto de la mesa y estimaciones de RUN). Ajustalos a tu tabla de WaveSpeed. |
 
 Cualquier variable de modelo acepta una **lista separada por comas**: si el primero no llega a responder
 (saturado, sin cupo, inexistente), el paso sigue con el siguiente y la interfaz lo avisa. Antes de eso,

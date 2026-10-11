@@ -1,7 +1,8 @@
 import { $, el, streamEvents } from './shared.js';
 import * as store from './table-store.js';
-import { SEATS, MAX_ROUNDS, speakingOrder, drawStarter, nextStep, advance, parseReply, nextFileCode, totalCost } from './table-core.js';
+import { SEATS, MAX_ROUNDS, speakingOrder, drawStarter, nextStep, advance, parseReply, nextFileCode, totalCost, assetsCost, toProduction, describeAsset, assetKindLabel } from './table-core.js';
 import { createScene } from './table-scene.js';
+import { createDelivery } from './table-delivery.js';
 
 // Laboratorio · Mesa de agentes. El navegador orquesta las rondas: cada turno es un POST a
 // /api/lab/table/turn con el registro completo, así el usuario puede intervenir entre dos turnos cualquiera.
@@ -12,6 +13,7 @@ const MAX_PDF = 12 * 1024 * 1024;
 const TEXT_FILE = /\.(md|txt|csv|json|srt|vtt|ya?ml|xml|html?)$/i;
 
 let started = false, scene = null, session = null, fileData = {}, controller = null, looping = false, pauseRequested = false, streaming = null, historyVisible = false;
+let config = null, delivery = null; // config: lo que ofrece el servidor (GET /api/lab/table/config)
 const seats = {}; // seat → { card, inputs, status, files, whisper }
 
 const error = (text = '') => { $('table-error').textContent = text; $('table-error').hidden = !text; };
@@ -24,6 +26,7 @@ const random = () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
 function fresh(template) {
   return {
     id: crypto.randomUUID(), createdAt: Date.now(), name: '', goal: '', synthesisModel: template?.synthesisModel || '', maxRounds: MAX_ROUNDS, autoPause: template?.autoPause ?? true,
+    aspect: template?.aspect || '9:16', budget: template?.budget ?? config?.defaultBudget ?? 1.5, tools: template?.tools ?? true, assets: [],
     agents: SEATS.map((seat) => { const a = template?.agents.find((x) => x.seat === seat); return { seat, name: a?.name || '', model: a?.model || '', mission: a?.mission || '', notes: a?.notes || '' }; }),
     files: [], log: [], order: null, cursor: { round: 1, turn: 0 }, status: 'setup', final: null, forceClose: false,
   };
@@ -32,6 +35,15 @@ function fresh(template) {
 function save() {
   try { session.updatedAt = Date.now(); store.saveSession(session); store.setCurrent(session.id); }
   catch (e) { error(`No se pudo guardar la mesa: ${e.message}`); }
+}
+// Guarda una sesión que puede no ser la abierta (un RUN que termina después de cambiar de mesa).
+function persist(s) {
+  try { s.updatedAt = Date.now(); store.saveSession(s); } catch (e) { error(`No se pudo guardar la mesa: ${e.message}`); }
+}
+// Mesas guardadas antes de que la mesa generara piezas.
+function migrate(s) {
+  s.assets ??= []; s.aspect ??= '9:16'; s.budget ??= config?.defaultBudget ?? 1.5; s.tools ??= true;
+  return s;
 }
 
 // ---------- Archivos ----------
@@ -109,8 +121,10 @@ function say(to, text) {
 function payload(extra) {
   return {
     name: session.name, goal: session.goal, maxRounds: session.maxRounds, synthesisModel: session.synthesisModel,
+    aspect: session.aspect, budget: session.budget, tools: session.tools,
     agents: session.agents.map(({ seat, name, model, mission, notes }) => ({ seat, name, model, mission, notes })),
     log: session.log,
+    assets: session.assets.map(({ code, kind, seat, round, url, spec, cost, model }) => ({ code, kind, seat, round, url, spec, cost, model })),
     files: session.files.filter((f) => fileData[f.code]).map((f) => ({ ...f, data: fileData[f.code] })),
     ...extra,
   };
@@ -122,6 +136,16 @@ async function call(body) {
   await streamEvents('/api/lab/table/turn', JSON.stringify(body), controller.signal, (ev) => {
     if (ev.type === 'delta') { streaming.text += ev.text; streaming.note = ''; updateLive(); }
     else if (ev.type === 'retry') { streaming.note = `El proveedor está ocupado: reintento ${ev.attempt} de ${ev.retries} en ${Math.round(ev.waitMs / 1000)} s…`; updateLive(); }
+    else if (ev.type === 'tool') { streaming.note = `Generando ${assetKindLabel(ev.kind)}…`; updateLive(); }
+    else if (ev.type === 'tool_error') { streaming.note = `No se pudo generar: ${ev.error}`; updateLive(); }
+    else if (ev.type === 'notice') { streaming.note = ev.text; updateLive(); }
+    else if (ev.type === 'asset') {
+      // La pieza ya se pagó: queda en la mesa aunque el turno después falle.
+      session.assets.push({ ...ev.asset, at: Date.now() });
+      streaming.assets = [...(streaming.assets || []), ev.asset.code];
+      streaming.note = `${ev.asset.code} sobre la mesa`;
+      save(); render();
+    }
     else if (ev.type === 'done') done = ev;
     else if (ev.type === 'error') failure = ev.error;
   });
@@ -138,7 +162,10 @@ async function runTurn(step) {
   streaming = { seat: step.seat, text: '', note: '' };
   render();
   const done = await call(payload({ kind: 'turn', seat: step.seat, round: step.round }));
-  session.log.push({ type: 'agent', round: step.round, seat: step.seat, ...parseReply(done.text), model: done.model, usage: done.usage, ms: done.ms, at: Date.now() });
+  const reply = parseReply(done.text);
+  const made = (done.assets || []).map((a) => a.code);
+  if (made.length) reply.action = 'speak'; // generar es aportar, aunque no haya escrito nada
+  session.log.push({ type: 'agent', round: step.round, seat: step.seat, ...reply, assets: made, model: done.model, usage: done.usage, ms: done.ms, at: Date.now() });
 }
 
 async function synthesize(reason) {
@@ -146,7 +173,7 @@ async function synthesize(reason) {
   streaming = { seat: 'final', text: '', note: '' };
   render();
   const done = await call(payload({ kind: 'synthesis', reason }));
-  session.final = { text: done.text, model: done.model, usage: done.usage, ms: done.ms, reason, at: Date.now() };
+  session.final = { text: done.text, production: done.delivery ? toProduction(done.delivery) : null, error: done.error || null, model: done.model, usage: done.usage, ms: done.ms, reason, at: Date.now() };
   session.status = 'done';
 }
 
@@ -249,11 +276,22 @@ function buildSeat(seat) {
 // Valores de los campos: solo al abrir una mesa (no en cada render, para no mover el cursor).
 function fillForm() {
   $('table-name').value = session.name; $('table-goal').value = session.goal; $('table-synthesis-model').value = session.synthesisModel; $('table-autopause').checked = session.autoPause;
+  $('table-aspect').value = session.aspect; $('table-budget').value = session.budget; $('table-tools').checked = session.tools;
   for (const a of session.agents) { const s = seats[a.seat]; s.name.value = a.name; s.model.value = a.model; s.mission.value = a.mission; s.notes.value = a.notes; }
   render();
 }
 
 function lastOf(seat) { return [...session.log].reverse().find((e) => e.type === 'agent' && e.seat === seat); }
+
+function renderMediaNote() {
+  const note = $('table-media-note');
+  if (!config) { note.textContent = ''; return; }
+  const c = config.costs;
+  const video = config.video?.engines?.filter((e) => e.ok).map((e) => e.label.split(' · ')[0]).join(' o ');
+  note.textContent = !config.media
+    ? 'Sin WAVESPEED_API_KEY: los agentes no generan y las partes no se pueden correr. La entrega igual sale por tomas.'
+    : `${config.mock ? 'Demo: piezas simuladas. ' : ''}Imagen ≈ US$ ${c.image.toFixed(2)} · voz ≈ US$ ${c.voicePer1k.toFixed(2)} cada 1000 caracteres · sonido ≈ US$ ${c.sound.toFixed(2)} (estimados). Máximo ${config.limits.perTurn} por turno. El video no se genera en la mesa: lo aprobás al final${video ? ` (${video}, 480p, hasta ${config.limits.shotMax} s)` : ''}.`;
+}
 
 function updateHeader() {
   for (const seat of SEATS) {
@@ -321,14 +359,17 @@ function renderControls() {
   $('table-pause').title = pauseRequested ? 'Corta el turno en curso (se pierde lo que lleva escrito)' : 'Pausa al terminar el turno en curso';
   $('table-continue').hidden = st !== 'paused';
   $('table-close').hidden = !['running', 'paused'].includes(st) || session.forceClose;
-  ['table-name', 'table-goal', 'table-synthesis-model'].forEach((id) => { $(id).disabled = st !== 'setup'; });
+  ['table-name', 'table-goal', 'table-synthesis-model', 'table-aspect'].forEach((id) => { $(id).disabled = st !== 'setup'; });
+  ['table-budget', 'table-tools'].forEach((id) => { $(id).disabled = st === 'done' || !config?.media; });
+  renderMediaNote();
   $('table-say').querySelectorAll('textarea, button, input').forEach((n) => { n.disabled = st === 'done'; });
   $('table-files-table').replaceChildren(filesRow('table'));
   const status = { setup: 'Mesa lista para empezar', running: 'Los agentes están conversando…', paused: 'En pausa', synthesis: 'Escribiendo la entrega…', done: 'Entrega lista' };
   $('table-status').dataset.phase = st;
   $('table-status-text').textContent = st === 'running' && pauseRequested ? 'Pausa al terminar el turno…' : status[st];
   const cost = totalCost(session);
-  $('table-cost').textContent = session.log.some((e) => e.type === 'agent') ? `Costo total: ${money(cost)}` : '';
+  const generated = assetsCost(session);
+  $('table-cost').textContent = session.log.some((e) => e.type === 'agent') ? `Costo total: ${money(cost)}${session.assets.length ? ` · generado en la mesa: ${money(generated)} de ${money(session.budget)}` : ''}` : '';
 }
 
 function entryNode(e) {
@@ -352,7 +393,30 @@ function entryNode(e) {
   head.append(el('span', 'muted table-entry-meta', [e.model, e.usage?.cost !== undefined ? money(e.usage.cost) : null, e.ms ? `${(e.ms / 1000).toFixed(1)} s` : null].filter(Boolean).join(' · ')));
   node.append(head);
   if (e.text) node.append(el('p', null, e.text));
+  if (e.assets?.length) node.append(assetsRow(e.assets));
   return node;
+}
+
+// Las piezas generadas (G1, G2…): miniatura o reproductor, con su código. Tocar una imagen la abre.
+function assetsRow(codes) {
+  const row = el('div', 'table-assets');
+  for (const code of codes) {
+    const a = session.assets.find((x) => x.code === code);
+    if (!a) continue;
+    const fig = el('figure', `table-asset kind-${a.kind}`);
+    fig.title = describeAsset(a, session.agents);
+    if (a.kind === 'image') {
+      const img = el('img'); img.src = a.url; img.alt = a.spec.prompt; img.loading = 'lazy';
+      img.onclick = () => preview(`g:${a.code}`);
+      fig.append(img);
+    } else {
+      const audio = el('audio'); audio.src = a.url; audio.controls = true; audio.preload = 'none';
+      fig.append(el('span', 'small', a.kind === 'voice' ? `${a.spec.personaje} · ${a.spec.voz}` : `${a.spec.tipo} · ${a.spec.duracion} s`), audio);
+    }
+    fig.append(el('figcaption', 'small', `${a.code} · ${assetKindLabel(a.kind)}${a.demo ? ' (demo)' : ''}`));
+    row.append(fig);
+  }
+  return row;
 }
 
 let liveNode = null;
@@ -362,7 +426,7 @@ function renderLog() {
   box.replaceChildren(...session.log.map(entryNode));
   liveNode = null;
   if (streaming && streaming.seat !== 'final') {
-    liveNode = entryNode({ type: 'agent', seat: streaming.seat, round: Math.min(session.cursor.round, session.maxRounds), action: 'speak', text: streaming.text || '…' });
+    liveNode = entryNode({ type: 'agent', seat: streaming.seat, round: Math.min(session.cursor.round, session.maxRounds), action: 'speak', text: streaming.text || streaming.note || '…', assets: streaming.assets });
     liveNode.classList.add('live');
     box.append(liveNode);
   }
@@ -374,29 +438,41 @@ function renderFinal() {
   const box = $('table-final');
   const live = streaming?.seat === 'final';
   box.hidden = !session.final && !live;
-  if (box.hidden) return;
-  const reasons = { consensus: 'la mesa llegó a un acuerdo antes de tiempo', rounds: `se usaron las ${session.maxRounds} rondas`, forced: 'cerraste la mesa' };
-  const f = session.final;
-  const head = el('div', 'lab-side-head');
-  head.append(el('strong', null, 'Entrega final'));
-  if (f) head.append(el('span', 'muted small', `Relator: ${f.model} · ${money(f.usage?.cost)} · se cerró porque ${reasons[f.reason] || 'terminó'}`));
-  const text = el('div', 'table-final-text', live ? (streaming.note || streaming.text || 'Redactando…') : f.text);
-  box.replaceChildren(head, text);
-  if (f) {
-    const actions = el('div', 'actions compact');
-    actions.append(button('Copiar entrega', () => navigator.clipboard?.writeText(f.text)), button('Descargar mesa (.md)', download));
-    box.append(actions);
+  if (box.hidden) { box.replaceChildren(); return; }
+  if (live) {
+    box.replaceChildren(el('div', 'lab-side-head', 'Entrega de producción'), el('p', 'table-final-text', finalProgress()));
+    return;
   }
+  const f = session.final;
+  if (f.production) return delivery.mount(box);
+  const head = el('div', 'lab-side-head');
+  head.append(el('strong', null, 'Entrega'), el('span', 'muted small', `Relator: ${f.model} · ${money(f.usage?.cost)}`));
+  const actions = el('div', 'actions compact');
+  actions.append(button('Volver a pedir la entrega', () => {
+    if (busy()) return;
+    session.final = null; session.forceClose = true; session.status = 'running'; save(); loop();
+  }, 'primary'), button('Copiar texto', () => navigator.clipboard?.writeText(f.text)), button('Descargar mesa (.md)', () => download()));
+  // Mesas cerradas antes de la entrega por tomas: su entrega era un texto; se puede pedir la nueva con la misma conversación.
+  const why = !('production' in f) ? 'Esta mesa se cerró con la entrega en texto (antes de la entrega por tomas). Podés pedirla de nuevo, por tomas, con la misma conversación.'
+    : `El relator no devolvió una entrega por tomas${f.error ? ` (${f.error})` : ''}. Su texto quedó abajo.`;
+  box.replaceChildren(head, el('p', !('production' in f) ? 'muted' : 'error', why), actions, el('div', 'table-final-text', f.text));
+}
+
+// Mientras el relator escribe JSON, se cuenta lo que lleva en vez de mostrar el código.
+function finalProgress() {
+  if (streaming.note && !streaming.text) return streaming.note;
+  const shots = (streaming.text.match(/"id"\s*:\s*"S\d+"/g) || []).length;
+  return streaming.text ? `Armando la entrega por tomas… ${shots ? `${shots} toma${shots > 1 ? 's' : ''}` : 'leyendo toda la mesa'} (${streaming.text.length.toLocaleString('es')} caracteres)` : 'Leyendo toda la mesa…';
 }
 
 function updateLive() {
   if (!streaming) return;
-  if (streaming.seat === 'final') { scene?.live(streaming); const t = $('table-final').querySelector('.table-final-text'); if (t) t.textContent = streaming.text || streaming.note || 'Redactando…'; return; }
+  if (streaming.seat === 'final') { scene?.live({ ...streaming, text: finalProgress() }); const t = $('table-final').querySelector('.table-final-text'); if (t) t.textContent = finalProgress(); return; }
   scene?.live(streaming);
   seats[streaming.seat].status.textContent = streaming.note || 'Hablando…';
   if (liveNode) {
     const p = liveNode.querySelector('p') || liveNode.appendChild(el('p'));
-    p.textContent = streaming.text || '…';
+    p.textContent = streaming.text || streaming.note || '…';
     const box = $('table-log');
     if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) box.scrollTop = box.scrollHeight;
   }
@@ -408,16 +484,18 @@ function render() {
   scene?.render({ session, streaming, fileData, last: lastOf });
 }
 
-function download() {
+function download(production = null) {
   const lines = [`# ${session.name || 'Mesa de agentes'}`, '', `**Misión final:** ${session.goal}`, '', '## Agentes', ''];
   session.agents.forEach((a) => lines.push(`- **${a.seat} · ${a.name}** (${a.model})${a.mission ? `: ${a.mission}` : ''}`));
   lines.push('', '## Conversación', '');
   session.log.forEach((e) => {
     if (e.type === 'system') lines.push(`*${e.text}*`, '');
     else if (e.type === 'user') lines.push(`**Vos → ${e.to === 'table' ? 'mesa' : `${labelOf(e.to)} (privado)`}:** ${e.text}${e.files?.length ? ` _(compartió ${e.files.join(', ')})_` : ''}`, '');
-    else lines.push(`**${labelOf(e.seat)} · ronda ${e.round}${e.action === 'pass' ? ' · pasó' : ''}${e.done ? ' · listo' : ''}:** ${e.text}`, '');
+    else lines.push(`**${labelOf(e.seat)} · ronda ${e.round}${e.action === 'pass' ? ' · pasó' : ''}${e.done ? ' · listo' : ''}:** ${e.text}${e.assets?.length ? ` _(generó ${e.assets.join(', ')})_` : ''}`, '');
   });
-  if (session.final) lines.push('## Entrega final', '', session.final.text, '');
+  if (session.assets.length) lines.push('## Generado en la mesa', '', ...session.assets.map((a) => `- ${describeAsset(a, session.agents)} — ${new URL(a.url, location.href).href}`), '');
+  if (production) lines.push('## Entrega de producción', '', production);
+  else if (session.final) lines.push('## Entrega final', '', session.final.text, '');
   const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/markdown' }));
   const a = el('a'); a.href = url; a.download = `${(session.name || 'mesa-de-agentes').replace(/[^\w\-áéíóúñ ]+/gi, '').trim().replace(/\s+/g, '-') || 'mesa'}.md`; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -459,13 +537,23 @@ function openTable() {
 // Papeles sobre la mesa: un archivo (f:M1) o un mensaje tuyo (n:índice del registro).
 async function preview(key) {
   const box = $('table-preview');
-  const [type, id] = [key.slice(0, 1), key.slice(2)];
+  const [type, id] = typeof key === 'string' ? [key.slice(0, 1), key.slice(2)] : ['o', null];
   const audience = (to) => (to === 'table' ? 'Lo ven los cuatro' : `Solo lo ve ${labelOf(to)}`);
   const head = el('div', 'lab-side-head');
   const body = el('div', 'table-preview-body');
   const actions = el('div', 'actions compact');
   let url = null;
-  if (type === 'n') {
+  if (typeof key === 'object') {
+    head.append(el('strong', null, key.title));
+    const img = el('img'); img.src = key.url; img.alt = key.title; body.append(img);
+  } else if (type === 'g') {
+    const a = session.assets.find((x) => x.code === id);
+    if (!a) return;
+    head.append(el('strong', null, `${a.code} · ${assetKindLabel(a.kind)} de ${labelOf(a.seat)}`), el('span', 'muted small', `Ronda ${a.round} · ${a.model}${a.cost ? ` · ${money(a.cost)}` : ''} · lo ven los cuatro`));
+    if (a.kind === 'image') { const img = el('img'); img.src = a.url; img.alt = a.spec.prompt; body.append(img); }
+    else { const audio = el('audio'); audio.src = a.url; audio.controls = true; body.append(audio); }
+    body.append(el('p', 'table-preview-text', describeAsset(a, session.agents).replace(/^G\d+ · /, '')));
+  } else if (type === 'n') {
     const entry = session.log[Number(id)];
     if (!entry) return;
     head.append(el('strong', null, entry.to === 'table' ? 'Tu mensaje a la mesa' : 'Tu mensaje privado'), el('span', 'muted small', `${audience(entry.to)} · ${entry.round ? `ronda ${entry.round}` : 'antes de empezar'}`));
@@ -524,7 +612,8 @@ async function open(id) {
   if (!s) return newTable();
   // Un turno que estaba en curso al cerrar la página queda en pausa: al continuar se repite.
   if (['running', 'synthesis'].includes(s.status)) s.status = 'paused';
-  session = s; fileData = {};
+  delivery?.stop();
+  session = migrate(s); fileData = {};
   store.setCurrent(id);
   fillForm();
   try { fileData = await store.getFiles(id); } catch (e) { error(`No pude leer los archivos guardados: ${e.message}`); }
@@ -533,6 +622,7 @@ async function open(id) {
 
 function newTable(template = session) {
   if (busy()) return;
+  delivery?.stop();
   session = fresh(template); fileData = {}; error('');
   save(); fillForm();
 }
@@ -544,6 +634,11 @@ function start() {
   const board = $('table-board');
   SEATS.forEach((seat) => board.append(buildSeat(seat)));
   scene = createScene($('table-scene'), { seat: focusSeat, cloud: showLast, mission: showMission, table: openTable, paper: preview });
+  delivery = createDelivery({
+    session: () => session, persist: (s) => { persist(s); if (s === session) store.setCurrent(s.id); }, refreshCost: () => renderControls(), error,
+    agentOf, labelOf, payload, fileData: () => fileData, config: () => config, preview, download: (md) => download(md),
+  });
+  fetch('/api/lab/table/config').then((r) => r.json()).then((d) => { config = d; if (session) { fillForm(); } }).catch(() => { config = { media: false, video: { available: false, engines: [] } }; if (session) render(); });
   fetch('/api/lab/models').then((r) => r.json()).then((d) => {
     $('table-llms').replaceChildren(...(d.models || []).map((m) => { const o = el('option'); o.value = m.id; o.label = m.prompt || m.completion ? `${m.name} · US$ ${m.prompt.toFixed(2)} / ${m.completion.toFixed(2)} por 1M` : m.name; return o; }));
   }).catch(() => {});
@@ -555,6 +650,9 @@ $('table-name').addEventListener('input', (e) => { session.name = e.target.value
 $('table-goal').addEventListener('input', (e) => { session.goal = e.target.value; save(); });
 $('table-synthesis-model').addEventListener('input', (e) => { session.synthesisModel = e.target.value.trim(); save(); });
 $('table-autopause').addEventListener('change', (e) => { session.autoPause = e.target.checked; save(); });
+$('table-aspect').addEventListener('change', (e) => { session.aspect = e.target.value; save(); });
+$('table-budget').addEventListener('input', (e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v >= 0 && v <= 50) { session.budget = v; save(); renderControls(); } });
+$('table-tools').addEventListener('change', (e) => { session.tools = e.target.checked; save(); });
 $('table-start').onclick = startTable;
 $('table-continue').onclick = () => { if (session.status !== 'paused') return; session.status = 'running'; save(); loop(); };
 $('table-pause').onclick = () => {
