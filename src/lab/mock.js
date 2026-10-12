@@ -10,6 +10,7 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
 const hash = (s) => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
 
 const TITLE = `import { AbsoluteFill, Sequence, Img, interpolate, Easing, useCurrentFrame, useVideoConfig } from "remotion";
+import { Audio } from "@remotion/media";
 import { loadFont } from "@remotion/google-fonts/Syne";
 
 const { fontFamily } = loadFont("normal", { weights: ["800"], subsets: ["latin"] });
@@ -60,7 +61,7 @@ const Sticker: React.FC<{ src: string; dur: number }> = ({ src, dur }) => {
   );
 };
 
-export default function MotionLayer({ zones, images }: { zones: Zone[]; images: Record<string, string> }) {
+export default function MotionLayer({ zones, images, sounds = {} }: { zones: Zone[]; images: Record<string, string>; sounds?: Record<string, string> }) {
   const { fps } = useVideoConfig();
   return (
     <AbsoluteFill>
@@ -68,6 +69,7 @@ export default function MotionLayer({ zones, images }: { zones: Zone[]; images: 
         <Sequence key={z.id} name={z.id} from={z.from} durationInFrames={z.durationInFrames} premountFor={fps}>
           <Title text={(z.prompt || "Hecho a mano").split(" ").slice(0, 6).join(" ")} dur={z.durationInFrames} />
           {i === 0 && images.gen1 ? <Sticker src={images.gen1} dur={z.durationInFrames} /> : null}
+          {sounds.sfx1 ? <Audio src={sounds.sfx1} volume={0.6} /> : null}
         </Sequence>
       ))}
     </AbsoluteFill>
@@ -75,6 +77,7 @@ export default function MotionLayer({ zones, images }: { zones: Zone[]; images: 
 }`;
 
 const LOWER_THIRD = `import { AbsoluteFill, Sequence, Img, interpolate, Easing, useCurrentFrame, useVideoConfig } from "remotion";
+import { Audio } from "@remotion/media";
 import { loadFont } from "@remotion/google-fonts/Inter";
 
 const { fontFamily } = loadFont("normal", { weights: ["400", "800"], subsets: ["latin"] });
@@ -115,7 +118,7 @@ const Badge: React.FC<{ src: string; dur: number }> = ({ src, dur }) => {
   );
 };
 
-export default function MotionLayer({ zones, images }: { zones: Zone[]; images: Record<string, string> }) {
+export default function MotionLayer({ zones, images, sounds = {} }: { zones: Zone[]; images: Record<string, string>; sounds?: Record<string, string> }) {
   const { fps } = useVideoConfig();
   return (
     <AbsoluteFill>
@@ -123,6 +126,7 @@ export default function MotionLayer({ zones, images }: { zones: Zone[]; images: 
         <Sequence key={z.id} name={z.id} from={z.from} durationInFrames={z.durationInFrames} premountFor={fps}>
           <LowerThird text={z.prompt || "Motion de ejemplo"} index={String(i + 1).padStart(2, "0") + " / " + String(zones.length).padStart(2, "0")} dur={z.durationInFrames} />
           {i === 0 && images.gen1 ? <Badge src={images.gen1} dur={z.durationInFrames} /> : null}
+          {sounds.sfx1 ? <Audio src={sounds.sfx1} volume={0.6} /> : null}
         </Sequence>
       ))}
     </AbsoluteFill>
@@ -154,6 +158,17 @@ export async function mockLabLLM({ model, messages, tools, toolChoice, onDelta, 
   if (can('generar_imagen') && !used('generar_imagen') && !generated && ((!cheap && /opus|sol/.test(model)) || askedImage)) {
     await sleep(300, signal);
     return { text: '', toolCalls: [toolCall('generar_imagen', { prompt: '(demo) recorte del producto como sticker', imagenes: ['C1-1'], proporcion: '1:1' })], usage: usage(18000) };
+  }
+  // Context Lab: video y sonido. Los "creativos" del demo los usan solos; los demás, cuando el entorno se los pide.
+  const lastText = typeof messages.at(-1)?.content === 'string' ? messages.at(-1).content : '';
+  const zone = /^- (C\d+):/m.exec(messages.find((m) => m.role === 'user' && Array.isArray(m.content))?.content?.[0]?.text || '')?.[1] || 'C1';
+  if (can('generar_video') && !used('generar_video') && ((!cheap && /opus|sol/.test(model)) || lastText.includes('generar_video'))) {
+    await sleep(300, signal);
+    return { text: '', toolCalls: [toolCall('generar_video', { zona: zone, prompt: '(demo) slow push-in, soft window light, same subject' })], usage: usage(19000) };
+  }
+  if (can('generar_sonido') && !used('generar_sonido') && (!cheap || lastText.includes('generar_sonido'))) {
+    await sleep(200, signal);
+    return { text: '', toolCalls: [toolCall('generar_sonido', { descripcion: '(demo) short soft whoosh, airy', duracion: 1 })], usage: usage(19000) };
   }
   const lastUser = messages.at(-1)?.content;
   const isFix = typeof lastUser === 'string';

@@ -190,11 +190,13 @@
             <a href="#laboratorio/motion-design" data-lab-folder="motion-design">Motion Design</a>
             <a href="#laboratorio/cinematic-videos" data-lab-folder="cinematic-videos">Cinematic Videos</a>
             <a href="#laboratorio/mesa-de-agentes" data-lab-folder="mesa-de-agentes">Mesa de agentes</a>
+            <a href="#laboratorio/context-lab" data-lab-folder="context-lab">Context Lab</a>
           </nav>
           <div id="lab-home" class="lab-history-list" hidden>
             <a class="lab-card lab-folder-card" href="#laboratorio/motion-design"><span class="lab-badge">M</span><h1>Motion Design</h1><p class="muted">Comparar animaciones con LLMs, Remotion y el harness del laboratorio.</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/cinematic-videos"><span class="lab-badge">C</span><h1>Cinematic Videos</h1><p class="muted">Un mismo prompt y referencias. Hasta cuatro generadores de OpenRouter y WaveSpeed.</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/mesa-de-agentes"><span class="lab-badge">A</span><h1>Mesa de agentes</h1><p class="muted">Cuatro agentes con su propia misión conversan por turnos, hasta 10 rondas, para cumplir una misión final. Vos intervenís cuando quieras.</p></a>
+            <a class="lab-card lab-folder-card" href="#laboratorio/context-lab"><span class="lab-badge">X</span><h1>Context Lab</h1><p class="muted">Un mismo modelo, varias variantes de contexto: prompt, skills, referencias y herramientas (búsqueda, imagen, sonido, video).</p></a>
           </div>
           <div id="lab-motion-folder">
           <header class="lab-head">
@@ -211,6 +213,22 @@
           <p id="lab-error" class="error" hidden></p>
           <div id="lab-experiment"></div>
           <div id="lab-history" class="lab-history" hidden></div>
+          </div>
+          <div id="lab-context-folder" hidden>
+            <header class="lab-head">
+              <div>
+                <p class="lab-crumbs muted small">Laboratorio / context-lab</p>
+                <h1 class="raw-title">Context Lab</h1>
+                <p class="muted small">El mismo modelo varias veces sobre el mismo clip. Cambiás el contexto de cada variante —prompt de sistema, skills, pedido, referencias, ejemplos y herramientas apagadas, opcionales u obligatorias— y comparás qué funciona.</p>
+              </div>
+              <nav class="tabs lab-views" role="tablist" aria-label="Vistas del Context Lab">
+                <button type="button" class="lab-view-btn" role="tab" data-ctx-view="experiment" aria-selected="true">Experimento</button>
+                <button type="button" class="lab-view-btn" role="tab" data-ctx-view="history" aria-selected="false">Historial</button>
+              </nav>
+            </header>
+            <p id="ctx-error" class="error" role="alert" hidden></p>
+            <div id="ctx-experiment"></div>
+            <div id="ctx-history" class="lab-history" hidden></div>
           </div>
           <div id="lab-cinematic-folder" hidden>
             <header class="lab-head">
@@ -362,5 +380,6 @@
   <script src="/lab.js" type="module"></script>
   <script src="/cinematic.js" type="module"></script>
   <script src="/table.js" type="module"></script>
+  <script src="/context-lab.js" type="module"></script>
 </body>
 </html>

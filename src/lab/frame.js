@@ -7,6 +7,12 @@
 //                                                              El video va debajo y la capa del agente encima, con la
 //                                                              transformación del humano { scale, x, y } (x, y en % del cuadro).
 //                                                              legacy: código v1, que renderizaba el video él mismo.
+//                                                              Context Lab suma: sounds { sfx1: Blob } (llegan a la capa como
+//                                                              prop `sounds`), videoLayers [{ id, kind: 'video'|'image', blob|url,
+//                                                              from, durationInFrames, transform, hidden, muted }] (tomas de IA en su
+//                                                              propia capa, entre el video y la animación) y motionHidden.
+//   → { type: 'layers', videoLayers, motionHidden }            mostrar/ocultar, mover o escalar las capas de video IA en vivo
+//                                                              (sin los blobs: se cruzan por id)
 //   → { type: 'transform', transform }                         escalar / mover la capa en vivo
 //   → { type: 'segments', segments }                           cortes de la animación: [{ from, len, to }] en cuadros
 //                                                              (el tramo [from, from+len) de la capa se muestra desde `to`)
@@ -92,19 +98,25 @@
 
   // La composición: el video original debajo y la capa del agente encima (con la escala y posición del humano),
   // envuelta para atrapar sus errores. El código v1 renderizaba el video él mismo: se monta tal cual.
-  const { AbsoluteFill, Sequence } = modules.remotion;
+  const { AbsoluteFill, Sequence, Img } = modules.remotion;
   const { Video } = modules['@remotion/media'];
   // Cortes del humano: cada tramo de la capa se reproduce en otro momento. Dos Sequence anidadas:
   // la externa decide CUÁNDO se ve (desde `to`, durante `len`); la interna corre el reloj para que
   // la capa crea estar en su cuadro original (`from` + lo que pasó desde `to`).
   const segmentsOf = (Layer, props, segments) => segments.map((s, i) => h(Sequence, { key: s.id || i, from: s.to, durationInFrames: Math.max(1, s.len), name: s.id },
     h(Sequence, { from: -s.from }, h(Boundary, null, h(Layer, props)))));
-  const Root = ({ Layer, legacy, videoSrc, transform, segments, noVideo, ...props }) => {
+  const fill = { position: 'absolute', width: '100%', height: '100%' };
+  const placed = (t) => ({ scale: String(t?.scale ?? 1), translate: `${t?.x || 0}% ${t?.y || 0}%` });
+  // Una toma de IA (Context Lab): su propia capa, en su zona, con su escala y posición.
+  const aiLayer = (l) => h(Sequence, { key: l.id, from: l.from, durationInFrames: Math.max(1, l.durationInFrames), name: l.id, premountFor: 30 },
+    h(AbsoluteFill, { style: placed(l.transform) },
+      l.kind === 'video' ? h(Video, { src: l.src, muted: l.muted !== false, objectFit: 'cover', style: fill }) : h(Img, { src: l.src, style: { ...fill, objectFit: 'cover' } })));
+  const Root = ({ Layer, legacy, videoSrc, transform, segments, noVideo, videoLayers = [], motionHidden = false, ...props }) => {
     if (legacy) return h(Boundary, null, h(Layer, { videoSrc, ...props }));
-    const t = transform || { scale: 1, x: 0, y: 0 };
     return h(AbsoluteFill, { style: noVideo ? {} : { backgroundColor: '#000' } },
-      noVideo ? null : h(Video, { src: videoSrc, objectFit: 'cover', style: { position: 'absolute', width: '100%', height: '100%' } }),
-      h(AbsoluteFill, { style: { scale: String(t.scale), translate: `${t.x}% ${t.y}%` } },
+      noVideo ? null : h(Video, { src: videoSrc, objectFit: 'cover', style: fill }),
+      ...videoLayers.filter((l) => !l.hidden && l.src).map(aiLayer),
+      motionHidden ? null : h(AbsoluteFill, { style: placed(transform) },
         Array.isArray(segments) ? segmentsOf(Layer, props, segments) : h(Boundary, null, h(Layer, props))));
   };
 
@@ -178,7 +190,9 @@
     }
   }
 
-  function mount({ js, video, meta, zones, images = {}, transform, segments = null, legacy = false }) {
+  let mediaUrls = []; // blob: de sonidos y tomas (se liberan al volver a montar)
+  let layerSrc = new Map(); // id de la toma → su src
+  function mount({ js, video, meta, zones, images = {}, transform, segments = null, legacy = false, sounds = null, videoLayers = [], motionHidden = false }) {
     meta0 = meta;
     lastError = null;
     let Layer;
@@ -190,13 +204,19 @@
     }
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     videoUrl = URL.createObjectURL(video);
+    mediaUrls.forEach((u) => URL.revokeObjectURL(u));
+    mediaUrls = [];
+    const blobUrl = (b) => { const u = URL.createObjectURL(b); mediaUrls.push(u); return u; };
+    const soundUrls = sounds ? Object.fromEntries(Object.entries(sounds).filter(([, b]) => b instanceof Blob).map(([id, b]) => [id, blobUrl(b)])) : undefined;
+    layerSrc = new Map(videoLayers.map((l) => [l.id, l.blob instanceof Blob ? blobUrl(l.blob) : l.url || null]));
+    const layers = videoLayers.map(({ blob, url, ...l }) => ({ ...l, src: layerSrc.get(l.id) }));
     const durationInFrames = Math.max(1, Math.ceil(meta.duration * meta.fps));
     const ref = React.createRef();
     root ??= createRoot(rootEl);
     current = {
       ref,
       component: Root,
-      inputProps: { Layer, legacy, videoSrc: videoUrl, zones, images, transform, segments },
+      inputProps: { Layer, legacy, videoSrc: videoUrl, zones, images, transform, segments, ...(soundUrls ? { sounds: soundUrls, videoLayers: layers, motionHidden } : {}) },
       durationInFrames,
       fps: meta.fps,
       compositionWidth: meta.width,
@@ -238,6 +258,12 @@
     if (msg.type === 'load') return mount(msg);
     if (msg.type === 'transform' && current) {
       current = { ...current, inputProps: { ...current.inputProps, transform: msg.transform } };
+      render();
+      return;
+    }
+    if (msg.type === 'layers' && current) {
+      const layers = (msg.videoLayers || []).map((l) => ({ ...l, src: layerSrc.get(l.id) || null }));
+      current = { ...current, inputProps: { ...current.inputProps, videoLayers: layers, motionHidden: !!msg.motionHidden } };
       render();
       return;
     }

@@ -2,10 +2,16 @@
 //   POST /api/lab/run         → NDJSON: una ejecución de un agente (ver pipeline.js)
 //   GET  /api/lab/models      → modelos con visión de OpenRouter (con precios) + datos del harness
 //   GET  /api/lab/frame.html  → el documento del iframe aislado: CSP + bundle de React/Remotion + frame.js, todo en línea
+// Context Lab (mismo modelo, distinto contexto por variante; ver context.js):
+//   GET  /api/lab/context/info    → skills disponibles, plantilla por defecto, herramientas, límites y modelos
+//   POST /api/lab/context/preview → el prompt de sistema final de una variante (con skills y herramientas expandidas)
+//   POST /api/lab/context/run     → NDJSON: una ejecución de una variante
 import { parseLabBody, runLabAgent, MAX_COMPILE_RETRIES, MAX_BRIEF_REFS, MAX_ZONE_SECONDS, MAX_TOOL_ROUNDS } from './pipeline.js';
 import { buildRuntime, runtimeInfo, GOOGLE_FONTS } from './runtime.js';
 import { harnessVersion, SKILL_FILES, SKILLS_COMMIT } from './harness.js';
-import { createLabTools, TOOL_COSTS, IMAGE_MODEL, IMAGE_EDIT_MODEL, MAX_GENERATED_IMAGES, MAX_SEARCHES } from './tools.js';
+import { createLabTools, TOOL_COSTS, IMAGE_MODEL, IMAGE_EDIT_MODEL, MAX_GENERATED_IMAGES, MAX_SEARCHES, DEFAULT_LIMITS, LIMIT_CAPS, SFX_MODEL, videoResolution } from './tools.js';
+import { parseContextBody, parseVariant, contextConfig, defaultTemplate, ALL_SKILLS, DEFAULT_SKILLS, SOUND_SKILLS, DEFAULT_POLICY, CONTEXT_HARNESS, MAX_VARIANTS, MAX_FRAMES } from './context.js';
+import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from '../wavespeed.js';
 import { mockLabLLM } from './mock.js';
 import { readFile } from 'node:fs/promises';
 
@@ -42,10 +48,17 @@ export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, wav
   const labLlm = mock ? mockLabLLM : llm;
   const tools = createLabTools({ serpKey, wavespeedKey, mediaDir, mock });
 
-  async function run(req, res) {
+  // Motion Design: el harness fijo. Context Lab: la config de la variante.
+  async function run(req, res, { context = false } = {}) {
     let input;
+    let config;
     try {
-      input = parseLabBody(await readBody(req, MAX_LAB_BODY));
+      const body = await readBody(req, MAX_LAB_BODY);
+      if (context) {
+        const parsed = parseContextBody(body);
+        input = parsed.input;
+        config = contextConfig(parsed.variant, tools.available);
+      } else input = parseLabBody(body);
     } catch (err) {
       return badRequest(res, err.message);
     }
@@ -55,7 +68,7 @@ export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, wav
     const emit = (event) => { if (!res.writableEnded) res.write(JSON.stringify(event) + '\n'); };
     const ping = setInterval(() => emit({ type: 'ping' }), 15000);
     try {
-      await runLabAgent({ input, emit, llm: labLlm, signal: controller.signal, tools });
+      await runLabAgent({ input, emit, llm: labLlm, signal: controller.signal, tools, config });
     } catch (err) {
       // El costo de una ejecución fallida también cuenta (principio 4: se registra todo lo gastado).
       if (!controller.signal.aborted) emit({ type: 'error', text: err.message, ...(err.totals || {}), ms: err.ms, compileErrors: err.compileErrors });
@@ -77,6 +90,37 @@ export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, wav
     });
   }
 
+  async function contextInfo(res) {
+    sendJson(res, 200, {
+      mock,
+      models: await visionModels(),
+      harness: { version: CONTEXT_HARNESS, skillsCommit: SKILLS_COMMIT, maxBriefRefs: MAX_BRIEF_REFS, maxZoneSeconds: MAX_ZONE_SECONDS, maxCompileRetries: MAX_COMPILE_RETRIES, ...runtimeInfo() },
+      maxVariants: MAX_VARIANTS,
+      maxFrames: MAX_FRAMES,
+      template: defaultTemplate(),
+      skills: ALL_SKILLS.map(({ file, title, chars }) => ({ file, title, chars })),
+      defaultSkills: DEFAULT_SKILLS,
+      soundSkills: SOUND_SKILLS,
+      defaultPolicy: DEFAULT_POLICY,
+      limits: { defaults: DEFAULT_LIMITS, caps: LIMIT_CAPS },
+      tools: {
+        ...tools.available, costs: TOOL_COSTS, imageModel: IMAGE_MODEL, imageEditModel: IMAGE_EDIT_MODEL, sfxModel: SFX_MODEL, videoResolution: videoResolution(),
+        videoModels: Object.entries(VIDEO_MODELS).map(([id, m]) => ({ id, label: m.label })), defaultVideoModel: DEFAULT_VIDEO_MODEL,
+      },
+    });
+  }
+
+  async function contextPreview(req, res) {
+    try {
+      const body = await readBody(req, 1024 * 1024);
+      const variant = parseVariant(body?.variant);
+      const { system, harness, maxToolRounds } = contextConfig(variant, tools.available);
+      sendJson(res, 200, { system, chars: system.length, harness, maxToolRounds });
+    } catch (err) {
+      badRequest(res, err.message);
+    }
+  }
+
   // El documento entero va en línea: la página lo carga como srcdoc con sandbox="allow-scripts"
   // (origen opaco, sin acceso a la app) y la CSP del <meta> le corta la red.
   let frameDoc = null;
@@ -96,6 +140,9 @@ export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, wav
     if (req.method === 'POST' && url.pathname === '/api/lab/run') { run(req, res); return true; }
     if (req.method === 'GET' && url.pathname === '/api/lab/models') { models(res); return true; }
     if (req.method === 'GET' && url.pathname === '/api/lab/frame.html') { frame(res); return true; }
+    if (req.method === 'POST' && url.pathname === '/api/lab/context/run') { run(req, res, { context: true }); return true; }
+    if (req.method === 'GET' && url.pathname === '/api/lab/context/info') { contextInfo(res); return true; }
+    if (req.method === 'POST' && url.pathname === '/api/lab/context/preview') { contextPreview(req, res); return true; }
     return false;
   };
 }

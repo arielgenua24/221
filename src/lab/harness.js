@@ -87,8 +87,16 @@ export function zonesFor(clips) {
   return clips.map((c) => ({ id: c.id, from: toFrames(c.start), durationInFrames: Math.max(1, toFrames(c.end) - toFrames(c.start)), prompt: c.prompt, notes: c.notes }));
 }
 
+// n cuadros repartidos de una lista (Context Lab elige cuántos cuadros por zona ve el agente).
+export function pickFrames(frames, n) {
+  if (!Number.isFinite(n) || n >= frames.length) return frames.map((f, k) => ({ f, k }));
+  if (n <= 0) return [];
+  return Array.from({ length: n }, (_, i) => Math.round(((i + 0.5) / n) * frames.length - 0.5)).map((k) => ({ f: frames[k], k }));
+}
+
 // El pedido (idéntico para los dos modelos): texto + cuadros de cada zona + referencias.
-export function briefContent({ brief, video, clips }) {
+// opts.frames: cuántos cuadros por zona se muestran (por defecto, todos). Los ids no cambian (C1-3 sigue siendo el 3.º).
+export function briefContent({ brief, video, clips }, { frames } = {}) {
   const zones = zonesFor(clips);
   const text = [
     `# Video\n${video.name} · ${video.width}×${video.height} · ${fmtS(video.duration)} · ${Math.ceil(video.duration * FPS)} cuadros a ${FPS} fps.`,
@@ -96,11 +104,11 @@ export function briefContent({ brief, video, clips }) {
     `# Instrucciones\n${brief.instructions || '(sin instrucciones: proponé vos el motion más adecuado)'}`,
     `# Zonas marcadas (el motion va SOLO acá)\n${clips.map((c, i) => `- ${c.id}: ${fmtS(c.start)} → ${fmtS(c.end)} = cuadros ${zones[i].from} → ${zones[i].from + zones[i].durationInFrames} (${zones[i].durationInFrames} cuadros).${c.prompt ? ` Pedido: ${c.prompt}` : ''}${c.notes ? ` Estilo: ${c.notes}` : ''}${c.refs.length ? ` (${c.refs.length} referencia${c.refs.length > 1 ? 's' : ''} propia${c.refs.length > 1 ? 's' : ''} abajo)` : ''}`).join('\n')}`,
     brief.refs.length ? `# Referencias visuales generales\n${brief.refs.length} imagen${brief.refs.length > 1 ? 'es' : ''} abajo: el estilo que el humano quiere conseguir.` : '',
-    'Abajo van cuadros de cada zona (con su segundo dentro de la zona) y las referencias. Escribí el componente.',
+    frames === 0 ? 'No te muestro cuadros del video: trabajá con la descripción de cada zona. Escribí el componente.' : 'Abajo van cuadros de cada zona (con su segundo dentro de la zona) y las referencias. Escribí el componente.',
   ].filter(Boolean).join('\n\n');
   const parts = [{ type: 'text', text }];
   clips.forEach((c) => {
-    c.frames.forEach((f, k) => parts.push(
+    pickFrames(c.frames, frames).forEach(({ f, k }) => parts.push(
       { type: 'text', text: `${c.id}-${k + 1} — cuadro de ${c.id} en ${fmtS(c.start + f.t)} del video (${fmtS(f.t)} dentro de la zona, cuadro ${toFrames(c.start + f.t)})` },
       { type: 'image_url', image_url: { url: f.url } },
     ));
@@ -129,6 +137,9 @@ export function imageRegistry({ brief, clips }) {
 
 export const generateFirst = () => 'Antes de escribir el componente tenés que generar al menos una imagen propia con generar_imagen (es obligatorio en este entorno) y usarla en la animación con <Img src={images.gen1} />. Pensala desde las referencias: que sea la pieza visual fuerte de la animación. Después devolvé el archivo COMPLETO en un solo bloque ```tsx.';
 export const useImages = (ids) => `Generaste ${ids.join(' y ')} pero tu componente no las usa. Integralas en la animación con <Img src={images.${ids[0]}} /> de remotion (animadas, no pegadas) y devolvé el archivo COMPLETO en un solo bloque \`\`\`tsx.`;
+export const soundFirst = () => 'Antes de escribir el componente tenés que generar al menos un efecto de sonido con generar_sonido (es obligatorio en este entorno) y ponerlo con <Audio src={sounds.sfx1} /> de "@remotion/media" sincronizado con un movimiento. Después devolvé el archivo COMPLETO en un solo bloque ```tsx.';
+export const videoFirst = () => 'Antes de escribir el componente tenés que generar una toma con generar_video (es obligatorio en este entorno): elegí la zona y el cuadro de partida y escribí el prompt de la toma. Va en su propia capa, debajo de tu animación. Después devolvé el archivo COMPLETO en un solo bloque ```tsx, pensado para convivir con esa toma.';
+export const useSounds = (ids) => `Generaste ${ids.join(' y ')} pero tu componente no los usa. Ponelos con <Audio src={sounds.${ids[0]}} /> de "@remotion/media" dentro de la <Sequence> del movimiento que acompañan y devolvé el archivo COMPLETO en un solo bloque \`\`\`tsx.`;
 export const searchFirst = () => 'Antes de escribir el componente tenés que buscar referencias en internet con buscar_referencias (es obligatorio en este entorno). Hacé una o más búsquedas pensadas para este encargo, mirá los resultados y recién después escribí el archivo COMPLETO en un solo bloque ```tsx.';
 export const compileFix = (message) => `El código no compila o no cumple el contrato del entorno: ${message}\nCorregilo y devolvé el archivo COMPLETO en un solo bloque \`\`\`tsx.`;
 export const runtimeFix = (message) => `El componente compila pero falla al reproducirse en el Player de Remotion: ${message}\nCorregí la causa y devolvé el archivo COMPLETO en un solo bloque \`\`\`tsx.`;
