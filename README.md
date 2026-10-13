@@ -110,6 +110,40 @@ selector (OpenRouter)       1 · clip + zonas marcadas (hasta 11 s)  selector (O
 - En modo demo, los agentes devuelven componentes de ejemplo; los modelos "baratos" (flash, mini, luna…) fallan la primera compilación a propósito para mostrar la corrección automática.
 - Remotion tiene su propia licencia: es gratis para personas y empresas chicas, y las empresas más grandes necesitan una licencia de empresa ([remotion.dev/license](https://www.remotion.dev/license)).
 
+## Laboratorio · Context Lab (pestaña)
+
+La idea inversa de Motion Design: **un solo modelo**, el mismo clip y las mismas zonas, y de **2 a 4 variantes de contexto**. Sirve para practicar *context engineering*: qué entra en la ventana de contexto del agente y qué herramientas le das cambia el resultado tanto como el modelo. Está en `/#laboratorio/context-lab`.
+
+```
+Modelo (uno)            1 · clip + zonas (el mismo marcador de ✨ Intuition)
+                        2 · pedido base: contexto, instrucciones, referencias (lo heredan las variantes)
+  ▼
+3 · Variantes: cada una elige
+    · herramientas, cada una Apagada / Opcional / Obligatoria, con su máximo:
+        buscar referencias (SerpAPI) · generar imagen (Nano Banana 2.1) ·
+        generar sonido (SFX, WaveSpeed text→audio) · generar video IA (Seedance / Wan, image→video)
+    · pedido propio o heredado; referencias del pedido base, propias o ninguna
+    · cuántos cuadros por zona ve (0 a 6) · temperatura · esfuerzo de razonamiento
+    · qué Remotion Agent Skills entran (con su tamaño en tokens)
+    · ejemplos (few-shot)
+    · el prompt de sistema completo (plantilla editable con {{herramientas}}, {{ejemplos}} y {{skills}})
+  ▼  "Ejecutar variantes": una ejecución por variante, en paralelo (ninguna ve a las otras), mismo harness de Remotion
+Player por variante, en capas: video original → tomas de IA (cada una en su capa) → animación del agente
+  → cada capa se oculta, mueve o escala por separado; los sonidos suenan dentro de la animación
+  ▼
+4 · Comparar: tabla con las perillas que cambian resaltadas, contexto inicial (tokens de entrada de la 1.ª llamada),
+    costo, tiempo, intentos y herramientas usadas; aprobar, calidad, fidelidad y variante preferida → Historial
+```
+
+- **Mismo bucle que Motion Design** ([src/lab/pipeline.js](src/lab/pipeline.js)): `runLabAgent` recibe la configuración de la variante (prompt de sistema, modos, límites, cuadros, temperatura y razonamiento). Sin configuración se comporta exactamente como antes, así que Motion Design no cambia. La configuración se arma y valida en [src/lab/context.js](src/lab/context.js).
+- **Modos**: *Opcional* = el modelo decide. *Obligatoria* = si escribe el componente sin usarla, se le pide una vez (la búsqueda además se fuerza con `tool_choice` en la primera llamada, como en Motion Design). Una herramienta *Apagada* no se le ofrece y, si el modelo la inventa, no se ejecuta.
+- **Sonido**: `generar_sonido` deja `sounds.sfx1…` y el agente los pone con `<Audio>` de `@remotion/media`. Se mezclan sobre el audio original y quedan en la descarga. El modelo y su costo orientativo se cambian con `LAB_SFX_MODEL` y `LAB_SFX_COST`.
+- **Video IA**: `generar_video(zona, imagen?, prompt)` genera una toma image→video a partir de un cuadro de la zona. **No entra en el componente**: el entorno la pone en su propia capa durante la zona, entre el video original y la animación. Tarda minutos. Se configura con `LAB_VIDEO_RESOLUTION` y `LAB_VIDEO_COST_PER_SECOND`. El agente no ve la toma generada: solo sabe de qué cuadro partió y qué pidió.
+- **Rutas**: `GET /api/lab/context/info`, `POST /api/lab/context/preview` (el prompt de sistema final de una variante) y `POST /api/lab/context/run` (NDJSON, como `/api/lab/run`).
+- **Dónde se guarda**: en el navegador, con su propio namespace (`lab.context.*` en localStorage e IndexedDB `lab-context`). Las variantes de trabajo se recuerdan entre visitas. Las tomas de video quedan en `runs/media/`.
+- En modo demo, la "toma de IA" es un cuadro quieto del clip y el sonido, un barrido sintético: alcanza para probar las capas sin pagar.
+- Pruebas: `node --test test/context-lab.test.js`. Navegador: `PLAYWRIGHT_MODULE=/ruta/a/playwright/index.mjs node test/browser/context-lab.mjs` (servidor demo; necesita ffmpeg para armar el clip de prueba).
+
 ## Laboratorio · Cinematic Videos
 
 En `/#laboratorio` se elige la carpeta. `/#laboratorio/motion-design` conserva el laboratorio de animación; `/#laboratorio/cinematic-videos` compara generación de video.
