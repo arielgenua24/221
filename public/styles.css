@@ -505,6 +505,8 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 .small-btn { border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 8px 12px; font-size: 14px; cursor: pointer; min-height: 40px; align-self: flex-start; }
 .small-btn:hover:not(:disabled) { border-color: var(--accent); }
 .small-btn:disabled, .primary:disabled { opacity: .5; }
+/* «Guardar video»: un enlace con forma de botón (el clic de la persona habilita la descarga). */
+a.small-btn.lab-save { display: inline-flex; align-items: center; color: inherit; text-decoration: none; border-color: var(--accent); }
 .spinner { width: 14px; height: 14px; flex-shrink: 0; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
 
 .story-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
@@ -687,6 +689,8 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 .lab-side[data-side="B"] .lab-badge, .lab-vs-side:nth-child(2) .lab-badge { background: var(--orq); }
 .lab-model { flex: 1; min-width: 0; border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 8px 10px; font-size: 15px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .lab-price, .lab-result-of { margin: -4px 0 0; }
+.lab-reasoning-row { margin: 0; }
+.lab-reasoning { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 6px 8px; font-size: 14px; max-width: 100%; }
 .lab-result-of { color: var(--cri); }
 .lab-stage { position: relative; aspect-ratio: var(--ar, 9 / 16); width: 100%; max-height: 64dvh; background: #000; border-radius: 12px; overflow: hidden; display: grid; place-items: center; }
 .lab-drag { position: absolute; inset: 0; cursor: move; touch-action: none; outline: 2px dashed rgba(255,255,255,.75); outline-offset: -6px; border-radius: 12px; display: flex; align-items: flex-start; justify-content: center; }
@@ -722,6 +726,84 @@ strong.raw-crumb { color: var(--text); cursor: default; }
 .lab-star[aria-pressed="true"] { color: #f2a900; }
 .lab-inline { display: flex; align-items: center; gap: 8px; }
 .lab-inline input { width: 80px; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 6px 8px; }
+.lab-inline input[type="checkbox"] { width: auto; }
+/* Registro de herramientas (qué hizo el agente con buscar / imagen / sonido / video) */
+.tool-feed { border: 1px solid var(--border); border-radius: 12px; background: var(--bg); padding: 8px 10px; }
+.tool-feed[hidden] { display: none; }
+.tool-feed-summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.tool-feed-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.tool-feed-item { border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; padding: 8px 10px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.tool-feed-item.running { border-left-color: var(--muted); }
+.tool-feed-item.error { border-left-color: #b3261e; }
+.tool-feed-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tool-feed-meta { margin-left: auto; font-variant-numeric: tabular-nums; }
+.tool-feed-body { display: flex; flex-direction: column; gap: 6px; }
+.tool-feed-body p { margin: 0; }
+.tool-feed-img { max-width: 100%; max-height: 180px; border-radius: 8px; border: 1px solid var(--border); align-self: flex-start; }
+.tool-feed-error { margin: 0; color: #b3261e; }
+.tool-feed-badge { font-size: 11px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--border); background: var(--bg); }
+.tool-feed-badge.ok { border-color: #1b7f4b; color: #1b7f4b; }
+.tool-feed-badge.error, .tool-feed-badge.warn { border-color: #b3261e; color: #b3261e; }
+.tool-feed-plan { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.tool-feed-plan[hidden] { display: none; }
+.tool-feed-plan p { margin: 0 0 4px; }
+.tool-feed-planlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tool-feed-planlist li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tool-feed-plannote { flex: 1; min-width: 100px; }
+/* Marcador: modo Automático / Manual */
+.studio-mode { margin: 4px 0; }
+.studio-auto, .studio-manual { display: flex; flex-direction: column; gap: 8px; }
+.studio-auto[hidden], .studio-manual[hidden] { display: none; }
+.studio-auto .actions { align-items: center; flex-wrap: wrap; }
+.studio-auto-count { width: 64px; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 6px 8px; font-size: 15px; }
+.studio-auto-status { margin: 0; min-height: 1.2em; }
+.clip-seen-label { margin: 0; }
+.clip-said { margin: 0; padding: 6px 8px; border-left: 3px solid var(--border); background: var(--surface-2); border-radius: 4px; font-style: italic; }
+.studio-marks { position: absolute; inset: 0; pointer-events: none; }
+.studio-mark { position: absolute; top: 2px; transform: translateX(-50%); font-size: 13px; line-height: 1; padding: 2px 3px; border-radius: 6px; background: var(--bg); border: 1.5px solid var(--c, var(--accent)); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.clip-toolplan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.clip-toolplan li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.clip-toolplan-at { border: 1px solid var(--border); background: var(--surface); border-radius: 99px; padding: 1px 8px; font-size: 12px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.clip-toolplan-note { flex: 1; min-width: 120px; }
+.clip-toolplan .remove { position: static; flex: none; }
+/* Música de fondo del estudio */
+.studio-music { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.studio-music[hidden] { display: none; }
+.studio-music-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.studio-music-head strong { margin-right: auto; }
+.studio-music-check { align-items: center; gap: 6px; }
+.music-volume { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.music-volume input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+.music-volume-value { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.music-cues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.music-cue { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 8px; background: var(--surface-2); }
+.music-cue-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.music-cue audio { width: 100%; height: 32px; }
+.music-cue-failed { opacity: .7; }
+.music-prompt summary { cursor: pointer; }
+.music-prompt p { margin: 4px 0 0; }
+.clip-seen { display: flex; gap: 6px; overflow-x: auto; }
+.clip-seen figure { margin: 0; flex: none; text-align: center; }
+.clip-seen img { height: 64px; width: auto; border-radius: 6px; border: 1px solid var(--border); display: block; }
+/* Documentos .md adjuntos */
+.lab-docs { padding-top: 6px; border-top: 1px solid var(--border); }
+.lab-docs-add { cursor: pointer; display: inline-block; }
+.lab-docs-note { margin: 0; color: var(--danger, #b3261e); }
+.lab-docs-note:empty { display: none; }
+.lab-docs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.lab-docs-list:empty { display: none; }
+.lab-docs-item { display: flex; align-items: center; gap: 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 4px 6px 4px 10px; }
+.lab-docs-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.lab-docs-item .remove { position: static; flex: none; }
+.lab-docs-total { margin: 0; }
+.ctx-doc { gap: 6px; }
+.ctx-docs-inherited { display: flex; flex-direction: column; gap: 4px; }
+.ctx-docs-total { font-weight: 600; }
+/* Habla del video (Whisper): estado y cabezales por segundo */
+.lab-speech { padding-top: 6px; border-top: 1px solid var(--border); }
+.lab-speech-status { margin: 0; }
+.lab-speech-heads > summary { cursor: pointer; }
+.lab-speech-list { margin: 6px 0 0; max-height: 220px; overflow: auto; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .lab-live summary, .lab-code summary, .lab-revise summary { cursor: pointer; font-size: 14px; font-weight: 600; }
 .lab-revise { display: flex; flex-direction: column; gap: 8px; }
 .lab-revise[open] { padding-bottom: 4px; }

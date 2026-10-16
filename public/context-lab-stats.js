@@ -38,9 +38,13 @@ export function configSummary(cfg, { skillsChars = 0, systemChars = null, defaul
     skills: (cfg.skills || []).length,
     skillsChars,
     frames: cfg.frames,
+    speechUsed: !!cfg.speechUsed,
+    docsCount: cfg.docsCount ?? 0,
+    docsChars: cfg.docsChars ?? 0,
     temperature: cfg.temperature ?? null,
     reasoning: cfg.reasoning || null,
     videoModel: cfg.videoModel || null,
+    engine: cfg.engine || 'remotion',
     templateEdited: !!cfg.template && cfg.template.trim() !== defaultTemplate.trim(),
     templateChars: (cfg.template || defaultTemplate).length,
     examplesChars: (cfg.examples || '').trim().length,
@@ -61,8 +65,10 @@ export function configStats(experiments) {
       const run = v.run;
       if (!run?.model || !run.attempts?.length) continue;
       const m = variantMetrics(run);
-      const key = `${run.model}  ${v.config?.signature || '?'}`;
-      const s = by.get(key) || { model: run.model, signature: v.config?.signature || '?', runs: 0, approved: 0, wins: 0, cost: 0, ms: [], quality: [], fidelity: [], attempts: [], edited: 0 };
+      // El motor entra en el grupo (sin motor = Remotion, como los experimentos viejos).
+      const signature = `${v.config?.engine && v.config.engine !== 'remotion' ? `${v.config.engine} · ` : ''}${v.config?.signature || '?'}`;
+      const key = `${run.model}  ${signature}`;
+      const s = by.get(key) || { model: run.model, signature, runs: 0, approved: 0, wins: 0, cost: 0, ms: [], quality: [], fidelity: [], attempts: [], edited: 0 };
       s.runs += 1;
       if (run.eval?.approved === true) s.approved += 1;
       if (ex.preference === v.key) s.wins += 1;

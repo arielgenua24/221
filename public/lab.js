@@ -1,14 +1,22 @@
 import { el, streamEvents } from './shared.js';
 import { createStudio } from './intuition.js';
+import { createSpeechPanel } from './speech.js';
+import { createDocsPanel, isDocFile } from './docs.js';
+import { createAutoPlanner } from './auto-plan.js';
+import { musicForFrame, broadcastMusic } from './lab-music.js';
+import { createToolFeed } from './tool-feed.js';
+import { fillReasoning, reasoningText } from './reasoning.js';
 import { loadPhoto } from './media.js';
 import { newRun, runMetrics, modelStats, experimentStatus, money, secs, IDENTITY, isAdjusted } from './lab-stats.js';
 import * as store from './lab-store.js';
 import { compositeOverlay } from './lab-composite.js';
+import { keepVideo, forgetVideo, savedLink } from './lab-download.js';
 
 // Pestaña Laboratorio · Motion Design.
 // Dos modelos hacen el mismo trabajo (mismo video, zonas, contexto, referencias e instrucciones) con el mismo harness
 // de Remotion; cada uno corre por separado y su resultado se reproduce en un iframe aislado. El humano compara,
 // evalúa y todo queda en el historial local (ver lab-store.js).
+// El MOTOR (Remotion o el propio en canvas) se elige por experimento: los dos modelos compiten sobre el mismo.
 
 const $ = (id) => document.getElementById(id);
 const MAX_RUNTIME_FIXES = 2; // correcciones automáticas seguidas por errores al reproducir
@@ -37,7 +45,13 @@ const newBtn = el('button', 'small-btn', 'Nuevo experimento');
 newBtn.type = 'button';
 newBtn.title = 'Empezar de cero (el experimento actual queda en el historial)';
 const harnessPill = el('span', 'pill lab-harness');
-toolbar.append(nameInput, harnessPill, newBtn, runBtn);
+// Motor de animación del próximo experimento (los que ya corrieron siguen con el suyo).
+const engineSel = el('select', 'lab-engine');
+engineSel.setAttribute('aria-label', 'Motor de animación');
+engineSel.title = 'Qué compila y reproduce las animaciones: Remotion (React/TSX) o el motor propio (JavaScript en canvas)';
+engineSel.onchange = () => { store.setPrefs({ engine: engineSel.value }); showHarness(); };
+const engineLabel = (id) => info.harness?.engines?.find((e) => e.id === id)?.label || id || 'Remotion';
+toolbar.append(nameInput, engineSel, harnessPill, newBtn, runBtn);
 const hint = el('p', 'muted small lab-hint');
 const setupNote = el('p', 'notice lab-setup');
 setupNote.hidden = true;
@@ -86,12 +100,36 @@ const sides = Object.fromEntries(SIDES.map((k) => [k, createSide(k)]));
 grid.append(sides.A.node, center, sides.B.node);
 root.append(toolbar, hint, setupNote, grid);
 
+// Modo Automático del marcador: el agente elige los momentos a partir de la transcripción (speech se crea más abajo).
+const planner = createAutoPlanner({
+  getSpeech: () => speech,
+  getBrief: () => ({ context: contextInput.value.trim(), instructions: instructionsInput.value.trim() }),
+  getModel: () => sides.A.model.value.trim(),
+  getInfo: () => info,
+  // El diseñador de Motion Design tiene buscar e imagen, obligatorias (si el servidor las ofrece).
+  getTools: () => ({ ...(info.harness?.tools?.search ? { search: 'required' } : {}), ...(info.harness?.tools?.images ? { images: 'required' } : {}) }),
+});
 const studio = createStudio({
   mount: studioBox,
   label: '1 · Clip y zonas',
   onError: error,
   onChange: () => refresh(),
+  auto: planner.auto,
+  onMusic: (m) => musicChanged(m),
 });
+
+// La música de fondo es del video, no de un agente: suena en los dos reproductores y se guarda con el experimento
+// (solo si el marcador sigue con el video de ese experimento).
+function musicChanged(m) {
+  broadcastMusic(m, SIDES.map((k) => sides[k]?.frame?.contentWindow));
+  if (exp && frozen?.file && frozen.file === studio.current()?.file) store.putBlob(`${exp.id}:music`, m);
+}
+
+// Documentos .md adjuntos: los dos agentes reciben exactamente los mismos.
+const docsPanel = createDocsPanel({ mount: brief, onChange: () => refresh() });
+
+// Habla del video (Whisper): los dos agentes reciben los mismos cabezales por segundo.
+const speech = createSpeechPanel({ mount: brief, studio, onChange: () => refresh() });
 
 const datalist = el('datalist');
 datalist.id = 'lab-model-list';
@@ -109,7 +147,20 @@ function createSide(key) {
   model.setAttribute('aria-label', `Modelo ${key}`);
   head.append(badge, model);
   const price = el('p', 'muted small lab-price');
-  model.oninput = () => { showPrice(); store.setPrefs({ [`model${key}`]: model.value.trim() }); side.render(); refresh(); };
+  // Razonamiento: cada modelo acepta sus propios niveles, así que las opciones salen del catálogo y cambian con el modelo.
+  const reasoning = el('select', 'lab-reasoning');
+  reasoning.setAttribute('aria-label', `Razonamiento del modelo ${key}`);
+  const reasoningRow = el('label', 'lab-inline lab-reasoning-row');
+  reasoningRow.append(el('span', 'small', 'Razonamiento'), reasoning);
+  const reasoningHint = el('p', 'muted small lab-price');
+  let reasoningValue = ''; // '' = el nivel por defecto del modelo
+  function showReasoning() {
+    const r = fillReasoning(reasoning, info.models.find((x) => x.id === model.value.trim()), reasoningValue);
+    reasoningValue = r.value;
+    reasoningHint.textContent = r.hint;
+  }
+  reasoning.onchange = () => { reasoningValue = reasoning.value; store.setPrefs({ [`reasoning${key}`]: reasoningValue }); showReasoning(); side.render(); refresh(); };
+  model.oninput = () => { showPrice(); showReasoning(); store.setPrefs({ [`model${key}`]: model.value.trim() }); side.render(); refresh(); };
 
   const resultOf = el('p', 'small lab-result-of');
   const stage = el('div', 'lab-stage');
@@ -140,14 +191,21 @@ function createSide(key) {
   // Cortar y mover la animación en el tiempo (no el video).
   const cuts = el('div', 'lab-cuts');
   const codeBox = el('details', 'lab-code');
-  codeBox.append(el('summary', null, 'Ver código (TSX)'));
+  codeBox.append(el('summary', null, 'Ver código'));
   const codePre = el('pre', 'lab-out');
   codeBox.append(codePre);
   const actions = el('div', 'actions compact');
   const adjust = el('div', 'lab-adjust');
   const legacyNote = el('p', 'muted small', 'Este resultado es del harness v1 (el video va dentro del componente): no se puede ajustar el tamaño por separado. Los experimentos nuevos sí.');
-  const toolsBox = el('details', 'lab-tools');
-  node.append(head, price, resultOf, refsBar, stage, status, actions, feedback, adjust, cuts, legacyNote, metrics, evalBox, toolsBox, live, codeBox);
+  // Registro en vivo de lo que hace con las herramientas (buscar, generar imagen) y, si hay, el plan del modo Automático.
+  const feed = createToolFeed({
+    resolve: { search: (q) => [...side.found].reverse().find((f) => f.query === q), image: (id) => side.assets.find((a) => a.id === id) },
+    getCode: () => side.code,
+    getPlan: () => (frozen?.payload.clips.some((c) => c.toolPlan?.length) ? { clips: frozen.payload.clips, enabled: { search: !!info.harness?.tools?.search, images: !!info.harness?.tools?.images } } : null),
+    running: () => ['running', 'checking'].includes(side.run()?.status),
+    active: () => !!side.run()?.attempts?.length,
+  });
+  node.append(head, price, reasoningRow, reasoningHint, resultOf, refsBar, stage, status, feed.node, actions, feedback, adjust, cuts, legacyNote, metrics, evalBox, live, codeBox);
 
   const side = {
     key, node, model, stage, frame: null, controller: null, code: '', js: '', turns: [], runtimeFixes: 0, pending: null,
@@ -159,6 +217,7 @@ function createSide(key) {
     selected: null, // corte seleccionado en el editor
     rendering: null, // progreso de la descarga (0..1) o null
     run: () => exp?.sides[key],
+    feed,
   };
 
   // ---------- Tamaño y posición de la capa sobre el video ----------
@@ -238,32 +297,8 @@ function createSide(key) {
   }
   side.renderDrag = renderDrag;
 
-  // ---------- Lo que buscó y generó ----------
-  function renderTools() {
-    toolsBox.replaceChildren();
-    if (!side.assets.length && !side.found.length) { toolsBox.hidden = true; return; }
-    toolsBox.hidden = false;
-    toolsBox.append(el('summary', null, `Herramientas · ${side.found.length} búsqueda${side.found.length === 1 ? '' : 's'} · ${side.assets.length} ${side.assets.length === 1 ? 'imagen generada' : 'imágenes generadas'}`));
-    side.assets.forEach((a) => {
-      const fig = el('figure', 'lab-asset');
-      const img = el('img'); img.src = a.url; img.alt = a.prompt;
-      fig.append(img, el('figcaption', 'small', `${a.id} · ${a.prompt}`));
-      toolsBox.append(fig);
-    });
-    side.found.forEach((f) => {
-      toolsBox.append(el('p', 'small lab-query', `Buscó: «${f.query}»`));
-      const strip = el('div', 'thumbs');
-      f.results.forEach((r) => {
-        const t = el(r.link ? 'a' : 'div', 'thumb');
-        if (r.link) { t.href = r.link; t.target = '_blank'; t.rel = 'noopener noreferrer'; }
-        t.title = `${r.id} · ${r.title}${r.source ? ` (${r.source})` : ''}`;
-        const img = el('img'); img.src = r.thumb; img.alt = r.title;
-        t.append(img);
-        strip.append(t);
-      });
-      toolsBox.append(strip);
-    });
-  }
+  // ---------- Lo que buscó y generó (registro en vivo) ----------
+  function renderTools() { feed.render(); }
   side.renderTools = renderTools;
 
   // ---------- Cortar y mover la animación ----------
@@ -401,6 +436,9 @@ function createSide(key) {
     price.textContent = m?.prompt !== null && m?.prompt !== undefined ? `${m.name} · US$ ${fmtPrice(m.prompt)} entrada / ${fmtPrice(m.completion)} salida por millón de tokens` : model.value.trim() ? 'Modelo fuera del catálogo con visión (se usa igual si OpenRouter lo tiene).' : '';
   }
   side.showPrice = showPrice;
+  side.showReasoning = showReasoning;
+  side.reasoning = () => reasoningValue;
+  side.setReasoning = (v) => { reasoningValue = v || ''; showReasoning(); };
 
   const busyNow = () => ['running', 'checking'].includes(side.run()?.status);
   const secOf = (f) => (f / fps()).toFixed(1);
@@ -569,6 +607,8 @@ function createSide(key) {
       dl.title = 'Renderiza en tu navegador el video con la animación tal cual se ve (tamaño, posición y cortes incluidos). Dejá la pestaña visible mientras tanto.';
       dl.onclick = () => side.download();
       actions.append(dl);
+      // El último render, para guardarlo a mano si el navegador bloqueó la descarga automática.
+      if (side.saved && side.rendering === null) actions.append(savedLink(side.saved));
     }
     renderFeedback(run);
     renderRefsBar(run);
@@ -663,9 +703,11 @@ function busy() { return SIDES.some((k) => ['running', 'checking'].includes(exp?
 function refresh() {
   const v = studio.current();
   if (v) SIDES.forEach((k) => { if (!sides[k].frame) sides[k].stage.style.setProperty('--ar', `${v.width} / ${v.height}`); });
-  const why = missing();
+  speech.sync();
+  const why = missing() || (speech.busy() ? 'Esperá a que termine la transcripción del habla.' : '');
   const running = busy();
   runBtn.disabled = !!why || running;
+  engineSel.disabled = running;
   runBtn.textContent = exp?.sides.A.attempts.length ? 'Ejecutar como experimento nuevo' : 'Ejecutar experimento';
   hint.textContent = running ? 'Los dos agentes trabajan por separado: ninguno ve lo que hace el otro.'
     : why || (exp?.sides.A.attempts.length ? 'Los cambios en el brief o los modelos se usan en un experimento nuevo; las revisiones de cada lado siguen con el brief original.' : 'Listo para ejecutar: los dos modelos reciben el mismo clip, zonas, contexto, referencias e instrucciones.');
@@ -680,8 +722,8 @@ runBtn.onclick = async () => {
     const { body } = await studio.request('');
     const parsed = JSON.parse(body);
     const v = studio.current();
-    const briefData = { context: contextInput.value.trim(), instructions: instructionsInput.value.trim(), refs: briefRefs.filter((r) => r.status === 'ready').map((r) => ({ name: r.name, url: r.url })) };
-    frozen = { brief: briefData, payload: { video: parsed.video, clips: parsed.clips } };
+    const briefData = { context: contextInput.value.trim(), instructions: instructionsInput.value.trim(), refs: briefRefs.filter((r) => r.status === 'ready').map((r) => ({ name: r.name, url: r.url })), docs: docsPanel.get().map(({ name, text }) => ({ name, text })) };
+    frozen = { brief: briefData, payload: { video: parsed.video, clips: parsed.clips }, transcript: speech.get(), engine: engineSel.value || 'remotion' };
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     const count = store.listExperiments().length + 1;
     exp = {
@@ -689,11 +731,15 @@ runBtn.onclick = async () => {
       createdAt: new Date().toISOString(),
       name: nameInput.value.trim() || `Experimento ${count} · ${v.name}`,
       section: 'motion-design',
-      harness: info.harness.version || '',
+      engine: frozen.engine,
+      harness: info.harness.versions?.[frozen.engine] || info.harness.version || '',
       video: { name: v.name, duration: v.duration, width: v.width, height: v.height },
       zones: parsed.clips.map((c) => ({ id: c.id, start: c.start, end: c.end, prompt: c.prompt, notes: c.notes, refs: c.refs.length })),
-      brief: { context: briefData.context, instructions: briefData.instructions, refs: briefData.refs.map((r) => r.name) },
-      sides: Object.fromEntries(SIDES.map((k) => [k, newRun(sides[k].model.value.trim())])),
+      brief: { context: briefData.context, instructions: briefData.instructions, refs: briefData.refs.map((r) => r.name), docs: briefData.docs.map((d) => d.name) },
+      speech: speech.summary(),
+      planner: planner.take(),
+      music: planner.takeMusic(),
+      sides: Object.fromEntries(SIDES.map((k) => [k, newRun(sides[k].model.value.trim(), sides[k].reasoning())])),
       preference: null,
       notes: '',
     };
@@ -701,11 +747,12 @@ runBtn.onclick = async () => {
     // Lo pesado va a IndexedDB por referencia (el video entero, cuadros, referencias).
     await store.putBlob(`${id}:video`, v.file);
     await store.putBlob(`${id}:inputs`, frozen);
+    await store.putBlob(`${id}:music`, studio.music());
     frozen.file = v.file; // el video de ESTE experimento, aunque después se cambie el del marcador
     persist();
     SIDES.forEach((k) => {
       const s = sides[k];
-      Object.assign(s, { code: '', js: '', turns: [], assets: [], found: [], queue: [], selected: null, rendering: null, runtimeFixes: 0 }); s.clearOut();
+      Object.assign(s, { code: '', js: '', turns: [], assets: [], found: [], queue: [], selected: null, rendering: null, runtimeFixes: 0 }); s.feed.reset(); s.clearOut();
       unmount(s);
       execute(s, 'initial');
     });
@@ -719,7 +766,7 @@ runBtn.onclick = async () => {
 
 newBtn.onclick = () => {
   if (busy() && !confirm('Hay agentes trabajando. ¿Detenerlos y empezar de cero?')) return;
-  SIDES.forEach((k) => { sides[k].controller?.abort(); unmount(sides[k]); Object.assign(sides[k], { code: '', js: '', turns: [], assets: [], found: [], queue: [], selected: null, rendering: null }); sides[k].clearOut(); });
+  SIDES.forEach((k) => { sides[k].controller?.abort(); unmount(sides[k]); Object.assign(sides[k], { code: '', js: '', turns: [], assets: [], found: [], queue: [], selected: null, rendering: null }); sides[k].feed.reset(); sides[k].clearOut(); });
   exp = null; frozen = null;
   nameInput.value = '';
   compare.hidden = true;
@@ -750,9 +797,11 @@ async function execute(side, reason, feedback) {
   let result = null;
   let failed = null;
   try {
-    const body = JSON.stringify({ model: run.model, brief: frozen.brief, video: frozen.payload.video, clips: frozen.payload.clips, turns: side.turns, assets: side.assets });
+    const body = JSON.stringify({ model: run.model, brief: frozen.brief, video: frozen.payload.video, clips: frozen.payload.clips, transcript: frozen.transcript || undefined, reasoning: run.reasoning || undefined, turns: side.turns, assets: side.assets, engine: frozen.engine || 'remotion' });
     await streamEvents('/api/lab/run', body, controller.signal, (ev) => {
+      side.feed.handle(ev); // buscar / imagen: el registro de herramientas se arma solo
       switch (ev.type) {
+        case 'run': run.reasoningUsed = ev.reasoning ?? null; return; // el nivel que el servidor pidió de verdad (puede ser el más cercano)
         case 'attempt': side.pending = `${REASON[ev.reason] || 'Trabajando'} · llamada ${ev.call}…`; side.render(); return;
         case 'delta': side.write(ev.text); if (ev.chars % 600 < ev.text.length) { side.pending = `Escribiendo… ${ev.chars.toLocaleString('es')} caracteres`; side.render(); } return;
         case 'reasoning': if (!side.pending?.startsWith('Pensando')) { side.pending = 'Pensando…'; side.render(); } return;
@@ -783,7 +832,7 @@ async function execute(side, reason, feedback) {
     run.status = 'error';
     run.error = attempt.error;
     side.pending = null;
-    if (side.assets.length || side.found.length) await saveCode(side);
+    if (side.assets.length || side.found.length || side.feed.get().length) await saveCode(side);
     persist(); side.render(); refresh(); renderCompare();
     return;
   }
@@ -805,35 +854,43 @@ async function execute(side, reason, feedback) {
 }
 
 // Lo pesado de un lado (código, turnos, imágenes generadas y búsquedas) va a IndexedDB.
-const saveCode = (side) => store.putBlob(`${exp.id}:code:${side.key}`, { code: side.code, js: side.js, notes: side.run()?.notes || '', turns: side.turns, assets: side.assets, found: side.found });
+const saveCode = (side) => store.putBlob(`${exp.id}:code:${side.key}`, { code: side.code, js: side.js, notes: side.run()?.notes || '', turns: side.turns, assets: side.assets, found: side.found, toolLog: side.feed.get() });
 
 // ---------- Player aislado ----------
 function unmount(side) {
+  side.saved = forgetVideo(side.saved);
   side.frame?.remove();
   side.frame = null;
   side.stage.replaceChildren(el('div', 'lab-empty', `Acá va la animación del modelo ${side.key}`));
 }
 
-// El documento del iframe (CSP + React/Remotion + frame.js en línea), se baja una vez.
-let frameDoc = null;
-const frameHtml = () => {
-  frameDoc ??= fetch('/api/lab/frame.html').then((r) => (r.ok ? r.text() : r.text().then((t) => { throw new Error(t); }))).catch((err) => { frameDoc = null; throw err; });
-  return frameDoc;
+// El documento del iframe de cada motor (CSP + runtime + reproductor en línea), se baja una vez por motor.
+const frameDocs = new Map();
+const frameHtml = (engine) => {
+  if (!frameDocs.has(engine)) {
+    frameDocs.set(engine, fetch(`/api/lab/frame.html?engine=${encodeURIComponent(engine)}`)
+      .then((r) => (r.ok ? r.text() : r.text().then((t) => { throw new Error(t); })))
+      .catch((err) => { frameDocs.delete(engine); throw err; }));
+  }
+  return frameDocs.get(engine);
 };
 
 async function mount(side) {
   const v = frozen?.payload.video;
   if (!v || !frozen.file || !side.js) return;
   let html;
+  // Los experimentos de antes de los motores no lo guardaban: eran de Remotion.
+  const engine = frozen.engine || 'remotion';
   try {
-    html = await frameHtml();
+    html = await frameHtml(engine);
   } catch (err) {
     // No es culpa del agente: no se le pide corrección.
     const run = side.run();
-    if (run) { run.status = 'error'; run.error = `no cargó el Player de Remotion: ${err.message}`; persist(); side.render(); refresh(); }
+    if (run) { run.status = 'error'; run.error = `no cargó el reproductor de ${engineLabel(engine)}: ${err.message}`; persist(); side.render(); refresh(); }
     return;
   }
   side.frame?.remove();
+  side.saved = forgetVideo(side.saved); // el render guardado era de la versión anterior
   const frame = el('iframe', 'lab-frame');
   // srcdoc + sandbox sin allow-same-origin: origen opaco, el código del agente no puede tocar esta página ni su almacenamiento.
   frame.setAttribute('sandbox', 'allow-scripts');
@@ -855,11 +912,11 @@ window.addEventListener('message', (e) => {
   const run = side.run();
   if (msg.type === 'boot') {
     const v = frozen.payload.video;
-    side.frame.contentWindow.postMessage({
+    musicForFrame(studio.music()).then((music) => side.frame?.contentWindow?.postMessage({
       type: 'load', js: side.js, video: frozen.file, meta: { duration: v.duration, width: v.width, height: v.height, fps: fps() }, zones: zonesOf(),
       images: Object.fromEntries(side.assets.map((a) => [a.id, a.url])), transform: { ...IDENTITY, ...(run?.transform || {}) }, legacy: isLegacy(side.code),
-      segments: run?.segments || null,
-    }, '*');
+      segments: run?.segments || null, music,
+    }, '*'));
     return;
   }
   if (msg.type === 'frame') { side.frameNow = msg.frame; side.updateMoment(); side.drawCursor(); return; }
@@ -899,13 +956,9 @@ window.addEventListener('message', (e) => {
 
 // ---------- Descarga ----------
 function saveVideo(side, blob, ext) {
-  const a = el('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `${(exp?.name || 'laboratorio').replace(/[^\w\-áéíóúñ ]+/gi, '').trim().replace(/\s+/g, '-')}-${side.key}-${shortModel(side.run()?.model)}.${ext}`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  const name = `${(exp?.name || 'laboratorio').replace(/[^\w\-áéíóúñ ]+/gi, '').trim().replace(/\s+/g, '-')}-${side.key}-${shortModel(side.run()?.model)}.${ext}`;
+  side.saved = keepVideo(side.saved, blob, name);
+  side.render();
 }
 
 // Un error al reproducir: se corrige solo (hasta MAX_RUNTIME_FIXES seguidas) y si no, queda el botón.
@@ -969,6 +1022,7 @@ function renderCompare() {
   const [iA, iB] = best(ma.attempts, mb.attempts);
   table.append(
     tr(['', `A · ${shortModel(exp.sides.A.model)}`, `B · ${shortModel(exp.sides.B.model)}`], 'th'),
+    tr(['Razonamiento', reasoningText(exp.sides.A.reasoning, exp.sides.A.reasoningUsed), reasoningText(exp.sides.B.reasoning, exp.sides.B.reasoningUsed)]),
     tr(['Estado', ap(exp.sides.A), ap(exp.sides.B)]),
     tr(['Calidad', q(exp.sides.A), q(exp.sides.B)]),
     tr(['Fidelidad', f(exp.sides.A), f(exp.sides.B)]),
@@ -1086,7 +1140,7 @@ function renderHistory() {
   const n1 = (x) => (x === null ? '—' : x.toFixed(1));
   table.append(tr(['Modelo', 'Ejecuciones', 'Aprobadas', 'Preferido', 'Calidad', 'Fidelidad', 'Costo medio', 'Costo por aprobada', 'Tiempo medio', 'Intentos medios', 'Intervención media'], 'th'));
   stats.forEach((s) => table.append(tr([
-    s.model, String(s.runs), `${s.approved} (${pct(s.approvalRate)})`, `${s.wins} de ${s.wins + s.losses + s.ties}`,
+    `${s.model}${s.reasoning ? ` · razonamiento ${reasoningText(s.reasoning)}` : ''}`, String(s.runs), `${s.approved} (${pct(s.approvalRate)})`, `${s.wins} de ${s.wins + s.losses + s.ties}`,
     n1(s.avgQuality), n1(s.avgFidelity), money(s.avgCost), money(s.costPerApproved), secs(s.avgMs), n1(s.avgAttempts), n1(s.avgInterventions),
   ])));
   wrap.append(table);
@@ -1147,6 +1201,8 @@ async function openExperiment(id) {
   }
   setView('experiment');
   await studio.setVideo(video);
+  speech.restore(inputs.transcript || null, studio.current()?.file);
+  docsPanel.set(inputs.brief.docs || []);
   studio.setClips(inputs.payload.clips.map((c) => ({ ...c, refs: c.refs.map((r) => ({ ...r, thumb: r.frames[0] })) })));
   contextInput.value = inputs.brief.context;
   instructionsInput.value = inputs.brief.instructions;
@@ -1154,6 +1210,7 @@ async function openExperiment(id) {
   renderRefs();
   exp = ex;
   frozen = { ...inputs, file: video };
+  studio.setMusic(await store.getBlob(`${id}:music`).catch(() => null));
   nameInput.value = ex.name;
   for (const k of SIDES) {
     const s = sides[k];
@@ -1161,8 +1218,9 @@ async function openExperiment(id) {
     // Una ejecución que quedó a medias (se cerró la página) ya no sigue.
     if (run.status === 'running' || run.status === 'checking') { run.status = 'error'; run.error = 'se interrumpió (se cerró o recargó la página)'; }
     const saved = await store.getBlob(`${id}:code:${k}`);
-    s.code = saved?.code || ''; s.js = saved?.js || ''; s.turns = saved?.turns || []; s.assets = saved?.assets || []; s.found = saved?.found || []; s.runtimeFixes = MAX_RUNTIME_FIXES;
+    s.code = saved?.code || ''; s.js = saved?.js || ''; s.turns = saved?.turns || []; s.assets = saved?.assets || []; s.found = saved?.found || []; s.feed.set(saved?.toolLog); s.runtimeFixes = MAX_RUNTIME_FIXES;
     s.model.value = run.model;
+    s.setReasoning(run.reasoning || '');
     s.showPrice();
     s.clearOut();
     unmount(s);
@@ -1183,6 +1241,11 @@ function setView(view) {
 }
 document.querySelectorAll('[data-lab-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.labView)));
 
+// La versión del harness según el motor elegido (la del servidor, que es la que queda en el historial).
+function showHarness() {
+  harnessPill.textContent = `Harness ${info.harness?.versions?.[engineSel.value] || info.harness?.version || ''}${info.mock ? ' · demo' : ''}`;
+}
+
 async function start() {
   started = true;
   renderRefs();
@@ -1190,6 +1253,7 @@ async function start() {
   const p = store.prefs();
   sides.A.model.value = p.modelA || 'anthropic/claude-opus-5.5';
   sides.B.model.value = p.modelB || 'qwen/qwen3.8-max-prime';
+
   refresh();
   try {
     info = await fetch('/api/lab/models').then((r) => r.json());
@@ -1202,9 +1266,14 @@ async function start() {
     o.label = m.prompt !== null && m.prompt !== undefined ? `${m.name} · $${fmtPrice(m.prompt)}/$${fmtPrice(m.completion)} por M` : m.name;
     return o;
   }));
+  speech.setSpeech(info.speech || { available: false });
+  if (info.docs) docsPanel.setLimits(info.docs);
   // El Laboratorio permite zonas más largas que Intuition.
-  studio.setLimits({ maxClipSeconds: info.harness?.maxZoneSeconds || 11 });
-  harnessPill.textContent = `Harness ${info.harness?.version || ''}${info.mock ? ' · demo' : ''}`;
+  studio.setLimits({ maxClipSeconds: info.harness?.maxZoneSeconds || 11, maxClips: info.zones?.max || 6 });
+  const engines = info.harness?.engines || [{ id: 'remotion', label: 'Remotion' }];
+  engineSel.replaceChildren(...engines.map((e) => { const o = el('option', null, `Motor: ${e.label}`); o.value = e.id; return o; }));
+  engineSel.value = engines.some((e) => e.id === p.engine) ? p.engine : info.harness?.defaultEngine || 'remotion';
+  showHarness();
   const t = info.harness?.tools || {};
   harnessPill.title = `Mismo harness para los dos modelos.\nRemotion ${info.harness?.remotion} · ${info.harness?.fps} fps · zonas de hasta ${info.harness?.maxZoneSeconds} s\nHerramientas: ${t.search ? `búsqueda de referencias obligatoria (Google Images vía SerpAPI, máx. ${t.maxSearches} por ejecución)` : 'búsqueda desactivada (falta SERPAPI_API_KEY)'} · ${t.images ? `Nano Banana 2.1 vía WaveSpeed (máx. ${t.maxImages} imágenes)` : 'imágenes desactivadas (falta WAVESPEED_API_KEY)'}\nRemotion Agent Skills (remotion-dev/skills @ ${info.harness?.skillsCommit?.slice(0, 7)}):\n${(info.harness?.skills || []).join('\n')}`;
   // Buscar referencias es obligatorio: sin la clave de SerpAPI, los agentes diseñan sin buscar (y queda en la versión del harness).
@@ -1213,7 +1282,8 @@ async function start() {
   if (!t.images) missingTools.push('La generación de imágenes con Nano Banana 2.1 está desactivada: agregá WAVESPEED_API_KEY en .env.');
   setupNote.hidden = !missingTools.length;
   setupNote.textContent = missingTools.length ? `${missingTools.join(' ')} Reiniciá el servidor para activar las herramientas.` : '';
-  SIDES.forEach((k) => { sides[k].showPrice(); sides[k].render(); });
+  // Con el catálogo ya cargado, cada lado arma los niveles de razonamiento de SU modelo y recupera el que tenía elegido.
+  SIDES.forEach((k) => { sides[k].showPrice(); sides[k].setReasoning(p[`reasoning${k}`]); sides[k].render(); });
   renderRefs();
   refresh();
 }
@@ -1229,6 +1299,8 @@ window.addEventListener('drop', (e) => {
   if (video && !busy()) { setView('experiment'); studio.setVideo(video); }
   const images = files.filter((f) => f.type.startsWith('image/'));
   if (images.length) addRefs(images);
+  const docs = files.filter(isDocFile);
+  if (docs.length) docsPanel.add(docs);
 });
 
 window.addEventListener('tab', ({ detail }) => {

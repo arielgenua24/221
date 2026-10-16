@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, transform } from 'esbuild';
+import { webRendererFixes } from './web-renderer-fixes.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -76,12 +77,15 @@ export function buildRuntime() {
     legalComments: 'none',
     define: { 'process.env.NODE_ENV': '"production"' },
     logLevel: 'silent',
+    // El renderizador web de Remotion no dibuja bien varios CSS comunes (ver web-renderer-fixes.js).
+    plugins: [webRendererFixes],
   }).then((r) => r.outputFiles[0].text).catch((err) => { runtime = null; throw err; });
   return runtime;
 }
 
 // ---------- Código de los agentes ----------
-const FENCE = /```(?:tsx|jsx|typescript|ts|javascript|js)?[ \t]*\r?\n([\s\S]*?)```/g;
+// Acepta info después del lenguaje (```tsx title="MotionLayer.tsx"), como escriben algunos modelos.
+const FENCE = /```(?:tsx|jsx|typescript|ts|javascript|js)?(?:[ \t][^\n`]*)?\r?\n([\s\S]*?)```/g;
 
 // El último bloque de código de la respuesta (los modelos a veces escriben un borrador antes).
 export function extractCode(text) {
@@ -117,7 +121,7 @@ export async function compileMotionLayer(source) {
     throw new Error(`importa módulos que no existen en este entorno: ${bad.join(', ')}. Solo podés importar: remotion, @remotion/media, @remotion/transitions(/<preset>), @remotion/effects/<efecto>, @remotion/shapes, @remotion/paths, @remotion/noise, @remotion/rough-notation, @remotion/layout-utils, @remotion/motion-blur, @remotion/light-leaks, @remotion/animation-utils, @remotion/google-fonts/<${GOOGLE_FONTS.join('|')}>, react. Todo tiene que estar en un solo archivo.`);
   }
   if (!/\bdefault:\s*\(\)\s*=>/.test(js)) throw new Error('falta el `export default` del componente principal');
-  if (/\bvideoSrc\b/.test(code)) throw new Error('usa `videoSrc`: el video original ya lo renderiza el entorno debajo; tu componente es solo la capa de motion (transparente) que va encima');
+  if (/\bvideoSrc\b/.test(code)) throw new Error('usa `videoSrc`: el video original ya lo renderiza el entorno debajo; tu componente dibuja la animación encima, con transparencia en add-on o con fondo propio en fullscreen');
   if (/\bMath\.random\s*\(/.test(code)) throw new Error('usa Math.random(): en Remotion cada cuadro tiene que ser determinista; usá random(seed) de "remotion"');
   if (/\b(?:Date\.now|performance\.now|new Date)\b/.test(code)) throw new Error('usa el reloj del sistema: el tiempo tiene que salir de useCurrentFrame()');
   if (/\bstaticFile\s*\(/.test(code)) throw new Error('usa staticFile(): acá no hay carpeta public/; las formas se dibujan con código y las imágenes generadas llegan en la prop `images`');

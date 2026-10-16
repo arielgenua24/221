@@ -165,7 +165,8 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
   }
 
   // Consulta hasta que termina. Las consultas sí se reintentan (no cobran).
-  async function wait({ id, getUrl }, { signal, timeoutMs, onStatus }) {
+  // raw: devuelve el primer resultado tal cual (Whisper devuelve un objeto con el texto y los tiempos, no una URL).
+  async function wait({ id, getUrl }, { signal, timeoutMs, onStatus, raw = false }) {
     const started = Date.now();
     let fails = 0;
     for (;;) {
@@ -185,7 +186,7 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
       const status = String(data?.status || '').toLowerCase();
       onStatus?.({ status, elapsed: (Date.now() - started) / 1000 });
       if (status === 'completed') {
-        const out = (data.outputs || []).find((o) => typeof o === 'string');
+        const out = raw ? (data.outputs || [])[0] : (data.outputs || []).find((o) => typeof o === 'string');
         if (!out) throw new Error(`La tarea ${id} terminó sin resultado.`);
         return out;
       }
@@ -236,6 +237,23 @@ export function createWaveSpeed({ apiKey, mediaDir, fetchImpl = fetch, pollMs = 
       const url = await wait({ id: task, getUrl: `${base()}/api/v3/predictions/${task}/result` }, { signal, timeoutMs, onStatus });
       const file = await save(url, 'mp4', signal);
       return { task, remote: url, file };
+    },
+    // Habla → texto (Whisper). `body` lleva el video como URL: se sube antes con uploadBuffer o upload.
+    // Devuelve el objeto del modelo: { text, language, duration, srt, text_details: [{ start, end, text, words }] }.
+    async transcribe({ model, body, signal, timeoutMs = 5 * 60 * 1000, onStatus }) {
+      const task = await submit(model, body, signal);
+      const out = await wait(task, { signal, timeoutMs, onStatus, raw: true });
+      return { task: task.id, output: out };
+    },
+    // Sube bytes sueltos (el navegador manda el archivo tal cual, sin pasar por data URL).
+    async uploadBuffer(buffer, type, name, signal) {
+      const form = new FormData();
+      form.append('file', new Blob([buffer], { type }), name);
+      const res = await call(`Subiendo el video (${(buffer.length / 1024 / 1024).toFixed(1)} MB)`, `${base()}/api/v3/media/upload/binary`, { method: 'POST', headers: auth, body: form, signal }, { retries: 3 });
+      if (!res.ok) throw new Error(`WaveSpeed no aceptó el archivo (${res.status}): ${await errorDetail(res)}`);
+      const url = (await res.json())?.data?.download_url;
+      if (!url) throw new Error('WaveSpeed no devolvió la URL del archivo subido.');
+      return url;
     },
     // Voz (text-to-speech). Tarda segundos, no minutos.
     async audio({ model, body, signal, timeoutMs = 90 * 1000, onStatus }) {

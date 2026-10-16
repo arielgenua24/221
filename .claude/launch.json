@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "src/server.js"
+      ],
+      "env": {
+        "MOCK": "1",
+        "PORT": "3100"
+      },
+      "port": 3100
+    }
+  ]
+}

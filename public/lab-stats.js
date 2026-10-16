@@ -2,9 +2,13 @@
 // Funciones puras (sin DOM ni storage): las usa lab.js y las prueban los tests.
 
 // Una ejecución nueva para un lado (A o B).
-export function newRun(model) {
+// reasoning: nivel de razonamiento pedido ('' = el por defecto del modelo). reasoningUsed: el que se usó de verdad si el servidor
+// lo cambió por el más cercano que el modelo acepta (null = el que se pidió, o el del modelo).
+export function newRun(model, reasoning = '') {
   return {
     model,
+    reasoning: reasoning || '',
+    reasoningUsed: null,
     status: 'idle', // idle | running | checking | done | error
     attempts: [], // { reason, calls, compileErrors, cost, llmCost, toolCost, searches, images, tokens, ms, ok, error?, feedback? }
     transform: { scale: 1, x: 0, y: 0 }, // tamaño y posición de la capa sobre el video, ajustados por el humano
@@ -68,7 +72,9 @@ export function modelStats(experiments) {
       const run = ex.sides?.[side];
       if (!run?.model || !run.attempts?.length) continue;
       const m = runMetrics(run);
-      const s = by.get(run.model) || { model: run.model, runs: 0, approved: 0, rejected: 0, wins: 0, losses: 0, ties: 0, cost: 0, ms: [], attempts: [], interventions: [], quality: [], fidelity: [], harness: new Set() };
+      // El mismo modelo con otro nivel de razonamiento es otra fila: comparar niveles es justo la idea.
+      const key = run.reasoning ? `${run.model}\u0000${run.reasoning}` : run.model;
+      const s = by.get(key) || { model: run.model, reasoning: run.reasoning || '', runs: 0, approved: 0, rejected: 0, wins: 0, losses: 0, ties: 0, cost: 0, ms: [], attempts: [], interventions: [], quality: [], fidelity: [], harness: new Set() };
       s.runs += 1;
       if (run.eval?.approved === true) s.approved += 1;
       if (run.eval?.approved === false) s.rejected += 1;
@@ -82,11 +88,12 @@ export function modelStats(experiments) {
       if (run.eval?.quality) s.quality.push(run.eval.quality);
       if (run.eval?.fidelity) s.fidelity.push(run.eval.fidelity);
       if (ex.harness) s.harness.add(ex.harness);
-      by.set(run.model, s);
+      by.set(key, s);
     }
   }
   return [...by.values()].map((s) => ({
     model: s.model,
+    reasoning: s.reasoning,
     runs: s.runs,
     approved: s.approved,
     rejected: s.rejected,

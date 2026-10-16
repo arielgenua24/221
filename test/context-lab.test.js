@@ -48,19 +48,19 @@ test('parseVariant valida modos, límites, skills, cuadros, temperatura y razona
 test('el prompt de sistema se arma desde la plantilla: herramientas según los modos, ejemplos y skills elegidas', () => {
   const variant = parseVariant({ policy: { search: 'required', images: 'off', sound: 'optional', video: 'off' }, skills: ['remotion-markup/sfx.md'], examples: 'EJEMPLO-123' });
   const { system } = contextConfig(variant, ALL);
-  assert.match(system, /buscar_referencias\(consulta\) \(OBLIGATORIA\)/);
-  assert.match(system, /generar_sonido\(descripcion, duracion\?\) \(opcional\)/);
+  assert.match(system, /buscar_referencias\(consulta\) \(REQUIRED\)/);
+  assert.match(system, /generar_sonido\(descripcion, duracion\?\) \(optional\)/);
   assert.doesNotMatch(system, /generar_imagen\(|generar_video\(/);
   assert.match(system, /<ejemplos>\nEJEMPLO-123/);
   assert.match(system, /<skill file="remotion-markup\/sfx.md">/);
   assert.doesNotMatch(system, /<skill file="remotion-markup\/REFERENCE.md">/);
-  assert.doesNotMatch(system, /\{\{/);
+  assert.doesNotMatch(system, /\{\{\s*(?:herramientas|ejemplos|skills)\s*\}\}/);
   // Una herramienta que no existe en el servidor no se anuncia aunque la variante la pida.
   assert.doesNotMatch(contextConfig(variant, { ...ALL, sound: false }).system, /generar_sonido/);
   // Plantilla propia: sin marcadores, no entra nada más.
   assert.equal(composeSystem({ template: 'Solo esto.', enabled: ALL, policy: variant.policy, limits: {}, skills: DEFAULT_SKILLS, examples: '' }), 'Solo esto.');
   assert.match(defaultTemplate(), /\{\{herramientas\}\}[\s\S]*\{\{ejemplos\}\}[\s\S]*\{\{skills\}\}/);
-  assert.match(toolsBlock({}, {}, {}), /no tenés herramientas/);
+  assert.match(toolsBlock({}, {}, {}), /No tools are available/);
   assert.equal(policySignature({ search: 'optional', images: 'required', sound: 'off', video: 'off' }), 'S·opc I·obl A·— V·—');
   assert.ok(ALL_SKILLS.length >= 20 && ALL_SKILLS.every((s) => s.chars > 0));
 });
@@ -72,14 +72,14 @@ test('los cuadros por zona se eligen repartidos y conservan su id', () => {
   const input = parseLabBody(body());
   const two = briefContent(input, { frames: 2 }).filter((p) => p.type === 'text' && /^C1-\d/.test(p.text)).map((p) => p.text.slice(0, 4));
   assert.deepEqual(two, ['C1-2', 'C1-5']);
-  assert.match(briefContent(input, { frames: 0 })[0].text, /No te muestro cuadros/);
+  assert.match(briefContent(input, { frames: 0 })[0].text, /No video frames are provided/);
 });
 
 test('toolDefs anuncia sonido y video solo si están encendidos, con su modo', () => {
   const names = toolDefs(ALL, { modes: { search: 'optional' } }).map((d) => d.function.name);
   assert.deepEqual(names, ['buscar_referencias', 'generar_imagen', 'generar_sonido', 'generar_video']);
-  assert.match(toolDefs({ search: true }, { modes: { search: 'optional' } })[0].function.description, /Es opcional/);
-  assert.match(toolDefs({ search: true })[0].function.description, /Es obligatorio/);
+  assert.match(toolDefs({ search: true }, { modes: { search: 'optional' } })[0].function.description, /Optional/);
+  assert.match(toolDefs({ search: true })[0].function.description, /You must/);
   assert.match(demoSfx(1), /^data:audio\/wav;base64,UklGR/);
   assert.ok(usesSounds('<Audio src={sounds.sfx1} />'));
   assert.ok(!usesSounds('<Audio src={x} />'));
@@ -92,7 +92,7 @@ test('una variante con todas las herramientas obligatorias: busca, genera imagen
   const tools = createLabTools({ mock: true });
   await runLabAgent({ input, emit: (e) => events.push(e), llm: async (o) => { seen.push(o); return mockLabLLM(o); }, tools, config: contextConfig(variant, tools.available) });
   const run = events.find((e) => e.type === 'run');
-  assert.match(run.harness, /^ctx-v1 .* S·obl I·obl A·obl V·obl$/);
+  assert.match(run.harness, /^ctx-v3 .* S·obl I·obl A·obl V·obl$/);
   assert.equal(run.context.images, 3 + 1); // 3 cuadros + 1 referencia
   assert.deepEqual(run.context.tools, ['buscar_referencias', 'generar_imagen', 'generar_sonido', 'generar_video']);
   assert.equal(seen[0].temperature, 0.3);

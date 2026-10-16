@@ -13,6 +13,9 @@
 //                                                              propia capa, entre el video y la animación) y motionHidden.
 //   → { type: 'layers', videoLayers, motionHidden }            mostrar/ocultar, mover o escalar las capas de video IA en vivo
 //                                                              (sin los blobs: se cruzan por id)
+//                                                              music { master, cues: [{ id, blob, start, end, volume, loop }] }
+//                                                              (música de fondo, en segundos; los dos laboratorios)
+//   → { type: 'music', music }                                 cambiar la música o sus volúmenes en vivo (antes de renderizar)
 //   → { type: 'transform', transform }                         escalar / mover la capa en vivo
 //   → { type: 'segments', segments }                           cortes de la animación: [{ from, len, to }] en cuadros
 //                                                              (el tramo [from, from+len) de la capa se muestra desde `to`)
@@ -99,7 +102,7 @@
   // La composición: el video original debajo y la capa del agente encima (con la escala y posición del humano),
   // envuelta para atrapar sus errores. El código v1 renderizaba el video él mismo: se monta tal cual.
   const { AbsoluteFill, Sequence, Img } = modules.remotion;
-  const { Video } = modules['@remotion/media'];
+  const { Video, Audio } = modules['@remotion/media'];
   // Cortes del humano: cada tramo de la capa se reproduce en otro momento. Dos Sequence anidadas:
   // la externa decide CUÁNDO se ve (desde `to`, durante `len`); la interna corre el reloj para que
   // la capa crea estar en su cuadro original (`from` + lo que pasó desde `to`).
@@ -111,10 +114,22 @@
   const aiLayer = (l) => h(Sequence, { key: l.id, from: l.from, durationInFrames: Math.max(1, l.durationInFrames), name: l.id, premountFor: 30 },
     h(AbsoluteFill, { style: placed(l.transform) },
       l.kind === 'video' ? h(Video, { src: l.src, muted: l.muted !== false, objectFit: 'cover', style: fill }) : h(Img, { src: l.src, style: { ...fill, objectFit: 'cover' } })));
-  const Root = ({ Layer, legacy, videoSrc, transform, segments, noVideo, videoLayers = [], motionHidden = false, ...props }) => {
-    if (legacy) return h(Boundary, null, h(Layer, { videoSrc, ...props }));
+  // Música de fondo: cada tramo en su Sequence, con entrada y salida suaves; los largos repiten su loop.
+  const FADE_S = 1;
+  const musicTrack = (c, fps, master) => {
+    const from = Math.round(c.start * fps);
+    const len = Math.max(1, Math.round(c.end * fps) - from);
+    const fade = Math.max(1, Math.min(Math.round(FADE_S * fps), Math.floor(len / 3)));
+    const level = Math.max(0, Math.min(1, (c.volume ?? 0.25) * (master ?? 1)));
+    return h(Sequence, { key: `music-${c.id}`, from, durationInFrames: len, name: `música ${c.id}`, layout: 'none' },
+      h(Audio, { src: c.src, loop: !!c.loop, loopVolumeCurveBehavior: 'extend', volume: (f) => level * Math.max(0, Math.min(1, f / fade, (len - f) / fade)) }));
+  };
+  const musicOf = (music, fps) => (music?.cues || []).filter((c) => c.src && !c.muted && (c.volume ?? 0) > 0 && (music.master ?? 1) > 0).map((c) => musicTrack(c, fps, music.master));
+  const Root = ({ Layer, legacy, videoSrc, transform, segments, noVideo, videoLayers = [], motionHidden = false, music = null, fps = 30, ...props }) => {
+    if (legacy) return h(AbsoluteFill, null, h(Boundary, null, h(Layer, { videoSrc, ...props })), ...(noVideo ? [] : musicOf(music, fps)));
     return h(AbsoluteFill, { style: noVideo ? {} : { backgroundColor: '#000' } },
       noVideo ? null : h(Video, { src: videoSrc, objectFit: 'cover', style: fill }),
+      ...(noVideo ? [] : musicOf(music, fps)),
       ...videoLayers.filter((l) => !l.hidden && l.src).map(aiLayer),
       motionHidden ? null : h(AbsoluteFill, { style: placed(transform) },
         Array.isArray(segments) ? segmentsOf(Layer, props, segments) : h(Boundary, null, h(Layer, props))));
@@ -190,9 +205,25 @@
     }
   }
 
+  // La música vive aparte de lo montado: sus blob: se reusan mientras el mismo archivo siga en la mezcla.
+  let musicUrls = new Map(); // Blob → blob:
+  function musicProp(music) {
+    if (!music?.cues?.length) { musicUrls.forEach((u) => URL.revokeObjectURL(u)); musicUrls = new Map(); return null; }
+    const next = new Map();
+    const cues = music.cues.map(({ blob, ...c }) => {
+      if (!(blob instanceof Blob)) return { ...c, src: null };
+      const src = musicUrls.get(blob) || URL.createObjectURL(blob);
+      next.set(blob, src);
+      return { ...c, src };
+    });
+    musicUrls.forEach((u, b) => { if (!next.has(b)) URL.revokeObjectURL(u); });
+    musicUrls = next;
+    return { master: music.master ?? 1, cues };
+  }
+
   let mediaUrls = []; // blob: de sonidos y tomas (se liberan al volver a montar)
   let layerSrc = new Map(); // id de la toma → su src
-  function mount({ js, video, meta, zones, images = {}, transform, segments = null, legacy = false, sounds = null, videoLayers = [], motionHidden = false }) {
+  function mount({ js, video, meta, zones, images = {}, transform, segments = null, legacy = false, sounds = null, videoLayers = [], motionHidden = false, music = null }) {
     meta0 = meta;
     lastError = null;
     let Layer;
@@ -216,7 +247,7 @@
     current = {
       ref,
       component: Root,
-      inputProps: { Layer, legacy, videoSrc: videoUrl, zones, images, transform, segments, ...(soundUrls ? { sounds: soundUrls, videoLayers: layers, motionHidden } : {}) },
+      inputProps: { Layer, legacy, videoSrc: videoUrl, zones, images, transform, segments, music: musicProp(music), fps: meta.fps, ...(soundUrls ? { sounds: soundUrls, videoLayers: layers, motionHidden } : {}) },
       durationInFrames,
       fps: meta.fps,
       compositionWidth: meta.width,
@@ -264,6 +295,11 @@
     if (msg.type === 'layers' && current) {
       const layers = (msg.videoLayers || []).map((l) => ({ ...l, src: layerSrc.get(l.id) || null }));
       current = { ...current, inputProps: { ...current.inputProps, videoLayers: layers, motionHidden: !!msg.motionHidden } };
+      render();
+      return;
+    }
+    if (msg.type === 'music' && current) {
+      current = { ...current, inputProps: { ...current.inputProps, music: musicProp(msg.music) } };
       render();
       return;
     }

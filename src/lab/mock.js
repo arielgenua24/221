@@ -1,4 +1,4 @@
-// Modo demo del Laboratorio: simula a los modelos con componentes de Remotion escritos a mano,
+// Modo demo del Laboratorio: simula a los modelos con componentes de Remotion (o escenas del motor canvas) escritos a mano,
 // así se puede probar todo el flujo (iframe, Player, métricas, historial) sin API key.
 // Los modelos "flash/mini/luna" fallan la primera compilación a propósito: muestra la corrección automática.
 // Los demás usan las herramientas (una búsqueda y, si hay generador, una imagen) para mostrar ese camino.
@@ -133,6 +133,42 @@ export default function MotionLayer({ zones, images, sounds = {} }: { zones: Zon
   );
 }`;
 
+// La misma idea para el motor canvas (src/engines/canvas/): un título por zona con resorte, línea de acento,
+// la imagen generada (si hay) y el primer efecto de sonido (si hay) al entrar la primera zona.
+const CANVAS = `const FONTS = ['Syne:800'];
+const AUDIO = Object.keys(sounds).slice(0, 1).map((id) => ({ sound: id, at: zones[0].from + 0.1, volume: 0.6 }));
+const SCENES = zones.map((z, i) => ({
+  from: z.from, to: z.to,
+  draw(t) {
+    const dur = z.to - z.from;
+    const u = Math.min(W, H) / 100;
+    const out = 1 - seg(t, dur - 0.4, dur - 0.05);
+    const words = (z.prompt || 'Motion de ejemplo').split(' ');
+    g.font = font(800, 9 * u, 'Syne');
+    g.fillStyle = '#F4F1EA';
+    g.shadowColor = 'rgba(0, 0, 0, .35)'; g.shadowBlur = 2 * u;
+    let x = 7 * u;
+    const y = H - 18 * u;
+    words.forEach((w, k) => {
+      const s = spring(t - k * 0.1, 220, 22);
+      g.globalAlpha = clamp(s) * out;
+      g.fillText(w, x, y + (1 - s) * 6 * u);
+      x += g.measureText(w + ' ').width;
+    });
+    g.globalAlpha = out;
+    g.shadowBlur = 0;
+    g.fillStyle = '#FF5A1F';
+    g.fillRect(7 * u, y + 3 * u, W * 0.38 * ease.outExpo(seg(t, 0.2, 1.2)), 0.7 * u);
+    if (i === 0 && images.gen1) {
+      const k = spring(t - 0.3, 180, 14);
+      g.save();
+      g.translate(W - 19 * u, 21 * u); g.rotate(-0.1); g.scale(k, k);
+      drawFit(g, images.gen1, -13 * u, -13 * u, 26 * u, 26 * u);
+      g.restore();
+    }
+  },
+}));`;
+
 // Precios aproximados (US$ por millón de tokens) para que el costo simulado tenga sentido entre modelos.
 const PRICE = [[/opus|fable|astra/, 5, 25], [/sonnet|sol|grok|max/, 2, 10], [/flash|mini|luna|haiku|glm|deepseek|spark/, 0.15, 0.6]];
 
@@ -173,18 +209,20 @@ export async function mockLabLLM({ model, messages, tools, toolChoice, onDelta, 
   const lastUser = messages.at(-1)?.content;
   const isFix = typeof lastUser === 'string';
   // Hasta que el entorno le marca el error, el modelo barato entrega código que no cumple el contrato.
-  const corrected = messages.some((m) => typeof m.content === 'string' && m.content.startsWith('El código no compila'));
-  let code = hash(model) % 2 ? LOWER_THIRD : TITLE;
+  const corrected = messages.some((m) => typeof m.content === 'string' && /^(?:The code does not compile|El código no compila)/.test(m.content));
+  // Motor canvas: el contrato del prompt de sistema pide `const SCENES` en un bloque ```js.
+  const canvas = /const SCENES/.test(messages[0]?.content || '');
+  let code = canvas ? CANVAS : hash(model) % 2 ? LOWER_THIRD : TITLE;
   // El modelo barato se equivoca la primera vez (usa Math.random) y lo corrige al recibir el error.
-  if (cheap && !corrected) code = code.replace('const frame = useCurrentFrame();', 'const frame = useCurrentFrame() + Math.random() * 0;');
+  if (cheap && !corrected) code = canvas ? code.replace('const out = 1', 'const out = Math.random() * 0 + 1') : code.replace('const frame = useCurrentFrame();', 'const frame = useCurrentFrame() + Math.random() * 0;');
   const searched = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => /^S1 — /.test(p.text || '')));
   const notes = `${isFix
     ? `(demo · ${model}) Corrijo lo que me marcaron y mantengo la idea.`
-    : `(demo · ${model}) Idea: ${code === TITLE ? 'título cinético palabra por palabra con una línea de acento' : 'placa editorial con índice, entra con máscara y sale limpia'} en cada zona, en el espacio negativo.`}
+    : `(demo · ${model}) Idea: ${code !== LOWER_THIRD ? 'título cinético palabra por palabra con una línea de acento' : 'placa editorial con índice, entra con máscara y sale limpia'} en cada zona, en el espacio negativo.`}
 Referencias usadas: ${searched ? 'S1, S3' : 'ninguna'}
-Paleta: ${code === TITLE ? '#F4F1EA, #FF5A1F, #1B1B1F' : '#3B82F6, #93C5FD, #0A0A0C'}
-Objetos: ${searched ? (code === TITLE ? 'línea de acento, sticker' : 'placa editorial, insignia redonda') : 'ninguno'}`;
-  const text = `${notes}\n\n\`\`\`tsx\n${code}\n\`\`\``;
+Paleta: ${code !== LOWER_THIRD ? '#F4F1EA, #FF5A1F, #1B1B1F' : '#3B82F6, #93C5FD, #0A0A0C'}
+Objetos: ${searched ? (code !== LOWER_THIRD ? 'línea de acento, sticker' : 'placa editorial, insignia redonda') : 'ninguno'}`;
+  const text = `${notes}\n\n\`\`\`${canvas ? 'js' : 'tsx'}\n${code}\n\`\`\``;
   onReasoning?.('(demo) pensando…');
   for (let i = 0; i < text.length; i += 60) {
     await sleep(cheap ? 6 : 14, signal);

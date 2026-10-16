@@ -12,13 +12,34 @@ const FILMSTRIP = 10;
 // ---------- Estudio: elegir el video, marcar los clips y escribir el pedido de cada uno ----------
 // `mount` (opcional): contenedor propio donde dibujarlo (el Laboratorio lo reutiliza); sin él, va al feed del Estudio.
 // `onError` (opcional): dónde mostrar los errores; `label`: el rótulo de la tarjeta.
-export function createStudio({ limits, onChange, mount = null, onError = showError, label = '✨ Intuition' }) {
+// `auto` (opcional, solo el Laboratorio): activa el modo Automático junto al Manual. { available(): { ok, why }, maxCount, run({ count, video, setStatus }) → zonas
+//   [{ start, end, said, frames: [segundos] }], said(start, end), music({ video, frames, setStatus }) → { cues, tone, … },
+//   musicAvailable() } — la elección de los momentos (transcripción + agente) la hace el Laboratorio; acá se
+//   dibujan las zonas y se recortan del video los cuadros de esos segundos.
+// onMusic(music): la música de fondo cambió (tramos o volúmenes): la página se la pasa a sus reproductores.
+export function createStudio({ limits, onChange, mount = null, onError = showError, label = '✨ Intuition', auto = null, onMusic = () => {} }) {
   const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, minCineSeconds: 1.2, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', cine: false, refilm: false, refilmModels: ['Wan 3.0 Prime', 'Seedance 2.5'], refilmResolution: '480p', ...limits };
   let video = null; // { file, url, name, duration, width, height, el }
   let loading = false;
   let clips = []; // { key, id, start, end, prompt, notes, mode: 'motion' | 'ai' | 'cine', videoModel, refs: [{ key, kind, name, frames, thumb, status }] }
   let seq = 0;
   let card = null;
+  // Modo Automático / Manual (se recuerda). Sin `auto`, el estudio es siempre manual.
+  const MODE_KEY = 'studio.clipMode';
+  let studioMode = 'manual';
+  if (auto) { try { studioMode = localStorage.getItem(MODE_KEY) === 'manual' ? 'manual' : 'auto'; } catch { studioMode = 'auto'; } }
+  let autoBusy = false;
+  let autoNote = ''; // último resultado o aviso del modo Automático
+  let autoCount = 3;
+  // Música de fondo (solo el Laboratorio): la compone el mismo modelo que recorta, mirando y escuchando el video.
+  const MUSIC_KEY = 'studio.withMusic';
+  let withMusic = true;
+  try { withMusic = localStorage.getItem(MUSIC_KEY) !== 'no'; } catch { /* vale para esta visita */ }
+  let musicCues = []; // { id, start, end, mood, prompt, volume, seconds, loop, url, error?, muted? }
+  let musicMaster = 1;
+  let musicBusy = false;
+  let musicNote = '';
+  let musicBox = null;
 
   const setLimits = (l) => Object.assign(lim, l);
   // Cinematic Pro re-filma el clip: el modelo pide al menos 1 s de video de referencia.
@@ -34,6 +55,7 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
       const strip = await framesAt(v, Array.from({ length: FILMSTRIP }, (_, i) => ((i + 0.5) / FILMSTRIP) * v.duration), 160, 0.6);
       video = { file, url, name: file.name, duration: v.duration, width: v.videoWidth, height: v.videoHeight, reader: v, strip };
       clips = [];
+      setMusicState([], 1, '');
       render();
     } catch (err) {
       onError(`${file.name}: ${err.message}`);
@@ -76,7 +98,8 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
   function missing() {
     if (loading) return 'Leyendo el video…';
     if (!video) return 'Soltá un video; se conserva su formato original.';
-    if (!clips.length) return `Marcá al menos un clip en el video (máximo ${lim.maxClips}, de hasta ${lim.maxClipSeconds} s).`;
+    if (autoBusy) return 'El agente está eligiendo los momentos…';
+    if (!clips.length) return auto ? `Elegí los momentos con el modo Automático o marcá al menos un clip a mano (máximo ${lim.maxClips}, de hasta ${lim.maxClipSeconds} s).` : `Marcá al menos un clip en el video (máximo ${lim.maxClips}, de hasta ${lim.maxClipSeconds} s).`;
     if (clips.some((c) => c.refs.some((r) => r.status === 'loading'))) return 'Preparando las referencias…';
     const short = clips.find((c) => c.end - c.start < minLen(c) - 0.01);
     if (short) return `El clip ${short.id.replace('C', '')} es de Cinematic Pro: tiene que durar al menos ${lim.minCineSeconds} s (estiralo en la línea de tiempo).`;
@@ -90,7 +113,7 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
   }
 
   // ---------- Interfaz ----------
-  let preview; let track; let playhead; let cardsBox; let addBtn;
+  let preview; let track; let playhead; let cardsBox; let addBtn; let marks;
 
   function render() {
     if (!video) return;
@@ -103,7 +126,7 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
 
     const headRow = el('div', 'studio-head');
     const title = el('div');
-    title.append(el('div', 'decision-label', label), el('h3', null, 'Marcá dónde va el motion design'));
+    title.append(el('div', 'decision-label', label), el('h3', null, auto ? 'Elegí dónde va el motion design' : 'Marcá dónde va el motion design'));
     const change = el('label', 'ghost small studio-change');
     const input = el('input');
     input.type = 'file'; input.accept = 'video/*'; input.hidden = true;
@@ -139,15 +162,202 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
     const addRow = el('div', 'actions');
     addRow.append(addBtn);
 
+    // Manual: el marcador de siempre.
+    const manualBox = el('div', 'studio-manual');
+    manualBox.append(el('p', 'muted small studio-help', `Poné el video en el momento donde querés el motion y tocá "Marcar clip acá". Arrastrá el clip o sus bordes para ajustarlo (máx. ${lim.maxClipSeconds} s cada uno, hasta ${lim.maxClips}).`), addRow);
+
     cardsBox = el('div', 'clip-cards');
-    card.append(headRow, meta, preview, tl, el('p', 'muted small studio-help', `Poné el video en el momento donde querés el motion y tocá "Marcar clip acá". Arrastrá el clip o sus bordes para ajustarlo (máx. ${lim.maxClipSeconds} s cada uno, hasta ${lim.maxClips}).`), addRow, cardsBox);
+    if (!auto) { card.append(headRow, meta, preview, tl, ...manualBox.childNodes, cardsBox); refreshClips(); return; }
+
+    // Automático: el agente lee la transcripción y elige los momentos; vos decidís cuántos.
+    const modeRow = el('div', 'options studio-mode');
+    modeRow.setAttribute('role', 'group'); modeRow.setAttribute('aria-label', 'Cómo elegir los clips');
+    const modeBtns = [['auto', '✨ Automático', 'El agente lee la transcripción y elige los momentos'], ['manual', '✋ Manual', 'Marcás los clips vos, en la línea de tiempo']].map(([m, text, title]) => {
+      const b = el('button', 'option', text);
+      b.type = 'button'; b.title = title; b.setAttribute('aria-pressed', String(studioMode === m));
+      b.onclick = () => {
+        studioMode = m;
+        try { localStorage.setItem(MODE_KEY, m); } catch { /* sin almacenamiento: vale para esta visita */ }
+        modeBtns.forEach(([k, node]) => node.setAttribute('aria-pressed', String(studioMode === k)));
+        autoBox.hidden = m !== 'auto'; manualBox.hidden = m !== 'manual';
+      };
+      return [m, b];
+    });
+    modeRow.append(...modeBtns.map(([, b]) => b));
+
+    const autoBox = el('div', 'studio-auto');
+    autoBox.hidden = studioMode !== 'auto';
+    manualBox.hidden = studioMode !== 'manual';
+    const count = el('input', 'studio-auto-count');
+    count.type = 'number'; count.min = '1'; count.max = String(auto.maxCount || 6); count.step = '1'; count.value = String(autoCount);
+    count.setAttribute('aria-label', 'Cuántas animaciones');
+    count.onchange = () => { autoCount = Math.min(auto.maxCount || 6, Math.max(1, Math.round(Number(count.value)) || 1)); count.value = String(autoCount); };
+    const countRow = el('label', 'lab-inline');
+    countRow.append(el('span', 'small', 'Cuántas animaciones querés'), count);
+    const go = el('button', 'primary', '✨ Elegir los momentos automáticamente');
+    go.type = 'button';
+    const status = el('p', 'small studio-auto-status');
+    status.setAttribute('role', 'status');
+    status.textContent = autoNote;
+    const setStatus = (t) => { status.textContent = t; };
+    const state = auto.available();
+    go.disabled = autoBusy || !state.ok;
+    if (!state.ok) status.textContent = state.why;
+    go.onclick = () => runAuto(Number(count.value), go, setStatus);
+    const row = el('div', 'actions');
+    row.append(countRow, go);
+    const musicCheck = el('label', 'lab-inline studio-music-check');
+    const musicInput = el('input');
+    musicInput.type = 'checkbox'; musicInput.checked = withMusic;
+    musicInput.onchange = () => { withMusic = musicInput.checked; try { localStorage.setItem(MUSIC_KEY, withMusic ? 'yes' : 'no'); } catch { /* vale para esta visita */ } };
+    musicCheck.append(musicInput, el('span', 'small', '🎵 Componer también la música de fondo (según lo que se dice y lo que se ve)'));
+    if (auto.music) row.append(musicCheck);
+    autoBox.append(
+      el('p', 'muted small studio-help', 'El agente lee lo que se dice en el video (transcripción por segundo) y recorta los momentos más útiles para animar: cada clip trae lo que se dice ahí y los cuadros de esos segundos. No propone qué mostrar: eso lo escribís vos en cada clip (o lo decide el diseñador). Vos decidís cuántas animaciones. Podés mover las zonas a mano después.'),
+      row, status,
+    );
+    musicBox = el('div', 'studio-music');
+    card.append(headRow, meta, preview, tl, modeRow, autoBox, manualBox, musicBox, cardsBox);
+    renderMusic();
     refreshClips();
+  }
+
+  // Modo Automático: transcribe (si hace falta), el agente elige las zonas, y se recortan los cuadros de los segundos que pidió.
+  async function runAuto(requested, goBtn, setStatus) {
+    if (autoBusy || !video) return;
+    const count = Math.min(auto.maxCount || 6, Math.max(1, Math.round(requested) || 1));
+    autoCount = count;
+    if (clips.length && !confirm('Esto reemplaza los clips que ya hay. ¿Seguir?')) return;
+    autoBusy = true; goBtn.disabled = true; onError(''); onChange();
+    try {
+      const zones = await auto.run({ count, video: { name: video.name, duration: video.duration, width: video.width, height: video.height }, setStatus });
+      setStatus('Sacando los cuadros de esos segundos del video…');
+      const made = [];
+      for (const z of zones.slice(0, lim.maxClips)) {
+        const times = z.frames.map((t) => Math.min(Math.max(z.start, t), z.end));
+        const preview = await framesAt(video.reader, times, 140, 0.6);
+        made.push({ key: ++seq, start: Math.max(0, z.start), end: Math.min(video.duration, z.end), prompt: '', notes: '', mode: 'motion', videoModel: lim.defaultVideoModel, refs: [], frameTimes: times, preview: preview.map((f) => ({ t: f.t, url: f.url })) });
+      }
+      if (!made.length) throw new Error('El agente no encontró momentos para animar.');
+      clips = made;
+      renumber();
+      if (withMusic && auto.music && auto.musicAvailable?.().ok !== false) queueMicrotask(() => runMusic());
+      autoNote = `Listo: ${clips.length} momento${clips.length > 1 ? 's' : ''}${zones.length < count ? ` (pediste ${count}; el agente solo encontró ${zones.length} que valgan la pena)` : ''}. Revisalos abajo y movelos si querés.`;
+    } catch (err) {
+      autoNote = '';
+      onError(`Modo automático: ${err.message}`);
+    } finally {
+      autoBusy = false;
+      if (autoNote) { autoNote = `${autoNote} ${auto.describe?.() || ''}`.trim(); setStatus(autoNote); }
+      goBtn.disabled = false;
+      refreshClips();
+      onChange();
+    }
+  }
+
+  // ---------- Música de fondo ----------
+  const musicState = () => ({
+    master: musicMaster,
+    cues: musicCues.filter((c) => c.url).map(({ id, start, end, mood, prompt, volume, seconds, loop, url, muted }) => ({ id, start, end, mood, prompt, volume, seconds, loop, url, muted: !!muted })),
+  });
+  function setMusicState(cues, master = musicMaster, note = musicNote) {
+    musicCues = cues; musicMaster = master; musicNote = note;
+    renderMusic();
+    onMusic(musicState());
+  }
+
+  // El modelo mira cuadros repartidos en todo el video y escucha la transcripción; ElevenLabs genera cada tramo.
+  async function runMusic() {
+    if (musicBusy || !video || !auto?.music) return;
+    musicBusy = true; musicNote = 'Mirando el video para entender su tono…'; renderMusic(); onChange();
+    try {
+      const n = 8;
+      const frames = await framesAt(video.reader, Array.from({ length: n }, (_, k) => ((k + 0.5) / n) * video.duration), 384, 0.7);
+      const out = await auto.music({ video: { name: video.name, duration: video.duration }, frames: frames.map((f) => ({ t: +f.t.toFixed(2), url: f.url })), setStatus: (t) => { musicNote = t; renderMusic(); } });
+      const failed = out.cues.filter((c) => !c.url);
+      setMusicState(out.cues, 1, `${out.tone ? `Tono: ${out.tone}. ` : ''}${out.cues.length - failed.length} tramo${out.cues.length - failed.length === 1 ? '' : 's'} de música${failed.length ? ` (${failed.length} no se pudo generar: ${failed[0].error})` : ''}${out.note ? ` · ${out.note}` : ''} · ${auto.describeMusic?.(out) || ''}`.trim());
+    } catch (err) {
+      musicNote = '';
+      onError(`Música de fondo: ${err.message}`);
+    } finally {
+      musicBusy = false;
+      renderMusic();
+      onChange();
+    }
+  }
+
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  function volumeSlider(value, label, oninput) {
+    const wrap = el('label', 'lab-inline music-volume');
+    const input = el('input');
+    input.type = 'range'; input.min = '0'; input.max = '100'; input.step = '1'; input.value = String(Math.round(value * 100));
+    input.setAttribute('aria-label', label);
+    const out = el('span', 'small music-volume-value', pct(value));
+    input.oninput = () => { const v = Number(input.value) / 100; out.textContent = pct(v); oninput(v); };
+    wrap.append(el('span', 'small', label), input, out);
+    return wrap;
+  }
+
+  function renderMusic() {
+    if (!musicBox) return;
+    musicBox.hidden = !auto?.music || !video;
+    if (musicBox.hidden) return;
+    const state = auto.musicAvailable?.() || { ok: true };
+    const head = el('div', 'studio-music-head');
+    const go = el('button', musicCues.length ? 'small-btn' : 'secondary', musicBusy ? 'Componiendo…' : musicCues.length ? '🎵 Componer de nuevo' : '🎵 Componer música de fondo');
+    go.type = 'button';
+    go.disabled = musicBusy || !state.ok;
+    go.onclick = () => { if (!musicCues.length || confirm('Esto reemplaza la música que ya hay. ¿Seguir?')) runMusic(); };
+    head.append(el('strong', null, '🎵 Música de fondo'), go);
+    if (musicCues.length && !musicBusy) {
+      const off = el('button', 'small-btn', 'Quitar música');
+      off.type = 'button';
+      off.onclick = () => setMusicState([], 1, '');
+      head.append(off);
+    }
+    const parts = [head, el('p', 'muted small studio-help', 'El agente mira el video y lee lo que se dice, entiende su tono y compone uno o varios tramos de música que lo acompañan (nunca alegre si el video es serio o tenebroso). Suena debajo de la voz en los reproductores y entra en el video que descargás. Ajustá los volúmenes antes de descargar.')];
+    if (!state.ok) parts.push(el('p', 'small', state.why));
+    const note = el('p', 'small studio-auto-status', musicNote);
+    note.setAttribute('role', 'status');
+    parts.push(note);
+    if (musicCues.length) {
+      parts.push(volumeSlider(musicMaster, 'Volumen general de la música', (v) => { musicMaster = v; onMusic(musicState()); }));
+      const list = el('ul', 'music-cues');
+      musicCues.forEach((c) => {
+        const li = el('li', `music-cue${c.url ? '' : ' music-cue-failed'}`);
+        const top = el('div', 'music-cue-top');
+        const when = el('button', 'clip-toolplan-at', `${fmt(c.start)}–${fmt(c.end)}`);
+        when.type = 'button'; when.title = 'Ver ese momento en el video';
+        when.onclick = () => { const p = card?.querySelector('video'); if (p) p.currentTime = c.start; };
+        top.append(el('strong', 'small', c.id), when, el('span', 'small', c.mood || ''));
+        if (c.url) {
+          const mute = el('button', 'small-btn', c.muted ? 'Activar' : 'Silenciar');
+          mute.type = 'button';
+          mute.onclick = () => { c.muted = !c.muted; renderMusic(); onMusic(musicState()); };
+          top.append(mute);
+        }
+        li.append(top);
+        if (c.url) {
+          const audio = el('audio');
+          audio.controls = true; audio.preload = 'none'; audio.src = c.url; audio.loop = !!c.loop;
+          li.append(audio, volumeSlider(c.volume, `Volumen de ${c.id}`, (v) => { c.volume = v; onMusic(musicState()); }));
+        } else li.append(el('p', 'small', `No se pudo generar: ${c.error || 'error desconocido'}`));
+        const det = el('details', 'music-prompt');
+        det.append(el('summary', 'small', 'Qué se le pidió al generador'), el('p', 'small', c.prompt));
+        li.append(det);
+        list.append(li);
+      });
+      parts.push(list);
+    }
+    musicBox.replaceChildren(...parts);
   }
 
   // Solo lo que depende de los clips (el video y su línea de tiempo no se rehacen).
   function refreshClips() {
-    addBtn.disabled = clips.length >= lim.maxClips;
-    addBtn.textContent = clips.length >= lim.maxClips ? `Ya marcaste ${lim.maxClips} clips` : '+ Marcar clip acá';
+    if (addBtn) {
+      addBtn.disabled = clips.length >= lim.maxClips;
+      addBtn.textContent = clips.length >= lim.maxClips ? `Ya marcaste ${lim.maxClips} clips` : '+ Marcar clip acá';
+    }
     renderRanges();
     renderCards();
   }
@@ -167,6 +377,24 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
       r.addEventListener('pointerdown', (e) => dragRange(e, c, r));
       track.append(r);
     });
+    marks = el('div', 'studio-marks');
+    track.append(marks);
+    renderMarks();
+  }
+
+  // Cuándo piensa usar cada herramienta el agente (modo Automático): un ícono sobre la línea de tiempo, en su segundo.
+  const TOOL_ICON = { search: '🔎', images: '🖼️', sound: '🔊', video: '🎬' };
+  const TOOL_NAME = { search: 'Buscar referencias', images: 'Generar imagen', sound: 'Generar sonido', video: 'Generar video IA' };
+  function renderMarks() {
+    if (!marks) return;
+    marks.replaceChildren();
+    clips.forEach((c) => (c.toolPlan || []).forEach((u) => {
+      const m = el('span', 'studio-mark', TOOL_ICON[u.tool] || '•');
+      m.style.left = `${(u.at / video.duration) * 100}%`;
+      m.style.setProperty('--c', c.color);
+      m.title = `${TOOL_NAME[u.tool] || u.tool} en ${u.at.toFixed(1)} s${u.note ? `: ${u.note}` : ''}`;
+      marks.append(m);
+    }));
   }
 
   // Arrastrar el clip entero o uno de sus bordes; el preview muestra el cuadro del borde que se mueve.
@@ -177,6 +405,8 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
     const rect = track.getBoundingClientRect();
     const x0 = e.clientX;
     const s0 = c.start; const e0 = c.end;
+    const f0 = c.frameTimes ? [...c.frameTimes] : null;
+    const p0 = (c.toolPlan || []).map((u) => u.at);
     const { lo, hi } = room(c);
     node.setPointerCapture(e.pointerId);
     preview.pause();
@@ -186,6 +416,9 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
         const len = e0 - s0;
         c.start = Math.max(lo, Math.min(hi - len, s0 + dt));
         c.end = c.start + len;
+        // Los cuadros elegidos por el agente se mueven con la zona.
+        if (f0) c.frameTimes = f0.map((t) => +(t + c.start - s0).toFixed(2));
+        (c.toolPlan || []).forEach((u, i) => { u.at = +(p0[i] + c.start - s0).toFixed(2); });
         preview.currentTime = c.start;
       } else if (edge === 'l') {
         c.start = Math.max(lo, e0 - lim.maxClipSeconds, Math.min(e0 - minLen(c), s0 + dt));
@@ -196,11 +429,13 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
       }
       node.style.left = `${(c.start / video.duration) * 100}%`;
       node.style.width = `${((c.end - c.start) / video.duration) * 100}%`;
+      renderMarks();
       const span = cardsBox.querySelector(`[data-key="${c.key}"] .clip-time`);
       if (span) span.textContent = clipTime(c);
     };
     const onUp = () => {
       onChange();
+      if (c.frameTimes) refreshPreview(c);
       node.removeEventListener('pointermove', onMove);
       node.removeEventListener('pointerup', onUp);
       node.removeEventListener('pointercancel', onUp);
@@ -208,6 +443,15 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
     node.addEventListener('pointermove', onMove);
     node.addEventListener('pointerup', onUp);
     node.addEventListener('pointercancel', onUp);
+  }
+
+  // Las miniaturas de los cuadros que va a ver el agente (modo Automático): se rehacen si la zona se movió o se achicó.
+  async function refreshPreview(c) {
+    const times = (c.frameTimes || []).filter((t) => t >= c.start - 0.01 && t <= c.end + 0.01);
+    try {
+      c.preview = times.length ? (await framesAt(video.reader, times, 140, 0.6)).map((f) => ({ t: f.t, url: f.url })) : null;
+    } catch { c.preview = null; }
+    if (clips.includes(c)) renderCards();
   }
 
   const clipTime = (c) => `${fmt(c.start)} → ${fmt(c.end)} · ${(c.end - c.start).toFixed(1)} s`;
@@ -260,6 +504,9 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
         }
       }
 
+      // Lo que se dice en el clip, tal cual la transcripción (se recalcula si la zona se mueve). Es contexto, no un pedido.
+      const saidText = auto?.said?.(c.start, c.end) || '';
+      const said = saidText ? [el('p', 'small clip-said', `🗣️ Lo que se dice: «${saidText}»`)] : [];
       const prompt = el('textarea');
       prompt.rows = 2; prompt.value = c.prompt;
       prompt.placeholder = {
@@ -296,7 +543,29 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
         refs.append(addRef);
       }
       const cineHint = c.mode === 'cine' ? [el('p', 'muted small cine-hint', `🎞️ El Director de Fotografía mira el clip con la biblioteca de cine (luz, color, cámara, encuadre) y escribe el tratamiento (grade, luz motivada, cámara virtual y textura) y el plan para re-filmarlo.${lim.refilm ? ` Después re-filma el clip con IA (${lim.refilmModels.join(' o ')}, ${lim.refilmResolution}: elegís el modelo al aprobar): vos aprobás antes de gastar. Mínimo ${lim.minCineSeconds} s.` : ''}`)] : [];
-      box.append(head, ...(modes.length > 1 ? [modeRow] : []), ...cineHint, prompt, notes, refs);
+      // Modo Automático: los cuadros que el agente pidió ver (los que va a recibir el diseñador, junto con la transcripción).
+      const seen = c.preview?.length ? [el('p', 'muted small clip-seen-label', `Cuadros que va a ver el agente (${c.preview.length}):`), (() => {
+        const row = el('div', 'clip-seen');
+        c.preview.forEach((f) => { const fig = el('figure'); const img = el('img'); img.src = f.url; img.alt = `Cuadro en ${f.t.toFixed(1)} s`; fig.append(img, el('figcaption', 'small', `${f.t.toFixed(1)} s`)); row.append(fig); });
+        return row;
+      })()] : [];
+      // Modo Automático: qué herramientas piensa usar el agente en esta zona y en qué segundo (se pueden quitar).
+      const planned = c.toolPlan?.length ? [el('p', 'muted small clip-seen-label', 'Plan de herramientas (cuándo piensa usarlas):'), (() => {
+        const ul = el('ul', 'clip-toolplan');
+        c.toolPlan.forEach((u) => {
+          const li = el('li');
+          const when = el('button', 'clip-toolplan-at', `${u.at.toFixed(1)} s`);
+          when.type = 'button'; when.title = 'Ver ese momento en el video';
+          when.onclick = () => { preview.currentTime = u.at; };
+          const rm = el('button', 'remove', '×');
+          rm.type = 'button'; rm.setAttribute('aria-label', `Quitar ${TOOL_NAME[u.tool]} del plan`);
+          rm.onclick = () => { c.toolPlan = c.toolPlan.filter((k) => k !== u); renderMarks(); renderCards(); onChange(); };
+          li.append(el('span', null, TOOL_ICON[u.tool] || '•'), el('strong', 'small', TOOL_NAME[u.tool] || u.tool), when, el('span', 'small clip-toolplan-note', u.note || ''), rm);
+          ul.append(li);
+        });
+        return ul;
+      })()] : [];
+      box.append(head, ...(modes.length > 1 ? [modeRow] : []), ...cineHint, ...said, ...seen, ...planned, prompt, notes, refs);
       cardsBox.append(box);
     });
   }
@@ -334,11 +603,15 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
     const snap = [];
     for (const c of clips) {
       const len = c.end - c.start;
-      const frames = await framesAt(video.reader, Array.from({ length: n }, (_, k) => c.start + ((k + 0.5) / n) * len));
+      // Modo Automático: los cuadros son los segundos que eligió el agente (los que sigan dentro de la zona); si no, repartidos parejo.
+      const chosen = (c.frameTimes || []).filter((t) => t >= c.start - 0.01 && t <= c.end + 0.01).slice(0, n);
+      const times = chosen.length ? chosen : Array.from({ length: n }, (_, k) => c.start + ((k + 0.5) / n) * len);
+      const frames = await framesAt(video.reader, times);
       snap.push({
         id: c.id, start: +c.start.toFixed(3), end: +c.end.toFixed(3), prompt: c.prompt.trim(), notes: c.notes.trim(),
         mode: modeOptions().some(([m]) => m === c.mode) ? c.mode : 'motion', videoModel: c.videoModel,
         frames: frames.map((f) => ({ t: +(f.t - c.start).toFixed(2), url: f.url })),
+        toolPlan: (c.toolPlan || []).filter((u) => u.at >= c.start - 0.01 && u.at <= c.end + 0.01).map((u) => ({ tool: u.tool, at: +u.at.toFixed(2), note: u.note })),
         refs: c.refs.filter((r) => r.status === 'ready').map((r) => ({ kind: r.kind, name: r.name, frames: r.frames })),
       });
     }
@@ -366,7 +639,10 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
 
   const current = () => (video ? { file: video.file, url: video.url, name: video.name, duration: video.duration, width: video.width, height: video.height } : null);
 
-  return { setVideo, setLimits, setClips, missing, hint, request, summary, thumbs, current, busy: () => loading, hasVideo: () => !!video };
+  // Vuelve a poner la música de un experimento del historial ({ master, cues } de music()).
+  const setMusic = (m) => setMusicState((m?.cues || []).map((c) => ({ ...c })), m?.master ?? 1, m?.cues?.length ? 'Música del experimento guardado.' : '');
+
+  return { setVideo, setLimits, setClips, missing, hint, request, summary, thumbs, current, busy: () => loading, hasVideo: () => !!video, music: musicState, setMusic };
 }
 
 // ---------- Eventos del flujo ----------

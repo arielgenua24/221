@@ -24,6 +24,7 @@ const num = (x, fallback = 0) => (Number.isFinite(Number(x)) ? Number(x) : fallb
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const isImage = (u) => typeof u === 'string' && u.startsWith('data:image/');
 const MODES = ['motion', 'ai', 'cine'];
+const PLAN_TOOLS = ['search', 'images', 'sound', 'video']; // herramientas del Laboratorio que el modo Automático puede prever
 export const MAX_CLIP_VIDEO_BYTES = 30 * 1024 * 1024; // el clip grabado en el navegador para re-filmar (data URL)
 
 // Ventana del overlay en fracciones del cuadro, siempre dentro del cuadro y con un tamaño mínimo.
@@ -57,10 +58,17 @@ function parseClip(c, video, maxSeconds = MAX_CLIP_SECONDS) {
     const fr = (Array.isArray(r?.frames) ? r.frames : []).filter(isImage).slice(0, kind === 'video' ? REF_FRAMES : 1);
     return fr.length ? [{ id: `R${i + 1}`, kind, name: String(r.name || '').slice(0, 80), frames: fr }] : [];
   });
+  // Plan de herramientas del modo Automático del Laboratorio: [{ tool, at, note }] con `at` dentro del clip.
+  const toolPlan = (Array.isArray(c.toolPlan) ? c.toolPlan : []).filter((u) => PLAN_TOOLS.includes(u?.tool)).slice(0, 4).map((u) => ({
+    tool: u.tool,
+    at: Math.round(clamp(num(u.at, start), start, Math.min(end, video.duration)) * 100) / 100,
+    note: String(u.note || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+  }));
   return {
     id: String(c.id),
     start,
     end: Math.min(end, video.duration),
+    toolPlan,
     prompt: String(c.prompt || '').slice(0, 1500),
     notes: String(c.notes || '').slice(0, 800),
     mode: MODES.includes(c.mode) ? c.mode : 'motion',
@@ -83,12 +91,12 @@ function parseVideo(v) {
 
 // Valida el pedido: el video (solo sus datos: no viaja), hasta 3 clips con sus cuadros, pedido y referencias.
 // `maxClipSeconds`: el Laboratorio permite zonas más largas que Intuition.
-export function parseIntuitionBody(body, { maxClipSeconds = MAX_CLIP_SECONDS } = {}) {
+export function parseIntuitionBody(body, { maxClipSeconds = MAX_CLIP_SECONDS, maxClips = MAX_CLIPS } = {}) {
   const text = String(body?.text || '').slice(0, 3000);
   const video = parseVideo(body?.video);
   const raw = Array.isArray(body?.clips) ? body.clips : [];
   if (!raw.length) throw new Error('Marcá al menos un clip en el video.');
-  if (raw.length > MAX_CLIPS) throw new Error(`Máximo ${MAX_CLIPS} clips.`);
+  if (raw.length > maxClips) throw new Error(`Máximo ${maxClips} clips.`);
   const clips = raw.map((c) => parseClip(c, video, maxClipSeconds)).sort((a, b) => a.start - b.start);
   const ids = new Set(clips.map((c) => c.id));
   if (ids.size !== clips.length || clips.some((c) => !/^C[1-9]$/.test(c.id))) throw new Error('Los clips tienen ids inválidos.');

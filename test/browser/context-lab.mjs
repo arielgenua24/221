@@ -54,7 +54,7 @@ try {
   await v2.locator('.lab-slider input[type=range]').first().fill('0');
   await v2.getByRole('button', { name: 'Ver el prompt final' }).click();
   await page.waitForFunction(() => document.querySelectorAll('#lab-context-folder .ctx-preview:not([hidden])').length === 1);
-  assert.match(await v2.locator('.ctx-preview').textContent(), /generar_video\(zona, imagen\?, prompt\) \(OBLIGATORIA\)/);
+  assert.match(await v2.locator('.ctx-preview').textContent(), /generar_video\(zona, imagen\?, prompt\) \(REQUIRED\)/);
 
   if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, 'context-config.png'), fullPage: false }); }
 

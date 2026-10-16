@@ -13,6 +13,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createWaveSpeed, mediaDataUrl, VIDEO_MODELS, DEFAULT_VIDEO_MODEL, videoSeconds } from '../wavespeed.js';
+import { getEngine } from '../engines/index.js';
 
 export const MAX_GENERATED_IMAGES = 2; // por lado y por experimento (contando revisiones)
 export const MAX_SEARCHES = 3; // por ejecución
@@ -44,9 +45,12 @@ export const videoResolution = () => process.env.LAB_VIDEO_RESOLUTION || '480p';
 
 const limitsOf = (ctx) => ({ ...DEFAULT_LIMITS, ...(ctx?.limits || {}) });
 
+// Shared by the tool definition and both labs' system prompts, for either engine.
+export const SEARCH_GUIDANCE = 'Explore freely for useful visual inspiration, including connections beyond the literal subject. Keep each Google Images query natural, simple, and focused on one visual need. Avoid overly specific queries or bundling unrelated subjects into one query. If results are poor, simplify the query or change direction instead of appending more keywords. Use attached references and useful results you already have; search again only to resolve a concrete visual need that remains.';
+
 // enabled: qué herramientas ve el agente. opts.modes: 'optional' | 'required' por herramienta (por defecto, obligatorias:
-// así funciona Motion Design). opts.limits: máximos de esta ejecución.
-export function toolDefs({ search, images, sound, video }, { modes = {}, limits = {} } = {}) {
+// así funciona Motion Design). opts.limits: máximos de esta ejecución. opts.words: cómo nombra el motor imágenes y sonidos.
+export function toolDefs({ search, images, sound, video }, { modes = {}, limits = {}, words = getEngine().words } = {}) {
   const lim = { ...DEFAULT_LIMITS, ...limits };
   const must = (k) => (modes[k] || 'required') === 'required';
   const defs = [];
@@ -55,10 +59,10 @@ export function toolDefs({ search, images, sound, video }, { modes = {}, limits 
       type: 'function',
       function: {
         name: 'buscar_referencias',
-        description: `Busca imágenes de referencia en Google Images (estilos de motion, tipografías, gráficos, layouts, lo que hace el rubro del video). Devuelve hasta ${SEARCH_RESULTS} miniaturas para MIRAR, con ids S1, S2… De ellas sacás dos cosas: una PALETA de colores (hex) y los OBJETOS o motivos de referencia que haya. No se pueden usar dentro de la animación. ${must('search') ? 'Es obligatorio usarla al menos una vez antes de escribir el componente.' : 'Es opcional: usala si te sirve.'} Máximo ${lim.searches} búsquedas por ejecución.`,
+        description: `Search Google Images for visual references and inspiration. ${SEARCH_GUIDANCE} Returns up to ${SEARCH_RESULTS} thumbnails to INSPECT, with IDs S1, S2… Derive a color PALETTE in hex and any reference OBJECTS or motifs. Do not use these images inside the animation. ${must('search') ? 'You must use it at least once before writing the component.' : 'Optional: use it when helpful.'} Maximum ${lim.searches} searches per execution.`,
         parameters: {
           type: 'object',
-          properties: { consulta: { type: 'string', description: 'Qué buscar, en pocas palabras (mejor en inglés para estilos de diseño). Ej. "kinetic typography lower third editorial"' } },
+          properties: { consulta: { type: 'string', description: 'A natural, simple query for one visual need, preferably in English for design styles. Examples: "modular typography" or "Pixar desk lamp". Do not combine the whole brief into one query.' } },
           required: ['consulta'],
         },
       },
@@ -69,13 +73,13 @@ export function toolDefs({ search, images, sound, video }, { modes = {}, limits 
       type: 'function',
       function: {
         name: 'generar_imagen',
-        description: `Genera UNA imagen con Nano Banana 2.1 (WaveSpeed) para usarla DENTRO de la animación como images.gen1 / images.gen2. Es la pieza que le da fuerza creativa a la animación: una ilustración, un objeto o personaje, un recorte del producto, una textura, un sticker, un fondo gráfico para un título. Podés partir solo del prompt o darle de 0 a ${IMAGE_INPUTS} imágenes que ya viste (por id) como referencia de estilo o de contenido.${must('images') ? '' : ' Es opcional.'} Máximo ${lim.images} imágenes en todo el trabajo.`,
+        description: `Generate ONE image with Nano Banana 2.1 (WaveSpeed) to use INSIDE the animation as images.gen1 / images.gen2: an illustration, object, character, product cutout, texture, sticker, or graphic background. Use a prompt alone or provide up to ${IMAGE_INPUTS} previously seen images by ID as style or content references.${must('images') ? '' : ' Optional.'} Maximum ${lim.images} images across the entire work.`,
         parameters: {
           type: 'object',
           properties: {
-            prompt: { type: 'string', description: 'Qué imagen generar, con dirección de arte concreta (estilo, paleta, luz, encuadre). Si va encima del video, pedí un fondo liso de un solo color para recortarlo o integrarlo, o que sea una pieza gráfica pensada para superponerse.' },
-            imagenes: { type: 'array', items: { type: 'string' }, maxItems: IMAGE_INPUTS, description: 'Ids de imágenes de referencia (ej. ["C1-2", "S3"]). Opcional.' },
-            proporcion: { type: 'string', enum: ASPECTS, description: 'Proporción de la imagen.' },
+            prompt: { type: 'string', description: 'Describe the image with concrete art direction (style, palette, lighting, framing). For an add-on, request an asset suited to compositing, such as a solid-color background for a cutout. For fullscreen, design the image as part of the complete scene.' },
+            imagenes: { type: 'array', items: { type: 'string' }, maxItems: IMAGE_INPUTS, description: 'Reference image IDs, e.g. ["C1-2", "S3"]. Optional.' },
+            proporcion: { type: 'string', enum: ASPECTS, description: 'Image aspect ratio.' },
           },
           required: ['prompt'],
         },
@@ -87,12 +91,12 @@ export function toolDefs({ search, images, sound, video }, { modes = {}, limits 
       type: 'function',
       function: {
         name: 'generar_sonido',
-        description: `Genera UN efecto de sonido corto (SFX) a partir de una descripción: whoosh, pop, click, impacto, riser, swoosh de texto, campanita, ambiente… Queda disponible en la prop sounds como sounds.sfx1, sounds.sfx2… y lo ponés con <Audio src={sounds.sfx1} volume={…} /> de "@remotion/media" dentro de una <Sequence> sincronizada con el movimiento que acompaña. Suena mezclado sobre el audio original del video. No lo podés escuchar: describilo bien.${must('sound') ? '' : ' Es opcional.'} Máximo ${lim.sounds} sonidos en todo el trabajo.`,
+        description: `Generate ONE short sound effect (SFX) from a description: whoosh, pop, click, impact, riser, text swoosh, chime, ambience… It is available in sounds as sounds.sfx1, sounds.sfx2… Place it with ${words.soundTool}. It is mixed over the video's original audio. You cannot listen to it, so describe it precisely.${must('sound') ? '' : ' Optional.'} Maximum ${lim.sounds} effects across the entire work.`,
         parameters: {
           type: 'object',
           properties: {
-            descripcion: { type: 'string', description: 'El sonido, concreto y en inglés (los modelos de audio lo entienden mejor). Ej. "short soft whoosh, airy, no reverb", "cartoon pop, high pitch, dry".' },
-            duracion: { type: 'number', minimum: SFX_SECONDS[0], maximum: SFX_SECONDS[1], description: 'Duración en segundos.' },
+            descripcion: { type: 'string', description: 'Describe the sound precisely in English. Examples: "short soft whoosh, airy, no reverb", "cartoon pop, high pitch, dry".' },
+            duracion: { type: 'number', minimum: SFX_SECONDS[0], maximum: SFX_SECONDS[1], description: 'Duration in seconds.' },
           },
           required: ['descripcion'],
         },
@@ -104,13 +108,13 @@ export function toolDefs({ search, images, sound, video }, { modes = {}, limits 
       type: 'function',
       function: {
         name: 'generar_video',
-        description: `Genera UNA toma de video con IA (image→video) a partir de un cuadro del video (o de otra imagen que viste) y un prompt. NO va dentro de tu componente: el entorno la pone en una CAPA PROPIA entre el video original y tu animación, durante la zona que indiques, y el humano la puede ocultar, mover o escalar. Diseñá tu capa para convivir con ella (títulos o marcos encima, sin taparla). Tarda varios minutos y es la herramienta más cara: usala cuando una toma nueva aporte de verdad.${must('video') ? '' : ' Es opcional.'} Máximo ${lim.videos} en todo el trabajo.`,
+        description: `Generate ONE AI video shot (image-to-video) from a video frame or another image you have seen, plus a prompt. Do NOT put it in your component: the environment displays it in a SEPARATE LAYER between the original video and your animation during the requested zone. The user can hide, move, or scale it. Design the animation to work with the shot. It takes several minutes and is the most expensive tool; use it when a new shot adds real value.${must('video') ? '' : ' Optional.'} Maximum ${lim.videos} shots across the entire work.`,
         parameters: {
           type: 'object',
           properties: {
-            zona: { type: 'string', description: 'Id de la zona donde va la toma (ej. "C1"). Dura lo que dura la zona.' },
-            imagen: { type: 'string', description: 'Id de la imagen que es el primer cuadro (ej. "C1-3"). Si no lo das, se usa un cuadro del medio de la zona.' },
-            prompt: { type: 'string', description: 'La toma, en inglés: sujeto, acción, cámara, luz, ritmo y qué no puede cambiar.' },
+            zona: { type: 'string', description: 'Target zone ID, e.g. "C1". The shot lasts for that zone.' },
+            imagen: { type: 'string', description: 'Starting image ID, e.g. "C1-3". If omitted, a frame from the middle of the zone is used.' },
+            prompt: { type: 'string', description: 'Describe the shot in English: subject, action, camera, lighting, pacing, and what must remain unchanged.' },
           },
           required: ['zona', 'prompt'],
         },
@@ -155,6 +159,7 @@ export function createLabTools({ serpKey, wavespeedKey, mediaDir, mock = false, 
   const ws = !mock && wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir, fetchImpl, pollMs }) : null;
 
   async function search({ consulta }, ctx) {
+    ctx.signal?.throwIfAborted();
     const q = String(consulta || '').trim().slice(0, 200);
     const max = limitsOf(ctx).searches;
     if (!q) return { text: 'Error: falta la consulta.' };
@@ -168,20 +173,35 @@ export function createLabTools({ serpKey, wavespeedKey, mediaDir, mock = false, 
         .map(([, url], i) => ({ title: `(demo) resultado ${i + 1} para "${q}"`, source: 'demo', link: '', url }));
     } else {
       const params = new URLSearchParams({ engine: 'google_images', q, api_key: serpKey, hl: 'es', safe: 'active' });
-      const res = await fetchImpl(`https://serpapi.com/search.json?${params}`, { signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(20000)].filter(Boolean)) });
-      const data = await res.json().catch(() => ({}));
+      const timeout = AbortSignal.timeout(20000);
+      const signal = AbortSignal.any([ctx.signal, timeout].filter(Boolean));
+      let res, data;
+      try {
+        res = await fetchImpl(`https://serpapi.com/search.json?${params}`, { signal });
+        data = await res.json().catch((err) => {
+          if (signal.aborted || err.name === 'TimeoutError') throw err;
+          return {};
+        });
+        ctx.signal?.throwIfAborted();
+      } catch (err) {
+        // A local deadline is a tool result; cancelling the run must still stop it.
+        if (ctx.signal?.aborted || (!timeout.aborted && err.name !== 'TimeoutError')) throw err;
+        const remaining = Math.max(0, max - ctx.state.searches);
+        return { text: `Error de la búsqueda: se agotó el tiempo de espera de 20 s para "${q}". Búsquedas restantes: ${remaining}. ${remaining ? 'Podés reintentar o cambiar la consulta si todavía necesitás una referencia concreta, o continuar con las referencias disponibles.' : 'Continuá con las referencias disponibles; no quedan búsquedas.'}` };
+      }
       if (!res.ok || data.error) return { text: `Error de la búsqueda: ${data.error || res.status}` };
       const picks = (data.images_results || []).filter((r) => r.thumbnail).slice(0, SEARCH_RESULTS);
       // Las miniaturas se bajan acá: el modelo las recibe como data URL (no todos los proveedores bajan URLs externas).
       results = (await Promise.all(picks.map(async (r) => {
         try {
-          const img = await fetchImpl(r.thumbnail, { signal: AbortSignal.timeout(10000) });
+          const img = await fetchImpl(r.thumbnail, { signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(10000)].filter(Boolean)) });
           const type = img.headers.get('content-type') || '';
           if (!img.ok || !type.startsWith('image/')) return null;
           return { title: String(r.title || '').slice(0, 120), source: String(r.source || '').slice(0, 80), link: String(r.link || ''), url: toDataUrl(await img.arrayBuffer(), type.split(';')[0]) };
-        } catch { return null; }
+        } catch (err) { if (ctx.signal?.aborted) throw err; return null; }
       }))).filter(Boolean);
     }
+    ctx.signal?.throwIfAborted();
     if (!results.length) return { text: `La búsqueda "${q}" no devolvió imágenes.` };
     const listed = results.map((r) => {
       const id = `S${++ctx.state.searchSeq}`;
@@ -237,7 +257,7 @@ export function createLabTools({ serpKey, wavespeedKey, mediaDir, mock = false, 
     ctx.registry.set(id, url);
     ctx.emit({ type: 'asset', id, url, prompt: text, inputs: ids });
     return {
-      text: `Listo: ${id}. Usala en el componente con <Img src={images.${id}} /> de "remotion" (la prop images ya la trae): animala, integrala con el video y con la tipografía.`,
+      text: `Listo: ${id}. Usala en el componente con ${(ctx.words || getEngine().words).imageReady(id)}: animala, integrala con el video y con la tipografía.`,
       parts: [{ type: 'text', text: `${id} (generada)` }, { type: 'image_url', image_url: { url } }],
     };
   }
@@ -267,7 +287,7 @@ export function createLabTools({ serpKey, wavespeedKey, mediaDir, mock = false, 
     const id = `sfx${ctx.state.sounds}`;
     ctx.sounds.set(id, url);
     ctx.emit({ type: 'sound', id, url, prompt: text, duration });
-    return { text: `Listo: ${id} (${duration} s, "${text}"). Usalo con <Audio src={sounds.${id}} /> de "@remotion/media" dentro de la <Sequence> del momento que acompaña (la prop sounds ya lo trae). Ajustá volume para que no tape la voz del video.` };
+    return { text: `Listo: ${id} (${duration} s, "${text}"). Usalo con ${(ctx.words || getEngine().words).soundReady(id)}. Ajustá volume para que no tape la voz del video.` };
   }
 
   async function video({ zona, imagen, prompt }, ctx) {
@@ -309,16 +329,36 @@ export function createLabTools({ serpKey, wavespeedKey, mediaDir, mock = false, 
     return { text: `Listo: ${id}. El entorno lo muestra en su propia capa, debajo de tu animación y encima del video original, en ${zone.id} (cuadros ${zone.from} → ${zone.from + zone.durationInFrames}), partiendo de ${imageId}. No lo renderices vos: diseñá tu capa para que conviva con esa toma.` };
   }
 
+  // Ejecuta una herramienta y avisa al navegador: `tool` al empezar (con su id de llamada) y `tool_done` al terminar, con si salió bien,
+  // el costo de esta llamada y cuánto tardó. Entre los dos llegan los resultados (search, asset, sound, video).
   async function run(call, ctx) {
+    const name = call.function?.name;
+    const id = call.id || '';
     let args;
-    try { args = JSON.parse(call.function.arguments || '{}'); } catch { return { text: 'Error: los argumentos no son JSON válido.' }; }
-    const name = call.function.name;
-    ctx.emit({ type: 'tool', name, args });
-    if (name === 'buscar_referencias' && available.search) return search(args, ctx);
-    if (name === 'generar_imagen' && available.images) return generate(args, ctx);
-    if (name === 'generar_sonido' && available.sound) return sound(args, ctx);
-    if (name === 'generar_video' && available.video) return video(args, ctx);
-    return { text: `Error: la herramienta ${name} no existe en este entorno.` };
+    try { args = JSON.parse(call.function.arguments || '{}'); } catch {
+      ctx.emit({ type: 'tool', id, name, args: {} });
+      const out = { text: 'Error: los argumentos no son JSON válido.' };
+      ctx.emit({ type: 'tool_done', id, name, ok: false, error: out.text, cost: 0, ms: 0 });
+      return out;
+    }
+    ctx.emit({ type: 'tool', id, name, args });
+    const t0 = Date.now();
+    const cost0 = ctx.state?.toolCost || 0;
+    let out;
+    try {
+      if (name === 'buscar_referencias' && available.search) out = await search(args, ctx);
+      else if (name === 'generar_imagen' && available.images) out = await generate(args, ctx);
+      else if (name === 'generar_sonido' && available.sound) out = await sound(args, ctx);
+      else if (name === 'generar_video' && available.video) out = await video(args, ctx);
+      else out = { text: `Error: la herramienta ${name} no existe en este entorno.` };
+    } catch (err) {
+      out = { text: `Error: ${err.message}` };
+      ctx.emit({ type: 'tool_done', id, name, ok: false, error: out.text.slice(0, 300), cost: 0, ms: Date.now() - t0 });
+      throw err;
+    }
+    const failed = /^Error/.test(out.text);
+    ctx.emit({ type: 'tool_done', id, name, ok: !failed, ...(failed ? { error: out.text.slice(0, 300) } : {}), cost: Math.max(0, (ctx.state?.toolCost || 0) - cost0), ms: Date.now() - t0 });
+    return out;
   }
 
   return { available, run };

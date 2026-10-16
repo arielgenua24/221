@@ -49,7 +49,7 @@ function fail({ status, model, detail, streamed }) {
 // onDelta recibe el texto de la respuesta; onReasoning, el razonamiento si el modelo lo expone.
 // tools (opcional): funciones que el modelo puede llamar (formato OpenAI). Devuelve toolCalls y reasoningDetails
 // (algunos proveedores, como Gemini, exigen que el razonamiento vuelva tal cual en el turno siguiente).
-async function once({ apiKey, model, messages, temperature, plugins, reasoning, tools, toolChoice, onDelta, onReasoning, signal }) {
+async function once({ apiKey, model, messages, temperature, maxTokens, plugins, reasoning, tools, toolChoice, onDelta, onReasoning, signal }) {
   const body = {
     model,
     messages,
@@ -57,6 +57,8 @@ async function once({ apiKey, model, messages, temperature, plugins, reasoning, 
     usage: { include: true },
   };
   if (temperature !== undefined) body.temperature = temperature;
+  // Tope de salida (razonamiento + texto). En Anthropic el razonamiento se come una fracción de este número.
+  if (maxTokens) body.max_tokens = maxTokens;
   if (plugins) body.plugins = plugins;
   if (reasoning) body.reasoning = reasoning;
   if (tools?.length) { body.tools = tools; if (toolChoice) body.tool_choice = toolChoice; }

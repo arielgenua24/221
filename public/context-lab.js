@@ -1,9 +1,16 @@
 import { el, streamEvents } from './shared.js';
 import { createStudio } from './intuition.js';
+import { createSpeechPanel } from './speech.js';
+import { createDocsPanel, isDocFile } from './docs.js';
+import { createAutoPlanner } from './auto-plan.js';
+import { musicForFrame, broadcastMusic } from './lab-music.js';
+import { createToolFeed } from './tool-feed.js';
+import { fillReasoning, reasoningText } from './reasoning.js';
 import { loadPhoto } from './media.js';
 import { money, secs, IDENTITY } from './lab-stats.js';
 import { createLabStore } from './lab-store.js';
 import { compositeOverlay } from './lab-composite.js';
+import { keepVideo, forgetVideo, savedLink } from './lab-download.js';
 import {
   TOOL_KEYS, TOOL_LABEL, MODE_LABEL, policySignature, approxTokens, newVariantRun, variantMetrics, configSummary, configStats, experimentStatus, differing,
 } from './context-lab-stats.js';
@@ -12,7 +19,9 @@ import {
 // La idea inversa de Motion Design: UN modelo, el mismo video y las mismas zonas, y de 2 a 4 VARIANTES de contexto.
 // Cada variante elige su prompt de sistema, sus skills, sus herramientas (apagada / opcional / obligatoria) y sus límites,
 // su pedido (contexto, instrucciones, referencias), ejemplos, cuántos cuadros ve, temperatura y razonamiento.
-// Corren por separado (ninguna ve a las otras) con el mismo harness de Remotion; el humano compara y evalúa.
+// Corren por separado (ninguna ve a las otras) con el mismo harness; el humano compara y evalúa.
+// Cada variante elige también el MOTOR que compila y reproduce su animación (Remotion o el motor propio en canvas);
+// el iframe de cada tarjeta es el de su motor y habla el mismo protocolo, así que todo lo demás funciona igual.
 // Capas en el Player: video original → tomas de IA (cada una en su capa) → animación del agente.
 
 const $ = (id) => document.getElementById(id);
@@ -35,6 +44,11 @@ const error = (msg) => { const e = $('ctx-error'); e.textContent = msg || ''; e.
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const shortModel = (id) => String(id || '').split('/').pop();
 const fps = () => info?.harness?.fps || 30;
+// Motor de una variante ('' o desconocido = el de por defecto) y la plantilla por defecto de ese motor.
+const engineOf = (cfg) => (info?.engines?.some((e) => e.id === cfg?.engine) ? cfg.engine : info?.defaultEngine || 'remotion');
+const engineLabel = (id) => info?.engines?.find((e) => e.id === id)?.label || id || 'Remotion';
+const templateOf = (cfg) => info?.templates?.[engineOf(cfg)] ?? info?.template ?? '';
+const usesSkills = (cfg) => engineOf(cfg) === 'remotion';
 
 // ---------- Estructura ----------
 const root = $('ctx-experiment');
@@ -46,7 +60,7 @@ const modelInput = el('input', 'lab-model ctx-model');
 modelInput.type = 'text'; modelInput.setAttribute('list', 'ctx-model-list'); modelInput.spellcheck = false; modelInput.autocomplete = 'off';
 modelInput.placeholder = 'proveedor/modelo (OpenRouter)';
 modelInput.setAttribute('aria-label', 'Modelo (el mismo para todas las variantes)');
-modelInput.oninput = () => { store.setPrefs({ model: modelInput.value.trim() }); showPrice(); refresh(); };
+modelInput.oninput = () => { store.setPrefs({ model: modelInput.value.trim() }); showPrice(); cards.forEach((c) => c.renderConfig()); refresh(); };
 const modelList = el('datalist');
 modelList.id = 'ctx-model-list';
 const modelWrap = el('label', 'ctx-model-wrap');
@@ -108,7 +122,32 @@ const compare = el('section', 'lab-card lab-compare ctx-compare');
 compare.hidden = true;
 root.append(toolbar, price, hint, setupNote, top, variantsHead, grid, compare);
 
-const studio = createStudio({ mount: studioBox, label: '1 · Clip y zonas', onError: error, onChange: () => refresh() });
+// Modo Automático del marcador: el agente elige los momentos a partir de la transcripción (speech se crea más abajo).
+const planner = createAutoPlanner({
+  getSpeech: () => speech,
+  getBrief: () => ({ context: contextInput.value.trim(), instructions: instructionsInput.value.trim() }),
+  getModel: () => modelInput.value.trim(),
+  getInfo: () => info,
+  // Las herramientas que tendrá algún diseñador: las que el servidor ofrece y alguna variante no apagó ('required' si alguna la exige).
+  getTools: () => Object.fromEntries(TOOL_KEYS.filter((k) => info?.tools?.[k] && drafts.some((d) => d.policy[k] !== 'off')).map((k) => [k, drafts.some((d) => d.policy[k] === 'required') ? 'required' : 'optional'])),
+});
+const studio = createStudio({ mount: studioBox, label: '1 · Clip y zonas', onError: error, onChange: () => refresh(), auto: planner.auto, onMusic: (m) => musicChanged(m) });
+// La música de fondo es del video, no de una variante: suena en todos los reproductores y se guarda con el experimento
+// (solo si el marcador sigue con el video de ese experimento).
+function musicChanged(m) {
+  broadcastMusic(m, [...cards.values()].map((c) => c.frame?.contentWindow));
+  if (exp && frozen?.file && frozen.file === studio.current()?.file) store.putBlob(`${exp.id}:music`, m);
+}
+// Documentos .md adjuntos al pedido base; cada variante marca cuáles recibe.
+const docsPanel = createDocsPanel({
+  mount: brief,
+  onChange: () => { saveBaseDocs(); cards.forEach((c) => c.renderConfig()); refresh(); },
+  help: 'Archivos Markdown que el agente lee enteros (guía de marca, guion, notas de estilo…). Los adjuntás acá y cada variante elige cuáles recibe: así comparás con y sin cada documento.',
+});
+function saveBaseDocs() { store.putBlob('draft:base:docs', docsPanel.get()); }
+
+// Habla del video (Whisper): cabezales por segundo en el pedido base; cada variante decide si los recibe.
+const speech = createSpeechPanel({ mount: brief, studio, onChange: () => { refresh(); cards.forEach((c) => c.renderSummary()); } });
 
 // ---------- Configuración de una variante ----------
 function defaultConfig(label) {
@@ -120,10 +159,14 @@ function defaultConfig(label) {
     skills: [...(info?.defaultSkills || [])],
     skillsTouched: false,
     frames: info?.maxFrames ?? 6,
+    docsOff: [], // ids de los adjuntos del pedido base que esta variante NO recibe
+    docs: [], // adjuntos propios de esta variante: { id, name, text } (solo los recibe ella)
+    speech: true, // recibe la transcripción del habla (si hay una en el pedido base)
     temperature: null,
     reasoning: null,
     videoModel: info?.tools?.defaultVideoModel || 'seedance',
-    template: '', // '' = la plantilla por defecto
+    engine: info?.defaultEngine || 'remotion',
+    template: '', // '' = la plantilla por defecto (la del motor)
     examples: '',
     context: null, // null = hereda el pedido base
     instructions: null,
@@ -135,7 +178,7 @@ const clone = (cfg) => ({ ...JSON.parse(JSON.stringify({ ...cfg, refs: [] })), i
 // Lo que viaja al servidor como `variant` (ver src/lab/context.js → parseVariant).
 const serverVariant = (cfg) => ({
   template: cfg.template, examples: cfg.examples, policy: cfg.policy, limits: cfg.limits, skills: cfg.skills,
-  frames: cfg.frames, temperature: cfg.temperature, reasoning: cfg.reasoning, videoModel: cfg.videoModel,
+  frames: cfg.frames, temperature: cfg.temperature, reasoning: cfg.reasoning, videoModel: cfg.videoModel, engine: engineOf(cfg),
 });
 const readyRefs = (list) => list.filter((r) => r.status === 'ready').map((r) => ({ name: r.name, url: r.url }));
 function briefOf(cfg) {
@@ -143,6 +186,7 @@ function briefOf(cfg) {
     context: (cfg.context ?? contextInput.value).trim(),
     instructions: (cfg.instructions ?? instructionsInput.value).trim(),
     refs: cfg.refsMode === 'none' ? [] : readyRefs(cfg.refsMode === 'own' ? cfg.refs : baseRefs),
+    docs: [...docsPanel.get().filter((d) => !(cfg.docsOff || []).includes(d.id)), ...(cfg.docs || [])].map(({ name, text }) => ({ name, text })),
   };
 }
 const skillsChars = (files) => files.reduce((n, f) => n + (info?.skills?.find((s) => s.file === f)?.chars || 0), 0);
@@ -151,8 +195,12 @@ let draftTimer = 0;
 function saveDrafts() {
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => {
-    store.setPrefs({ drafts: drafts.map((d) => ({ ...d, refs: [] })) });
-    drafts.forEach((d) => store.putBlob(`draft:${d.id}:refs`, d.refs.filter((r) => r.status === 'ready').map(({ name, url, thumb }) => ({ name, url, thumb }))));
+    // Lo pesado (referencias y adjuntos propios) va a IndexedDB; en localStorage queda solo la configuración.
+    store.setPrefs({ drafts: drafts.map((d) => ({ ...d, refs: [], docs: [] })) });
+    drafts.forEach((d) => {
+      store.putBlob(`draft:${d.id}:refs`, d.refs.filter((r) => r.status === 'ready').map(({ name, url, thumb }) => ({ name, url, thumb })));
+      store.putBlob(`draft:${d.id}:docs`, d.docs || []);
+    });
   }, 300);
 }
 
@@ -178,6 +226,20 @@ function createCard(cfg) {
   const config = el('details', 'ctx-config');
   config.open = true;
   config.append(el('summary', null, 'Configuración del contexto'));
+
+  // Motor: qué compila y reproduce la animación. Cambia el contrato del prompt; las herramientas y el flujo son los mismos.
+  const engineSel = el('select', 'ctx-engine-select');
+  engineSel.setAttribute('aria-label', 'Motor de animación');
+  engineSel.onchange = () => {
+    const from = engineOf(cfg);
+    cfg.engine = engineSel.value;
+    // Una plantilla editada describe el contrato del motor anterior: se ofrece volver a la del motor nuevo.
+    if (cfg.template && confirm(`Tu prompt de sistema editado describe el contrato de ${engineLabel(from)}. ¿Usar la plantilla por defecto de ${engineLabel(cfg.engine)}?`)) cfg.template = '';
+    saveDrafts(); renderConfig();
+  };
+  const engineNote = el('span', 'muted small');
+  const engineBox = el('div', 'ctx-row ctx-engine');
+  engineBox.append(el('span', 'lab-field-label', 'Motor'), engineSel, engineNote);
 
   // Herramientas: modo + límite.
   const toolsBox = el('div', 'ctx-tools');
@@ -264,8 +326,9 @@ function createCard(cfg) {
   temp.type = 'number'; temp.min = '0'; temp.max = '2'; temp.step = '0.1'; temp.placeholder = 'auto';
   temp.title = 'Vacío = la del proveedor';
   temp.onchange = () => { cfg.temperature = temp.value === '' ? null : Math.min(2, Math.max(0, Number(temp.value))); saveDrafts(); renderSummary(); };
+  // Los niveles salen del catálogo: cada modelo acepta los suyos (se rearma cuando cambia el modelo, ver renderConfig).
   const reasoning = el('select');
-  [['', 'por defecto'], ['low', 'bajo'], ['medium', 'medio'], ['high', 'alto']].forEach(([v, t]) => { const o = el('option', null, t); o.value = v; reasoning.append(o); });
+  const reasoningHint = el('p', 'muted small ctx-reasoning-hint');
   reasoning.onchange = () => { cfg.reasoning = reasoning.value || null; saveDrafts(); renderSummary(); };
   const seeBox = el('div', 'ctx-block');
   const framesRow = el('label', 'lab-slider');
@@ -274,7 +337,49 @@ function createCard(cfg) {
   const tw = el('label', 'lab-inline'); tw.append(el('span', 'small', 'Temperatura'), temp);
   const rw = el('label', 'lab-inline'); rw.append(el('span', 'small', 'Razonamiento'), reasoning);
   sampling.append(tw, rw);
-  seeBox.append(el('span', 'lab-field-label', 'Qué ve y cómo piensa'), framesRow, sampling);
+  const speechBox = el('input');
+  speechBox.type = 'checkbox';
+  speechBox.onchange = () => { cfg.speech = speechBox.checked; saveDrafts(); renderSummary(); };
+  const speechRow = el('label', 'lab-inline');
+  speechRow.title = 'Los cabezales por segundo de lo que dice el video (Whisper). Solo cuenta si transcribiste el clip en el pedido base.';
+  speechRow.append(speechBox, el('span', 'small', 'Recibe el habla del video'));
+  seeBox.append(el('span', 'lab-field-label', 'Qué ve y cómo piensa'), framesRow, speechRow, sampling, reasoningHint);
+
+  // Adjuntos: los del pedido base (la variante marca cuáles recibe) + los propios de esta variante (solo los recibe ella).
+  const docsBox = el('div', 'ctx-block ctx-docs');
+  const inheritedDocs = el('div', 'ctx-docs-inherited');
+  const ownDocs = createDocsPanel({
+    mount: docsBox,
+    label: 'Adjuntos solo de esta variante (.md)',
+    help: 'Los recibe únicamente esta variante: así probás un documento en una y no en la otra.',
+    onChange: () => { cfg.docs = ownDocs.get(); saveDrafts(); renderSummary(); renderDocs(); refresh(); },
+  });
+  if (info?.docs) ownDocs.setLimits(info.docs);
+  docsBox.prepend(el('span', 'lab-field-label', 'Documentos adjuntos'), inheritedDocs);
+  const sameIds = (a, b) => a.length === b.length && a.every((d, i) => d.id === b[i].id);
+  function renderDocs() {
+    // Los propios los dibuja el panel; si la config cambió por fuera (duplicar, reabrir un experimento), se los pasamos.
+    if (!sameIds(ownDocs.get(), cfg.docs || [])) ownDocs.set(cfg.docs || []);
+    const all = docsPanel.get();
+    const off = new Set(cfg.docsOff || []);
+    const rows = all.map((d) => {
+      const box = el('input');
+      box.type = 'checkbox'; box.checked = !off.has(d.id);
+      box.onchange = () => {
+        cfg.docsOff = box.checked ? (cfg.docsOff || []).filter((x) => x !== d.id) : [...new Set([...(cfg.docsOff || []), d.id])];
+        saveDrafts(); renderSummary(); renderDocs();
+      };
+      const row = el('label', 'lab-inline ctx-doc');
+      row.title = d.text.slice(0, 400) + (d.text.length > 400 ? '…' : '');
+      row.append(box, el('span', 'small', d.name), el('span', 'muted small', `≈ ${Math.round(d.text.length / 4).toLocaleString('es')} tok.`));
+      return row;
+    });
+    const used = [...all.filter((d) => !off.has(d.id)), ...(cfg.docs || [])];
+    inheritedDocs.replaceChildren(
+      ...(all.length ? [el('span', 'muted small', 'Del pedido base (marcá los que recibe)'), ...rows] : [el('span', 'muted small', 'Del pedido base: ninguno (los adjuntás arriba, en «Pedido base»).')]),
+      el('span', 'small ctx-docs-total', `Esta variante recibe ${used.length} documento${used.length === 1 ? '' : 's'} · ≈ ${Math.round(docsPanel.chars(used) / 4).toLocaleString('es')} tokens`),
+    );
+  }
 
   // Skills.
   const skillsBox = el('details', 'ctx-skills');
@@ -298,7 +403,7 @@ function createCard(cfg) {
   const template = el('textarea', 'ctx-template');
   template.rows = 10;
   template.spellcheck = false;
-  template.oninput = () => { cfg.template = template.value.trim() === (info?.template || '').trim() ? '' : template.value; saveDrafts(); renderSystemStats(); renderSummary(); };
+  template.oninput = () => { cfg.template = template.value.trim() === templateOf(cfg).trim() ? '' : template.value; saveDrafts(); renderSystemStats(); renderSummary(); };
   const sysStats = el('p', 'muted small');
   const restore = el('button', 'small-btn', 'Restaurar por defecto');
   restore.type = 'button';
@@ -327,14 +432,26 @@ function createCard(cfg) {
     el('span', 'muted small', 'Marcadores: {{herramientas}} (según los modos de arriba), {{ejemplos}} y {{skills}}. Si borrás uno, esa parte no entra.'),
     template, sysStats, sysActions, preview,
   );
-  config.append(toolsBox, askBox, seeBox, skillsBox, sysBox);
+  config.append(engineBox, toolsBox, askBox, seeBox, docsBox, skillsBox, sysBox);
 
   // ---------- Resultado ----------
   const status = el('div', 'lab-status');
   const stage = el('div', 'lab-stage');
   const actions = el('div', 'actions compact');
   const layers = el('div', 'lab-adjust ctx-layers');
-  const toolsOut = el('details', 'lab-tools');
+  // Registro en vivo de lo que hace con las herramientas, y el plan del modo Automático si lo hay.
+  const feed = createToolFeed({
+    resolve: {
+      search: (q) => [...card.found].reverse().find((f) => f.query === q),
+      image: (id) => card.assets.find((a) => a.id === id),
+      sound: (id) => card.sounds.find((x) => x.id === id),
+      video: (id) => card.videos.find((x) => x.id === id),
+    },
+    getCode: () => card.code,
+    getPlan: () => (frozen?.payload.clips.some((c) => c.toolPlan?.length) ? { clips: frozen.payload.clips, enabled: card.run()?.enabledTools || null } : null),
+    running: () => ['running', 'checking'].includes(card.run()?.status),
+    active: () => !!card.run()?.attempts?.length,
+  });
   const feedback = el('div', 'lab-feedback');
   const thread = el('div', 'lab-thread');
   const fbText = el('textarea');
@@ -353,14 +470,15 @@ function createCard(cfg) {
   const out = el('pre', 'lab-out');
   live.append(out);
   const codeBox = el('details', 'lab-code');
-  codeBox.append(el('summary', null, 'Ver código (TSX)'));
+  codeBox.append(el('summary', null, 'Ver código'));
   const codePre = el('pre', 'lab-out');
   codeBox.append(codePre);
-  node.append(head, summary, config, status, stage, actions, layers, toolsOut, feedback, metrics, evalBox, live, codeBox);
+  node.append(head, summary, config, status, stage, feed.node, actions, layers, feedback, metrics, evalBox, live, codeBox);
 
   const card = {
     cfg, node, stage, frame: null, controller: null, code: '', js: '', turns: [], runtimeFixes: 0, pending: null,
     assets: [], found: [], sounds: [], videos: [], queue: [], rendering: null, renderPhase: null, frameNow: 0,
+    feed,
     entry: () => exp?.variants.find((v) => v.slot === cfg.id) || null,
     run: () => card.entry()?.run || null,
     key: () => card.entry()?.key || null,
@@ -388,9 +506,9 @@ function createCard(cfg) {
   }
 
   function renderSystemStats() {
-    const text = cfg.template || info?.template || '';
+    const text = cfg.template || templateOf(cfg);
     const marks = ['herramientas', 'ejemplos', 'skills'].filter((m) => new RegExp(`\\{\\{\\s*${m}\\s*\\}\\}`, 'i').test(text));
-    sysStats.textContent = `${cfg.template ? 'Editado' : 'Por defecto'} · plantilla ≈ ${approxTokens(text.length).toLocaleString('es')} tokens · + skills ≈ ${marks.includes('skills') ? approxTokens(skillsChars(cfg.skills)).toLocaleString('es') : 0} · marcadores: ${marks.join(', ') || 'ninguno'}`;
+    sysStats.textContent = `${cfg.template ? 'Editado' : 'Por defecto'} · plantilla ≈ ${approxTokens(text.length).toLocaleString('es')} tokens · + skills ≈ ${marks.includes('skills') && usesSkills(cfg) ? approxTokens(skillsChars(cfg.skills)).toLocaleString('es') : 0} · marcadores: ${marks.join(', ') || 'ninguno'}`;
   }
 
   function renderOwnRefs() {
@@ -404,6 +522,11 @@ function createCard(cfg) {
 
   function renderConfig() {
     const t = info?.tools || {};
+    const engine = engineOf(cfg);
+    engineSel.replaceChildren(...(info?.engines || [{ id: 'remotion', label: 'Remotion' }]).map((e) => { const o = el('option', null, e.label); o.value = e.id; return o; }));
+    engineSel.value = engine;
+    engineNote.textContent = engine === 'remotion' ? 'React + Remotion (TSX) · Player y render de Remotion' : 'JavaScript en <canvas> · arranca al instante; las skills de Remotion no aplican';
+    skillsBox.hidden = !usesSkills(cfg);
     toolRows.forEach(({ k, buttons, lim, note, modelSel, row }) => {
       const avail = !!t[k];
       buttons.forEach(([m, b]) => { b.setAttribute('aria-checked', String(cfg.policy[k] === m)); b.disabled = !avail && m !== 'off'; });
@@ -431,10 +554,15 @@ function createCard(cfg) {
     frames.max = String(info?.maxFrames ?? 6);
     frames.value = String(cfg.frames);
     framesVal.textContent = String(cfg.frames);
+    speechBox.checked = cfg.speech !== false;
     temp.value = cfg.temperature === null ? '' : String(cfg.temperature);
-    reasoning.value = cfg.reasoning || '';
+    // Si el valor que tenía esta variante no existe en el modelo elegido, vuelve a «por defecto».
+    renderDocs();
+    const rs = fillReasoning(reasoning, modelEntry(), cfg.reasoning);
+    if (rs.reset) { cfg.reasoning = null; saveDrafts(); }
+    reasoningHint.textContent = rs.hint;
     examples.value = cfg.examples;
-    if (document.activeElement !== template) template.value = cfg.template || info?.template || '';
+    if (document.activeElement !== template) template.value = cfg.template || templateOf(cfg);
     renderOwnRefs();
     renderSkills();
     renderSystemStats();
@@ -445,15 +573,18 @@ function createCard(cfg) {
   function renderSummary() {
     const b = briefOf(cfg);
     const parts = [
+      engineLabel(engineOf(cfg)),
       policySignature(cfg.policy),
       `${cfg.frames} cuadro${cfg.frames === 1 ? '' : 's'}/zona`,
-      `${cfg.skills.length} skills`,
+      speech.get() ? (cfg.speech !== false ? 'con habla' : 'sin habla') : null,
+      usesSkills(cfg) ? `${cfg.skills.length} skills` : null,
       cfg.template ? 'prompt editado' : 'prompt por defecto',
       cfg.examples.trim() ? 'con ejemplos' : null,
       `${b.refs.length} ref.`,
+      b.docs.length ? `${b.docs.length} adjunto${b.docs.length > 1 ? 's' : ''}` : null,
       cfg.context !== null || cfg.instructions !== null ? 'pedido propio' : null,
       cfg.temperature !== null ? `temp. ${cfg.temperature}` : null,
-      cfg.reasoning ? `razonamiento ${cfg.reasoning}` : null,
+      cfg.reasoning ? `razonamiento ${reasoningText(cfg.reasoning)}` : null,
     ].filter(Boolean);
     summary.textContent = parts.join(' · ');
   }
@@ -527,41 +658,8 @@ function createCard(cfg) {
     });
   }
 
-  // ---------- Lo que usó de las herramientas ----------
-  function renderTools() {
-    toolsOut.replaceChildren();
-    const n = card.found.length + card.assets.length + card.sounds.length + card.videos.length;
-    toolsOut.hidden = !n;
-    if (!n) return;
-    toolsOut.append(el('summary', null, `Herramientas · ${card.found.length} búsq. · ${card.assets.length} img. · ${card.sounds.length} sonido${card.sounds.length === 1 ? '' : 's'} · ${card.videos.length} toma${card.videos.length === 1 ? '' : 's'}`));
-    card.videos.forEach((v) => toolsOut.append(el('p', 'small', `${v.id} · ${v.model || ''} · ${v.zone} desde ${v.source}: ${v.prompt}`)));
-    card.sounds.forEach((s) => {
-      const fig = el('figure', 'lab-asset ctx-sound');
-      const a = el('audio');
-      a.controls = true; a.preload = 'none'; a.src = s.url;
-      fig.append(a, el('figcaption', 'small', `${s.id} · ${s.duration} s · ${s.prompt}`));
-      toolsOut.append(fig);
-    });
-    card.assets.forEach((a) => {
-      const fig = el('figure', 'lab-asset');
-      const img = el('img'); img.src = a.url; img.alt = a.prompt;
-      fig.append(img, el('figcaption', 'small', `${a.id} · ${a.prompt}`));
-      toolsOut.append(fig);
-    });
-    card.found.forEach((f) => {
-      toolsOut.append(el('p', 'small lab-query', `Buscó: «${f.query}»`));
-      const strip = el('div', 'thumbs');
-      f.results.forEach((r) => {
-        const t = el(r.link ? 'a' : 'div', 'thumb');
-        if (r.link) { t.href = r.link; t.target = '_blank'; t.rel = 'noopener noreferrer'; }
-        t.title = `${r.id} · ${r.title}`;
-        const img = el('img'); img.src = r.thumb; img.alt = r.title;
-        t.append(img);
-        strip.append(t);
-      });
-      toolsOut.append(strip);
-    });
-  }
+  // ---------- Lo que usó de las herramientas (registro en vivo) ----------
+  function renderTools() { feed.render(); }
 
   // ---------- Feedback ----------
   const busyNow = () => ['running', 'checking'].includes(card.run()?.status);
@@ -625,6 +723,8 @@ function createCard(cfg) {
       dl.disabled = card.rendering !== null;
       dl.title = 'Renderiza en tu navegador el video con todas las capas tal cual se ven. Dejá la pestaña visible mientras tanto.';
       actions.append(dl);
+      // El último render, para guardarlo a mano si el navegador bloqueó la descarga automática.
+      if (card.saved && card.rendering === null) actions.append(savedLink(card.saved));
     }
     feedback.hidden = !run;
     if (run) {
@@ -709,7 +809,7 @@ function createCard(cfg) {
   card.clearOut = () => { out.textContent = ''; };
   card.reset = () => {
     card.controller?.abort();
-    Object.assign(card, { code: '', js: '', turns: [], assets: [], found: [], sounds: [], videos: [], queue: [], rendering: null, runtimeFixes: 0, pending: null });
+    Object.assign(card, { code: '', js: '', turns: [], assets: [], found: [], sounds: [], videos: [], queue: [], rendering: null, runtimeFixes: 0, pending: null }); card.feed.reset();
     card.clearOut();
     unmount(card);
   };
@@ -782,6 +882,7 @@ function removeVariant(id) {
   cards.get(id)?.reset();
   cards.delete(id);
   store.putBlob(`draft:${id}:refs`, []);
+  store.putBlob(`draft:${id}:docs`, []);
   renderVariants();
   saveDrafts();
 }
@@ -804,6 +905,13 @@ function missing() {
   if (m) return m;
   if (!MODEL_ID.test(modelInput.value.trim())) return 'Elegí el modelo (el mismo para todas las variantes).';
   if (drafts.length < 2) return 'Hacen falta al menos dos variantes.';
+  const lim = info?.docs;
+  if (lim) {
+    for (const [i, d] of drafts.entries()) {
+      const docs = briefOf(d).docs;
+      if (docs.length > lim.max || docsPanel.chars(docs) > lim.maxTotalChars) return `La variante ${d.label || i + 1} recibe demasiados adjuntos (máx. ${lim.max} archivos y ${lim.maxTotalChars / 1000} mil caracteres): desmarcá o quitá alguno.`;
+    }
+  }
   if (baseRefs.some((r) => r.status === 'loading') || drafts.some((d) => d.refs.some((r) => r.status === 'loading'))) return 'Preparando las referencias…';
   return null;
 }
@@ -812,7 +920,8 @@ const busy = () => !!exp?.variants.some((v) => ['running', 'checking'].includes(
 function refresh() {
   const v = studio.current();
   if (v) cards.forEach((c) => { if (!c.frame) c.stage.style.setProperty('--ar', `${v.width} / ${v.height}`); });
-  const why = missing();
+  speech.sync();
+  const why = missing() || (speech.busy() ? 'Esperá a que termine la transcripción del habla.' : '');
   const running = busy();
   runBtn.disabled = !!why || running;
   runBtn.textContent = exp ? 'Ejecutar como experimento nuevo' : `Ejecutar ${drafts.length} variantes`;
@@ -839,20 +948,23 @@ runBtn.onclick = async () => {
       const key = `V${i + 1}`;
       const b = briefOf(cfg);
       const snapshot = { ...JSON.parse(JSON.stringify({ ...cfg, refs: [] })), refs: cfg.refsMode === 'own' ? readyRefs(cfg.refs) : [] };
-      variants[key] = { cfg: snapshot, brief: b, variant: serverVariant(cfg) };
+      variants[key] = { cfg: snapshot, brief: b, variant: serverVariant(cfg), speech: cfg.speech !== false };
       return {
         key, slot: cfg.id,
-        config: configSummary({ ...cfg, refsCount: b.refs.length }, { skillsChars: skillsChars(cfg.skills), defaultTemplate: info?.template || '' }),
+        config: configSummary({ ...cfg, refsCount: b.refs.length, docsCount: b.docs.length, docsChars: docsPanel.chars(b.docs), speechUsed: !!speech.get() && cfg.speech !== false }, { skillsChars: usesSkills(cfg) ? skillsChars(cfg.skills) : 0, defaultTemplate: templateOf(cfg) }),
         run: newVariantRun(model),
       };
     });
-    frozen = { payload: { video: parsed.video, clips: parsed.clips }, variants, base: { context: contextInput.value, instructions: instructionsInput.value, refs: readyRefs(baseRefs) } };
+    frozen = { payload: { video: parsed.video, clips: parsed.clips }, transcript: speech.get(), variants, base: { context: contextInput.value, instructions: instructionsInput.value, refs: readyRefs(baseRefs), docs: docsPanel.get() } };
     exp = {
       id,
       createdAt: new Date().toISOString(),
       name: nameInput.value.trim() || `Contexto ${store.listExperiments().length + 1} · ${v.name}`,
       section: 'context-lab',
       harness: info?.harness?.version || '',
+      speech: speech.summary(),
+      planner: planner.take(),
+      music: planner.takeMusic(),
       model,
       video: { name: v.name, duration: v.duration, width: v.width, height: v.height },
       zones: parsed.clips.map((c) => ({ id: c.id, start: c.start, end: c.end, prompt: c.prompt, notes: c.notes, refs: c.refs.length })),
@@ -863,6 +975,7 @@ runBtn.onclick = async () => {
     nameInput.value = exp.name;
     await store.putBlob(`${id}:video`, v.file);
     await store.putBlob(`${id}:inputs`, frozen);
+    await store.putBlob(`${id}:music`, studio.music());
     frozen.file = v.file;
     persist();
     renderVariants();
@@ -908,12 +1021,14 @@ async function execute(card, reason, feedback) {
   try {
     const body = JSON.stringify({
       model: run.model, brief: fz.brief, video: frozen.payload.video, clips: frozen.payload.clips, turns: card.turns,
+      transcript: fz.speech === false ? undefined : frozen.transcript || undefined,
       assets: card.assets, sounds: card.sounds.map(({ id, url, prompt, duration }) => ({ id, url, prompt, duration })), videos: card.videos.map(({ id, zone, prompt, source }) => ({ id, zone, prompt, source })),
       variant: fz.variant,
     });
     await streamEvents('/api/lab/context/run', body, controller.signal, (ev) => {
+      card.feed.handle(ev); // buscar / imagen / sonido / video: el registro de herramientas se arma solo
       switch (ev.type) {
-        case 'run': run.context = ev.context; return;
+        case 'run': run.context = ev.context; run.reasoningUsed = ev.reasoning ?? null; run.enabledTools = ev.enabled || null; return; // reasoningUsed: el nivel que el servidor pidió de verdad; enabledTools: qué herramientas tenía esta variante
         case 'attempt': card.pending = `${REASON[ev.reason] || 'Trabajando'} · llamada ${ev.call}…`; card.render(); return;
         case 'delta': card.write(ev.text); if (ev.chars % 600 < ev.text.length) { card.pending = `Escribiendo… ${ev.chars.toLocaleString('es')} caracteres`; card.render(); } return;
         case 'reasoning': if (!card.pending?.startsWith('Pensando')) { card.pending = 'Pensando…'; card.render(); } return;
@@ -968,32 +1083,42 @@ async function execute(card, reason, feedback) {
 }
 
 const saveCode = (card) => exp && store.putBlob(`${exp.id}:code:${card.key()}`, {
-  code: card.code, js: card.js, notes: card.run()?.notes || '', turns: card.turns, assets: card.assets, found: card.found, sounds: card.sounds, videos: card.videos,
+  code: card.code, js: card.js, notes: card.run()?.notes || '', turns: card.turns, assets: card.assets, found: card.found, sounds: card.sounds, videos: card.videos, toolLog: card.feed.get(),
 });
 
 // ---------- Player aislado ----------
 function unmount(card) {
+  card.saved = forgetVideo(card.saved);
   card.frame?.remove();
   card.frame = null;
   card.stage.replaceChildren(el('div', 'lab-empty', 'Acá va la animación de esta variante'));
 }
-let frameDoc = null;
-const frameHtml = () => {
-  frameDoc ??= fetch('/api/lab/frame.html').then((r) => (r.ok ? r.text() : r.text().then((t) => { throw new Error(t); }))).catch((err) => { frameDoc = null; throw err; });
-  return frameDoc;
+// El documento del iframe, uno por motor (se pide una vez y queda en memoria).
+const frameDocs = new Map();
+const frameHtml = (engine) => {
+  if (!frameDocs.has(engine)) {
+    frameDocs.set(engine, fetch(`/api/lab/frame.html?engine=${encodeURIComponent(engine)}`)
+      .then((r) => (r.ok ? r.text() : r.text().then((t) => { throw new Error(t); })))
+      .catch((err) => { frameDocs.delete(engine); throw err; }));
+  }
+  return frameDocs.get(engine);
 };
+// El motor con el que corrió la variante (el de la configuración congelada del experimento).
+const cardEngine = (card) => frozen?.variants?.[card.key()]?.variant?.engine || 'remotion';
 async function mount(card) {
   const v = frozen?.payload.video;
   if (!v || !frozen.file || !card.js) return;
   let html;
+  const engine = cardEngine(card);
   try {
-    html = await frameHtml();
+    html = await frameHtml(engine);
   } catch (err) {
     const run = card.run();
-    if (run) { run.status = 'error'; run.error = `no cargó el Player de Remotion: ${err.message}`; persist(); card.render(); refresh(); }
+    if (run) { run.status = 'error'; run.error = `no cargó el reproductor de ${engineLabel(engine)}: ${err.message}`; persist(); card.render(); refresh(); }
     return;
   }
   card.frame?.remove();
+  card.saved = forgetVideo(card.saved); // el render guardado era de la versión anterior
   const frame = el('iframe', 'lab-frame');
   frame.setAttribute('sandbox', 'allow-scripts');
   frame.title = `Animación de la variante ${card.key()}`;
@@ -1018,7 +1143,7 @@ async function boot(card) {
   card.frame?.contentWindow?.postMessage({
     type: 'load', js: card.js, video: frozen.file, meta: { duration: v.duration, width: v.width, height: v.height, fps: fps() }, zones: zonesOf(),
     images: Object.fromEntries(card.assets.map((a) => [a.id, a.url])), transform: { ...IDENTITY, ...(run?.transform || {}) }, legacy: false, segments: null,
-    sounds, videoLayers, motionHidden: !!run?.layers?.motionHidden,
+    sounds, videoLayers, motionHidden: !!run?.layers?.motionHidden, music: await musicForFrame(studio.music()),
   }, '*');
 }
 
@@ -1082,14 +1207,10 @@ function runtimeFailure(card, message) {
 }
 
 function saveVideo(card, blob, ext) {
-  const a = el('a');
-  a.href = URL.createObjectURL(blob);
   const label = (card.entry()?.config?.label || '').replace(/[^\w\-áéíóúñ ]+/gi, '').trim().replace(/\s+/g, '-');
-  a.download = `${(exp?.name || 'context-lab').replace(/[^\w\-áéíóúñ ]+/gi, '').trim().replace(/\s+/g, '-')}-${card.key()}${label ? `-${label}` : ''}.${ext}`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  const name = `${(exp?.name || 'context-lab').replace(/[^\w\-áéíóúñ ]+/gi, '').trim().replace(/\s+/g, '-')}-${card.key()}${label ? `-${label}` : ''}.${ext}`;
+  card.saved = keepVideo(card.saved, blob, name);
+  card.render();
 }
 
 // ---------- Comparación ----------
@@ -1131,15 +1252,18 @@ function renderCompare() {
   table.append(
     tr(['', ...list.map((v) => `${v.key}${v.config.label ? ` · ${v.config.label}` : ''}`)], 'th'),
     tr(['Configuración', ...list.map(() => '')], 'td', 'ctx-section'),
+    cfgRow('Motor', 'engine', (s) => engineLabel(s.engine || 'remotion')),
     cfgRow('Herramientas', 'signature', (s) => s.signature),
     cfgRow('Cuadros por zona', 'frames', (s) => String(s.frames)),
+    cfgRow('Habla del video', 'speechUsed', (s) => (s.speechUsed ? 'sí' : 'no')),
     cfgRow('Skills', 'skillsChars', (s) => `${s.skills} · ≈ ${approxTokens(s.skillsChars).toLocaleString('es')} tok.`),
     cfgRow('Prompt de sistema', 'templateEdited', (s) => (s.templateEdited ? `editado (≈ ${approxTokens(s.templateChars).toLocaleString('es')} tok.)` : 'por defecto')),
     cfgRow('Ejemplos', 'examplesChars', (s) => (s.examplesChars ? `≈ ${approxTokens(s.examplesChars).toLocaleString('es')} tok.` : '—')),
     cfgRow('Pedido', 'briefOverride', (s) => (s.briefOverride ? 'propio' : 'base')),
+    cfgRow('Adjuntos (.md)', 'docsChars', (s) => (s.docsCount ? `${s.docsCount} · ≈ ${approxTokens(s.docsChars).toLocaleString('es')} tok.` : '—')),
     cfgRow('Referencias', 'refsCount', (s) => `${s.refsCount} (${{ base: 'base', own: 'propias', none: 'ninguna' }[s.refs]})`),
     cfgRow('Temperatura', 'temperature', (s) => (s.temperature === null ? 'por defecto' : String(s.temperature))),
-    cfgRow('Razonamiento', 'reasoning', (s) => s.reasoning || 'por defecto'),
+    cfgRow('Razonamiento', 'reasoning', (s) => reasoningText(s.reasoning)),
     tr(['Resultado', ...list.map(() => '')], 'td', 'ctx-section'),
     tr(['Estado', ...list.map((v) => (v.run.eval.approved === true ? 'Aprobada' : v.run.eval.approved === false ? 'Rechazada' : { running: 'trabajando', checking: 'probando', error: 'falló', done: 'sin evaluar' }[v.run.status] || '—'))]),
     tr(['Calidad', ...list.map((v, i) => (v.run.eval.quality ? `${v.run.eval.quality}/5${q[i]}` : '—'))]),
@@ -1259,10 +1383,12 @@ async function openExperiment(id) {
   cards.forEach((c) => c.reset());
   cards.clear();
   await studio.setVideo(video);
+  speech.restore(inputs.transcript || null, studio.current()?.file);
   studio.setClips(inputs.payload.clips.map((c) => ({ ...c, refs: c.refs.map((r) => ({ ...r, thumb: r.frames[0] })) })));
   contextInput.value = inputs.base?.context || '';
   instructionsInput.value = inputs.base?.instructions || '';
   baseRefs = (inputs.base?.refs || []).map((r) => ({ key: ++seq, name: r.name, url: r.url, thumb: r.url, status: 'ready' }));
+  docsPanel.set(inputs.base?.docs || []);
   renderBaseRefs();
   drafts = ex.variants.map((v) => {
     const snap = inputs.variants[v.key]?.cfg || defaultConfig(v.key);
@@ -1270,6 +1396,7 @@ async function openExperiment(id) {
   });
   exp = ex;
   frozen = { ...inputs, file: video };
+  studio.setMusic(await store.getBlob(`${id}:music`).catch(() => null));
   nameInput.value = ex.name;
   modelInput.value = ex.model;
   showPrice();
@@ -1282,6 +1409,7 @@ async function openExperiment(id) {
       code: saved?.code || '', js: saved?.js || '', turns: saved?.turns || [], assets: saved?.assets || [], found: saved?.found || [],
       sounds: saved?.sounds || [], videos: saved?.videos || [], runtimeFixes: MAX_RUNTIME_FIXES,
     });
+    card.feed.set(saved?.toolLog);
     card.clearOut();
     unmount(card);
     card.render();
@@ -1302,6 +1430,8 @@ function setView(view) {
 }
 document.querySelectorAll('[data-ctx-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.ctxView)));
 
+// La entrada del catálogo del modelo elegido (undefined si es uno escrito a mano).
+const modelEntry = () => info?.models?.find((x) => x.id === modelInput.value.trim());
 const fmtPrice = (x) => (x >= 1 ? x.toFixed(2).replace(/\.00$/, '') : x.toFixed(3).replace(/0+$/, ''));
 function showPrice() {
   const m = info?.models?.find((x) => x.id === modelInput.value.trim());
@@ -1326,8 +1456,10 @@ async function start() {
     o.label = m.prompt !== null && m.prompt !== undefined ? `${m.name} · $${fmtPrice(m.prompt)}/$${fmtPrice(m.completion)} por M` : m.name;
     return o;
   }));
-  studio.setLimits({ maxClipSeconds: info?.harness?.maxZoneSeconds || 11 });
+  studio.setLimits({ maxClipSeconds: info?.harness?.maxZoneSeconds || 11, maxClips: info?.zones?.max || 6 });
   harnessPill.textContent = `Harness ${info?.harness?.version || ''}${info?.mock ? ' · demo' : ''}`;
+  speech.setSpeech(info?.speech || { available: false });
+  if (info?.docs) docsPanel.setLimits(info.docs);
   const t = info?.tools || {};
   harnessPill.title = `Remotion ${info?.harness?.remotion} · ${info?.harness?.fps} fps · zonas de hasta ${info?.harness?.maxZoneSeconds} s\nImagen: ${t.imageModel} · Sonido: ${t.sfxModel} · Video: ${(t.videoModels || []).map((m) => m.label).join(' / ')} a ${t.videoResolution}`;
   const missingTools = [];
@@ -1337,15 +1469,17 @@ async function start() {
   setupNote.textContent = missingTools.length ? `${missingTools.join(' ')} Reiniciá el servidor para activarlos.` : '';
   // Las variantes de trabajo se recuerdan entre visitas (sus referencias propias, en IndexedDB).
   const saved = Array.isArray(p.drafts) && p.drafts.length >= 2 ? p.drafts : null;
-  drafts = saved ? saved.map((d) => ({ ...defaultConfig(d.label), ...d, refs: [] })) : [
+  drafts = saved ? saved.map((d) => ({ ...defaultConfig(d.label), ...d, refs: [], docs: [] })) : [
     { ...defaultConfig('Con herramientas') },
     { ...defaultConfig('Sin herramientas'), policy: { search: 'off', images: 'off', sound: 'off', video: 'off' } },
   ];
   await Promise.all(drafts.map(async (d) => {
     const refs = await store.getBlob(`draft:${d.id}:refs`);
     d.refs = (refs || []).map((r) => ({ key: ++seq, ...r, status: 'ready' }));
+    d.docs = (await store.getBlob(`draft:${d.id}:docs`)) || [];
   }));
   baseRefs = ((await store.getBlob('draft:base:refs')) || []).map((r) => ({ key: ++seq, ...r, status: 'ready' }));
+  docsPanel.set((await store.getBlob('draft:base:docs')) || []);
   renderBaseRefs();
   showPrice();
   renderVariants();
@@ -1363,6 +1497,8 @@ window.addEventListener('drop', (e) => {
   if (video && !busy()) { setView('experiment'); studio.setVideo(video); }
   const images = files.filter((f) => f.type.startsWith('image/'));
   if (images.length) addRefsTo(baseRefs, images, saveBaseRefs);
+  const docs = files.filter(isDocFile);
+  if (docs.length) docsPanel.add(docs);
 });
 
 window.addEventListener('tab', ({ detail }) => {

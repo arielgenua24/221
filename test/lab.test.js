@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { labSystem, harnessVersion, SKILL_FILES, briefContent, zonesFor, imageRegistry } from '../src/lab/harness.js';
-import { parseLabBody, runLabAgent, usedReferences, paletteAndObjects, MAX_COMPILE_RETRIES } from '../src/lab/pipeline.js';
+import { parseLabBody, runLabAgent, usedReferences, paletteAndObjects, MAX_COMPILE_RETRIES, stitch, openFence } from '../src/lab/pipeline.js';
 import { mockLabLLM } from '../src/lab/mock.js';
 import { createLabTools, toolDefs, MAX_GENERATED_IMAGES, TOOL_COSTS, IMAGE_MODEL, IMAGE_EDIT_MODEL } from '../src/lab/tools.js';
 import { createMockWaveSpeed } from '../src/wavespeed.js';
@@ -56,6 +56,7 @@ test('extractCode toma el último bloque con el componente y tolera respuestas c
   assert.equal(extractCode(`notas\n\`\`\`tsx\nborrador\n\`\`\`\n\n\`\`\`tsx\n${GOOD}\n\`\`\``), GOOD);
   assert.equal(extractCode(`notas\n\`\`\`tsx\n${GOOD}`), GOOD);
   assert.throws(() => extractCode('solo texto'), /bloque/);
+  assert.equal(extractCode(`\`\`\`tsx title="MotionLayer.tsx"\n${GOOD}\n\`\`\``), GOOD);
 });
 
 test('el harness incluye las Remotion Agent Skills, el contrato de capa y las herramientas disponibles', () => {
@@ -64,15 +65,15 @@ test('el harness incluye las Remotion Agent Skills, el contrato de capa y las he
   const none = labSystem({ search: false, images: false });
   assert.match(all, /<skill file="remotion-markup\/REFERENCE.md">/);
   assert.match(all, /<skill file="remotion-markup\/transitions.md">/);
-  assert.match(all, /YA está renderizado debajo/);
+  assert.match(all, /ALREADY rendered underneath/);
   assert.match(all, /buscar_referencias/);
   assert.match(all, /generar_imagen/);
   assert.doesNotMatch(none, /buscar_referencias|generar_imagen/);
-  assert.match(harnessVersion({ search: true, images: true }), new RegExp(`^v6 · remotion ${REMOTION_VERSION.replace(/\./g, '\\.')}.*búsqueda obligatoria\\+imagen propia`));
-  assert.match(all, /OBLIGATORIO/);
-  assert.match(all, /PALETA DE COLORES/);
-  assert.match(all, /OBJETOS DE REFERENCIA/);
-  assert.match(all, /`Paleta: #/);
+  assert.match(harnessVersion({ search: true, images: true }), new RegExp(`^v8 · remotion ${REMOTION_VERSION.replace(/\./g, '\\.')}.*búsqueda obligatoria\\+imagen propia`));
+  assert.match(all, /REQUIRED/);
+  assert.match(all, /COLOR PALETTE/);
+  assert.match(all, /REFERENCE OBJECTS/);
+  assert.match(all, /`Palette: #/);
   assert.match(harnessVersion({}), /sin herramientas/);
   // El prompt de sistema no depende del modelo: solo de las herramientas, que son las mismas para los dos.
   assert.equal(labSystem({ search: true, images: true }), all);
@@ -96,8 +97,8 @@ test('parseLabBody valida el modelo, reutiliza la validación de clips de Intuit
 test('briefContent arma el mismo pedido con zonas en cuadros, cuadros del video y referencias', () => {
   const input = parseLabBody(body());
   const parts = briefContent(input);
-  assert.match(parts[0].text, /C1: 1\.00 s → 3\.50 s = cuadros 30 → 105/);
-  assert.match(parts[0].text, /Contexto\ncafetería/);
+  assert.match(parts[0].text, /C1: 1\.00 s → 3\.50 s = frames 30 → 105/);
+  assert.match(parts[0].text, /Context\ncafetería/);
   assert.equal(parts.filter((p) => p.type === 'image_url').length, 2 * 2 + 1);
   assert.match(parts[1].text, /^C1-1 — /);
   assert.deepEqual([...imageRegistry(input).keys()], ['C1-1', 'C1-2', 'C2-1', 'C2-2', 'R1']);
@@ -125,7 +126,7 @@ test('runLabAgent reenvía los turnos previos (revisión del humano) y corta tra
   const msgs = seen[0];
   assert.equal(msgs[0].role, 'system');
   assert.equal(msgs.at(-2).role, 'assistant');
-  assert.match(msgs.at(-1).content, /Revisión del humano.*más chico/);
+  assert.match(msgs.at(-1).content, /User feedback.*más chico/);
 
   const broken = async () => ({ text: '```tsx\nexport default () => <div>\n```', usage: { cost: 0.01, total_tokens: 10 } });
   const events = [];
@@ -135,6 +136,61 @@ test('runLabAgent reenvía los turnos previos (revisión del humano) y corta tra
     assert.ok(Math.abs(err.totals.cost - 0.01 * (MAX_COMPILE_RETRIES + 1)) < 1e-9);
     return true;
   });
+});
+
+const OPUS_META = { efforts: ['low', 'medium', 'high', 'xhigh', 'max'], default: 'high', defaultEnabled: true, mandatory: true, maxTokens: false };
+
+test('stitch pega la continuación sin repetir lo último ni reabrir el bloque', () => {
+  const a = 'notas\n```tsx\nconst a = 1;\nconst bb = interp';
+  assert.equal(stitch(a, 'olate(1);\n```'), 'notas\n```tsx\nconst a = 1;\nconst bb = interpolate(1);\n```');
+  assert.equal(stitch(a, 'const bb = interpolate(1);\n```'), 'notas\n```tsx\nconst a = 1;\nconst bb = interpolate(1);\n```');
+  assert.equal(stitch(a, '```tsx\nconst bb = interpolate(1);\n```'), 'notas\n```tsx\nconst a = 1;\nconst bb = interpolate(1);\n```');
+  // Un sangrado repetido no cuenta como solapamiento.
+  assert.equal(stitch('x\n        ', '        y'), 'x\n                y');
+  assert.equal(openFence('a\n```tsx\ncode'), true);
+  assert.equal(openFence('a\n```tsx\ncode\n```'), false);
+});
+
+test('runLabAgent manda el tope de salida y sigue un componente cortado a mitad del código', async () => {
+  const seen = [];
+  const events = [];
+  const half = Math.floor(GOOD.length / 2);
+  let n = 0;
+  const llm = async (o) => {
+    seen.push({ reasoning: o.reasoning, maxTokens: o.maxTokens, tools: o.tools, msgs: o.messages });
+    // Primera: se corta a mitad del bloque. Segunda: repite la última línea a medias, como hacen los modelos, y cierra.
+    if (n++ === 0) return { text: `Paleta: #FFFFFF\n\`\`\`tsx\n${GOOD.slice(0, half)}`, finishReason: 'length', usage: { cost: 0.01, total_tokens: 10 } };
+    return { text: `${GOOD.slice(half - 20)}\n\`\`\``, finishReason: 'stop', usage: { cost: 0.01, total_tokens: 10 } };
+  };
+  await runLabAgent({ input: parseLabBody(body()), emit: (e) => events.push(e), llm, config: { maxOutput: 128000, reasoning: 'high', reasoningMeta: OPUS_META } });
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0].maxTokens, 128000);
+  assert.deepEqual(seen[0].reasoning, { effort: 'high' });
+  assert.deepEqual(seen[1].reasoning, { effort: 'low' });
+  assert.equal(seen[1].tools, undefined);
+  assert.equal(seen[1].msgs.at(-2).role, 'assistant');
+  assert.match(seen[1].msgs.at(-1).content, /Continue EXACTLY/);
+  assert.equal(events.filter((e) => e.type === 'compile_error').length, 0);
+  assert.ok(events.some((e) => e.type === 'notice' && /siga desde donde quedó/.test(e.text)));
+  assert.equal(events.find((e) => e.type === 'result').code, GOOD);
+  assert.equal(events.find((e) => e.type === 'done').calls, 2);
+});
+
+test('runLabAgent: si se corta razonando (sin código), reintenta pensando menos', async () => {
+  const seen = [];
+  const events = [];
+  let n = 0;
+  const llm = async (o) => {
+    seen.push({ reasoning: o.reasoning, last: o.messages.at(-1).content });
+    if (n++ === 0) return { text: '', finishReason: 'length', usage: { cost: 0.01, total_tokens: 10 } };
+    return mockLabLLM(o);
+  };
+  await runLabAgent({ input: parseLabBody(body()), emit: (e) => events.push(e), llm, config: { maxOutput: 128000, reasoning: 'max', reasoningMeta: OPUS_META } });
+  assert.deepEqual(seen[0].reasoning, { effort: 'max' });
+  assert.deepEqual(seen[1].reasoning, { effort: 'low' });
+  assert.match(seen[1].last, /cut off by the output token limit/);
+  assert.match(events.find((e) => e.type === 'compile_error').text, /se cortó por largo/);
+  assert.ok(events.some((e) => e.type === 'done'));
 });
 
 test('runLabAgent ejecuta herramientas: busca referencias, genera una imagen y la deja para el componente', async () => {
@@ -254,7 +310,7 @@ test('si genera una imagen y no la usa en el código, se le pide que la integre'
   };
   await runLabAgent({ input: parseLabBody(body()), emit: (e) => events.push(e), llm, tools });
   assert.ok(events.some((e) => e.type === 'notice' && /No usa gen1/.test(e.text)));
-  assert.match(seen[2].messages.at(-1).content, /Generaste gen1 pero tu componente no las usa/);
+  assert.match(seen[2].messages.at(-1).content, /You generated gen1 but your component does not use them/);
   assert.equal(events.find((e) => e.type === 'done').nudgedUse, true);
   assert.deepEqual(events.find((e) => e.type === 'result').usedRefs, ['gen1']);
 });

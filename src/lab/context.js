@@ -5,24 +5,28 @@
 //   - qué Remotion Agent Skills se incluyen,
 //   - cada herramienta (búsqueda, imagen, sonido, video) apagada / opcional / obligatoria, y sus límites,
 //   - contexto, instrucciones y referencias visuales del pedido, ejemplos (few-shot), cuántos cuadros por zona ve,
-//   - temperatura y esfuerzo de razonamiento.
+//   - temperatura y esfuerzo de razonamiento,
+//   - el motor de animación (src/engines/): Remotion o el motor propio en canvas (cada uno con su plantilla por defecto).
 // El bucle del agente, el runtime de Remotion y las herramientas son los de Motion Design (pipeline.js, runtime.js, tools.js).
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ALLOWED_IMPORTS, GOOGLE_FONTS, REMOTION_VERSION, FPS } from './runtime.js';
-import { SKILL_FILES, SKILLS_COMMIT } from './harness.js';
+import { SKILL_FILES, SKILLS_COMMIT, usesSkills, engineTag, remotionIntro, remotionContract } from './harness.js';
+import { getEngine, engineId } from '../engines/index.js';
+import { canvasIntro, canvasContract } from './canvas-contract.js';
+import { COMPOSITION_CRITERIA } from './composition.js';
 import { parseLabBody, TOOL_KEYS, TOOL_MODES } from './pipeline.js';
-import { DEFAULT_LIMITS, LIMIT_CAPS } from './tools.js';
+import { EFFORTS } from './reasoning.js';
+import { DEFAULT_LIMITS, LIMIT_CAPS, SEARCH_GUIDANCE } from './tools.js';
 import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from '../wavespeed.js';
 
-// ctx-v1: primera versión del Context Lab. Si cambia la plantilla por defecto o las reglas, subila.
-export const CONTEXT_HARNESS = 'ctx-v1';
+// ctx-v2: add-on y fullscreen a criterio del diseñador en las plantillas de ambos motores.
+// ctx-v3: guía compartida de consultas y timeouts de búsqueda recuperables.
+export const CONTEXT_HARNESS = 'ctx-v3';
 export const MAX_VARIANTS = 4;
 export const MAX_FRAMES = 6; // los que saca el navegador por zona
 const MAX_TEMPLATE = 60000;
 const MAX_EXAMPLES = 20000;
-const REASONING = ['low', 'medium', 'high'];
 // Una variante nueva: búsqueda e imagen opcionales (el modelo decide), sonido y video apagados.
 export const DEFAULT_POLICY = { search: 'optional', images: 'optional', sound: 'off', video: 'off' };
 
@@ -42,76 +46,50 @@ export const DEFAULT_SKILLS = SKILL_FILES.filter((f) => SKILL_BY_FILE.has(f));
 // Con sonido, conviene que el agente tenga las reglas de audio de Remotion.
 export const SOUND_SKILLS = ['remotion-markup/audio.md', 'remotion-markup/sfx.md'].filter((f) => SKILL_BY_FILE.has(f));
 
-const imports = () => `${ALLOWED_IMPORTS.filter((s) => !/^@remotion\/(effects|transitions|google-fonts)\//.test(s)).join(', ')}, \`@remotion/effects/<efecto>\`, \`@remotion/transitions/<presentación>\` y \`@remotion/google-fonts/<Familia>\` con Familia ∈ { ${GOOGLE_FONTS.join(', ')} }`;
-
 // La plantilla por defecto: la misma base que Motion Design, con las partes variables como marcadores.
 // {{herramientas}} se arma según los modos de la variante; {{ejemplos}} con sus ejemplos; {{skills}} con las skills elegidas.
-// Si borrás un marcador, esa parte no entra en el contexto.
-export function defaultTemplate() {
-  return `Sos un motion designer que trabaja con Remotion (${REMOTION_VERSION}). Te dan un video real y zonas marcadas por un humano; escribís UN componente de React/Remotion con la CAPA de motion design que va encima de ese video, solo en las zonas marcadas.
-
-# Contrato del entorno (no negociable)
-- Escribís un único archivo TSX. Devolvé el componente en UN bloque \`\`\`tsx al final de tu respuesta. Antes del bloque escribí notas breves (máx. 8 líneas) de tu idea, y en ellas estas tres líneas exactas:
-  - \`Referencias usadas: S2, S5, R1\` con los ids de las imágenes que de verdad tomaste como inspiración (o \`Referencias usadas: ninguna\`).
-  - \`Paleta: #1B1B1F, #F4F1EA, #FF5A1F\` con los hex que usás en el código (o \`Paleta: ninguna\`).
-  - \`Objetos: pelota, hojas secas\` con los objetos o motivos que llevaste a la animación (o \`Objetos: ninguno\`).
-- El video original YA está renderizado debajo por el entorno, a pantalla completa. NO lo renderices: tu componente es una capa transparente encima (sin fondo opaco que lo tape). El humano después puede escalar y mover tu capa entera sobre el video.
-- \`export default\` es el componente raíz de la capa. Recibe estas props:
-  - \`zones: { id: string; from: number; durationInFrames: number; prompt: string; notes: string }[]\` — las zonas marcadas, en cuadros.
-  - \`images: Record<string, string>\` — imágenes generadas con la herramienta (gen1, gen2…), si las hay. Usalas con \`<Img src={images.gen1} />\` de remotion.
-  - \`sounds: Record<string, string>\` — efectos de sonido generados (sfx1, sfx2…), si los hay. Usalos con \`<Audio src={sounds.sfx1} />\` de "@remotion/media".
-- La composición ya está registrada por el entorno: ${FPS} fps, el tamaño y la duración del video original. NO registres \`<Composition>\` ni llames \`registerRoot\`. Leé fps, width, height y durationInFrames con \`useVideoConfig()\`.
-- Fuera de las zonas marcadas no dibujes nada. Usá \`<Sequence from={...} durationInFrames={...} premountFor={fps}>\` por zona.
-- Imports permitidos (no hay ningún otro paquete, ni archivos locales, ni \`staticFile\`, ni red): ${imports()}.
-- Todo determinista: el tiempo sale solo de \`useCurrentFrame()\`. Nada de \`Math.random\` (usá \`random(seed)\` de remotion), ni \`Date\`, ni animaciones/transiciones CSS, ni \`useEffect\` para animar.
-- Todo tamaño relativo al cuadro (\`width\`/\`height\` de useVideoConfig): el video puede ser vertical u horizontal.
-- No hay Remotion Studio, ni terminal, ni \`npx\`: ignorá en las skills lo que hable de instalar paquetes, abrir Studio, renderizar, la carpeta public/ o de poner videos.
-
-{{herramientas}}
-
-# Criterio
-- El video del humano es la obra: no tapes caras, manos ni producto; usá el espacio negativo. El motion acompaña lo que pasa en cada zona.
-- Respetá las instrucciones, el contexto y las referencias visuales. Si las referencias muestran un estilo, imitá su lenguaje (tipografía, color, ritmo), no su contenido.
-- Una idea fuerte por zona, bien terminada: entrada, momento y salida limpias dentro de la zona.
-
-{{ejemplos}}
-
-{{skills}}`;
+// Si borrás un marcador, esa parte no entra en el contexto. Cada motor tiene la suya (el contrato cambia; el resto, no).
+export function defaultTemplate(engine) {
+  if (!usesSkills(engine)) return `${canvasIntro()}\n\n${canvasContract()}\n\n{{herramientas}}\n\n${COMPOSITION_CRITERIA}\n\n{{ejemplos}}`;
+  return `${remotionIntro()}\n\n${remotionContract({ sounds: true })}\n\n{{herramientas}}\n\n${COMPOSITION_CRITERIA}\n\n{{ejemplos}}\n\n{{skills}}`;
 }
 
-const MODE_LABEL = { optional: 'opcional', required: 'OBLIGATORIA' };
+const MODE_LABEL = { optional: 'optional', required: 'REQUIRED' };
 
-// La sección de herramientas según los modos de la variante (solo las que el agente ve de verdad).
-export function toolsBlock(enabled, policy, limits) {
+// Tool instructions follow each variant's availability and policy.
+export function toolsBlock(enabled, policy, limits, engine) {
+  const { fence, words } = getEngine(engine);
   const lim = { ...DEFAULT_LIMITS, ...limits };
   const on = TOOL_KEYS.filter((k) => enabled[k]);
-  if (!on.length) return '# Herramientas\nEn este entorno no tenés herramientas: resolvé todo con código.';
+  if (!on.length) return '# Tools\nNo tools are available in this environment: solve the task with code.';
   const tag = (k) => `(${MODE_LABEL[policy[k]]})`;
   const req = (k) => policy[k] === 'required';
-  const lines = [`# Herramientas\nCada imagen que ves tiene un id: C1-2 (cuadro 2 de la zona C1), C1-R1 (referencia de una zona), R1 (referencia general)${enabled.search ? ', S1… (búsqueda)' : ''}${enabled.images ? ', gen1… (generada)' : ''}.`];
-  if (enabled.search) lines.push(`- buscar_referencias(consulta) ${tag('search')}: imágenes de Google para MIRAR y tomar ideas (estilos de motion, tipografía, layouts, lo que hace el rubro del video). ${req('search') ? 'Antes de escribir el componente hacé al menos una búsqueda pensada para ESTE encargo (y otra vez cuando el humano pida cambios).' : 'Usala si te hace falta inspiración o información visual.'} Máx. ${lim.searches} por ejecución. No se pueden usar dentro de la animación. Sacales dos cosas: una PALETA de 3 a 6 hex que conviva con el video, y OBJETOS o motivos que identifiquen el tema (dibujalos con código o, si hace falta detalle, con generar_imagen).`);
-  if (enabled.images) lines.push(`- generar_imagen(prompt, imagenes?, proporcion?) ${tag('images')}: genera UNA imagen con Nano Banana 2.1 para usar DENTRO de la animación como \`images.gen1\` con \`<Img>\`. ${req('images') ? 'Generá AL MENOS UNA y que sea protagonista.' : 'Generala solo si una pieza visual propia (ilustración, objeto, textura, sticker) mejora la animación.'} Dale dirección de arte concreta y, si va encima del video, pedí fondo liso o una pieza pensada para superponerse. Después animala. Máx. ${lim.images} en todo el trabajo.`);
-  if (enabled.sound) lines.push(`- generar_sonido(descripcion, duracion?) ${tag('sound')}: genera UN efecto de sonido corto (whoosh, pop, impacto, riser…) que queda en \`sounds.sfx1\`. ${req('sound') ? 'Generá AL MENOS UNO.' : 'Usalo si el movimiento pide sonido.'} Ponelo con \`<Audio src={sounds.sfx1} volume={0.6} />\` de "@remotion/media" dentro de la \`<Sequence>\` del movimiento que acompaña: el sonido marca el golpe, no lo adorna. Se mezcla sobre el audio original: que no tape la voz. No lo podés escuchar, describilo con precisión (en inglés). Máx. ${lim.sounds} en todo el trabajo.`);
-  if (enabled.video) lines.push(`- generar_video(zona, imagen?, prompt) ${tag('video')}: genera UNA toma con IA (image→video) a partir de un cuadro de la zona. NO la pongas en tu componente: el entorno la muestra en una CAPA PROPIA entre el video original y tu animación, durante esa zona, y el humano la puede ocultar, mover o escalar. ${req('video') ? 'Generá UNA para la zona donde más aporte.' : 'Usala solo si una toma nueva aporta de verdad (es lenta y cara).'} Diseñá tu capa para convivir con esa toma. Máx. ${lim.videos} en todo el trabajo.`);
-  lines.push('Si usás herramientas, terminá igual con el componente completo en un bloque ```tsx.');
+  const lines = [`# Tools\nEvery image has an ID: C1-2 (frame 2 of zone C1), C1-R1 (zone reference), R1 (general reference)${enabled.search ? ', S1… (search result)' : ''}${enabled.images ? ', gen1… (generated)' : ''}.`];
+  if (enabled.search) lines.push(`- buscar_referencias(consulta) ${tag('search')}: Google Images references to inspect for visual inspiration. ${req('search') ? 'Search at least once before writing the component when designing or revising.' : 'Use it when you need visual inspiration or information.'} Maximum ${lim.searches} searches per execution. ${SEARCH_GUIDANCE} Do not use these images inside the animation. Derive a PALETTE of 3 to 6 hex colors that works with the video, and reference OBJECTS or motifs (draw them with code or request a detailed asset with generar_imagen).`);
+  if (enabled.images) lines.push(`- generar_imagen(prompt, imagenes?, proporcion?) ${tag('images')}: generate ONE image with Nano Banana 2.1 to use INSIDE the animation as ${words.imageCtx}. ${req('images') ? 'Generate AT LEAST ONE and make it a leading visual element.' : 'Generate an image only when an original illustration, object, texture, or sticker improves the piece.'} Give concrete art direction. For add-ons, request an asset suited to compositing; for fullscreen, design it as part of the complete scene. Animate it. Maximum ${lim.images} images across the entire work.`);
+  if (enabled.sound) lines.push(`- generar_sonido(descripcion, duracion?) ${tag('sound')}: generate ONE short sound effect (whoosh, pop, impact, riser…) available as \`sounds.sfx1\`. ${req('sound') ? 'Generate AT LEAST ONE.' : 'Use it when the movement benefits from sound.'} Place it with ${words.soundCtx}: sound should mark the movement's impact. It is mixed over the original audio; keep the voice clear. You cannot listen to it, so describe it precisely in English. Maximum ${lim.sounds} effects across the entire work.`);
+  if (enabled.video) lines.push(`- generar_video(zona, imagen?, prompt) ${tag('video')}: generate ONE AI shot (image-to-video) starting from a zone's frame. Do NOT include it in your component: the environment displays it in a SEPARATE LAYER between the original video and your animation during that zone. The user can hide, move, or scale it. ${req('video') ? 'Generate ONE for the zone where it contributes most.' : 'Use it only when a new shot adds real value; it is slow and expensive.'} Design your animation to work with that shot. Maximum ${lim.videos} shots across the entire work.`);
+  lines.push(`After using tools, still return the complete component in one \`\`\`${fence} block.`);
   return lines.join('\n');
 }
 
-export function skillsBlock(files) {
+// Las Remotion Agent Skills solo tienen sentido con el motor Remotion.
+export function skillsBlock(files, engine) {
+  if (!usesSkills(engine)) return '';
   const list = files.map((f) => SKILL_BY_FILE.get(f)).filter(Boolean);
   if (!list.length) return '';
-  return `# Remotion Agent Skills (oficiales, remotion-dev/skills @ ${SKILLS_COMMIT.slice(0, 7)})\n${list.map((s) => `<skill file="${s.file}">\n${s.text}\n</skill>`).join('\n\n')}`;
+  return `# Remotion Agent Skills (official, remotion-dev/skills @ ${SKILLS_COMMIT.slice(0, 7)})\n${list.map((s) => `<skill file="${s.file}">\n${s.text}\n</skill>`).join('\n\n')}`;
 }
 
-export const examplesBlock = (examples) => (examples ? `# Ejemplos\n<ejemplos>\n${examples}\n</ejemplos>` : '');
+export const examplesBlock = (examples) => (examples ? `# Examples\n<ejemplos>\n${examples}\n</ejemplos>` : '');
 
 // Arma el prompt de sistema final de una variante.
-export function composeSystem({ template, enabled, policy, limits, skills, examples }) {
-  const base = template?.trim() ? template : defaultTemplate();
+export function composeSystem({ template, enabled, policy, limits, skills, examples, engine }) {
+  const base = template?.trim() ? template : defaultTemplate(engine);
   return base
-    .replace(/\{\{\s*herramientas\s*\}\}/gi, () => toolsBlock(enabled, policy, limits))
+    .replace(/\{\{\s*herramientas\s*\}\}/gi, () => toolsBlock(enabled, policy, limits, engine))
     .replace(/\{\{\s*ejemplos\s*\}\}/gi, () => examplesBlock(examples))
-    .replace(/\{\{\s*skills\s*\}\}/gi, () => skillsBlock(skills))
+    .replace(/\{\{\s*skills\s*\}\}/gi, () => skillsBlock(skills, engine))
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -119,7 +97,7 @@ export function composeSystem({ template, enabled, policy, limits, skills, examp
 // Firma corta de la configuración de herramientas (agrupa el historial). Ej. "S·opc I·obl A·— V·—".
 const MODE_SHORT = { off: '—', optional: 'opc', required: 'obl' };
 export const policySignature = (policy) => TOOL_KEYS.map((k) => `${{ search: 'S', images: 'I', sound: 'A', video: 'V' }[k]}·${MODE_SHORT[policy?.[k]] || '—'}`).join(' ');
-export const contextHarness = (policy) => `${CONTEXT_HARNESS} · remotion ${REMOTION_VERSION} · skills ${SKILLS_COMMIT.slice(0, 7)} · ${policySignature(policy)}`;
+export const contextHarness = (policy, engine) => `${CONTEXT_HARNESS} · ${engineTag(engine)} · ${policySignature(policy)}`;
 
 const str = (x, max) => String(x ?? '').slice(0, max);
 const clampInt = (x, lo, hi, fallback) => (Number.isFinite(Number(x)) && x !== null && x !== '' ? Math.min(hi, Math.max(lo, Math.round(Number(x)))) : fallback);
@@ -136,8 +114,9 @@ export function parseVariant(v = {}) {
     policy, limits, skills,
     frames: clampInt(v.frames, 0, MAX_FRAMES, MAX_FRAMES),
     temperature,
-    reasoning: REASONING.includes(v.reasoning) ? v.reasoning : null,
+    reasoning: EFFORTS.includes(v.reasoning) ? v.reasoning : null,
     videoModel: VIDEO_MODELS[v.videoModel] ? v.videoModel : DEFAULT_VIDEO_MODEL,
+    engine: engineId(v.engine),
   };
 }
 
@@ -148,7 +127,8 @@ export function parseContextBody(body) {
 }
 
 // La config de runLabAgent para una variante, según las herramientas que existen en el servidor.
-export function contextConfig(variant, available) {
+// reasoningMeta: lo que acepta el modelo (reasoning.js), para pedir el nivel más cercano que soporta.
+export function contextConfig(variant, available, reasoningMeta) {
   const enabled = Object.fromEntries(TOOL_KEYS.map((k) => [k, !!available?.[k] && variant.policy[k] !== 'off']));
   return {
     system: composeSystem({ ...variant, enabled }),
@@ -156,9 +136,11 @@ export function contextConfig(variant, available) {
     limits: variant.limits,
     temperature: variant.temperature ?? undefined,
     reasoning: variant.reasoning,
+    reasoningMeta,
     frames: variant.frames,
     videoModel: variant.videoModel,
-    harness: contextHarness(variant.policy),
+    harness: contextHarness(variant.policy, variant.engine),
+    engine: variant.engine,
     // Con cuatro herramientas posibles hacen falta más vueltas que en Motion Design.
     maxToolRounds: 4 + Object.values(enabled).filter(Boolean).length,
   };

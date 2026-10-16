@@ -99,8 +99,9 @@ selector (OpenRouter)       1 · clip + zonas marcadas (hasta 11 s)  selector (O
 ```
 
 - **Mismo harness para los dos** ([src/lab/harness.js](src/lab/harness.js)): las [Remotion Agent Skills](https://github.com/remotion-dev/skills) oficiales copiadas en [src/lab/remotion-skills/](src/lab/remotion-skills/) (fijadas a un commit), el mismo contrato, la misma versión de Remotion y los mismos paquetes permitidos. `HARNESS_VERSION` queda guardado en cada experimento: si cambiás el harness, subila, así el historial separa las mejoras del modelo de las del harness.
-- **El componente** es solo la capa de motion: el entorno pone el video original debajo y la capa encima, así se puede escalar y mover sin tocar el video. Recibe `zones` (en cuadros, a 30 fps) e `images` (las que generó) y dibuja solo dentro de las zonas. Los experimentos del harness v1 (que renderizaban el video adentro) se siguen abriendo, pero no se pueden ajustar.
+- **Composition: add-on and fullscreen**: the Motion Designer chooses the format for each scene from the user’s request and the content. An add-on occupies part of the picture and leaves unused space transparent; a fullscreen composition covers the entire picture with its own designed opaque background. Both can appear in the same video or marked zone. Zones constrain time, not screen coverage. The environment keeps the original video underneath and its audio running. Canvas draws the fullscreen background on every frame; Remotion places it inside the scene’s `Sequence`. Scale and position controls still affect the entire animation layer, so use the default size and position for edge-to-edge fullscreen coverage. This direction is shared in [src/lab/composition.js](src/lab/composition.js), with engine-specific instructions in [src/lab/canvas-contract.js](src/lab/canvas-contract.js) and [src/lab/harness.js](src/lab/harness.js). Context Lab uses the same defaults; saved custom system templates keep their own text and can be updated with **Restaurar por defecto**. The component receives `zones` (frames at 30 fps) and generated `images`. Legacy harness v1 experiments remain viewable but cannot be transformed separately.
 - **Herramientas** ([src/lab/tools.js](src/lab/tools.js)), con los mismos límites para los dos modelos: `buscar_referencias` (Google Images vía SerpAPI, hasta 3 búsquedas por ejecución; solo para mirar). **Buscar es obligatorio** al diseñar y al revisar (no al corregir un error técnico): la primera llamada fuerza la herramienta con `tool_choice`; si el proveedor no lo permite, se pide por instrucción; y si el modelo igual entrega código sin buscar, no se compila y se le pide que busque primero (una vez). La otra herramienta es `generar_imagen`: Nano Banana 2.1 por WaveSpeed (`google/nano-banana-2.1/text-to-image` sin referencias y `google/nano-banana-2.1/edit` con referencias), con prompt y, si quiere, cuadros, referencias o búsquedas como entrada; hasta 2 imágenes por lado, para usar dentro de la animación. **Generar al menos una es obligatorio** en la primera ejecución: si escribe el componente sin generar, se le pide una vez; y si genera y no la usa en el código, se le pide que la integre. Las referencias tienen dos usos que el prompt le enseña: sacar una **paleta de colores** (3 a 6 hex que tiene que usar en el código) y detectar **objetos o motivos** de referencia (si los hay) para llevarlos a la animación. En las notas declara `Referencias usadas: S2, S5…`, `Paleta: #…` y `Objetos: …`; arriba del video se ven las referencias elegidas, la paleta en muestras (marcando cuáles colores aparecen de verdad en el código) y los objetos. Sin `SERPAPI_API_KEY` no hay búsqueda (la pantalla lo avisa); la generación requiere `WAVESPEED_API_KEY`. Las referencias se suben a WaveSpeed y el resultado se descarga y convierte a data URL para el iframe de Remotion. Los modelos y costos orientativos se pueden ajustar con `LAB_IMAGE_MODEL`, `LAB_IMAGE_EDIT_MODEL`, `LAB_IMAGE_COST` y `LAB_IMAGE_REFERENCE_COST`. Puede importar `remotion`, `@remotion/media`, `transitions`, `effects`, `shapes`, `paths`, `noise`, `rough-notation`, `layout-utils`, `motion-blur`, `light-leaks`, `animation-utils` y 20 familias de `@remotion/google-fonts` ([src/lab/runtime.js](src/lab/runtime.js)).
+  Desde el harness v8, un timeout local de búsqueda (20 s) vuelve al agente como error recuperable: puede seguir con las referencias disponibles o reintentar si queda cupo. Cada intento consume el límite y el costo orientativo de búsqueda; detener manualmente sigue cancelando la ejecución. Las consultas buscan una necesidad visual por vez, con inspiración libre y sin exigir dos búsquedas; ante resultados pobres, se simplifica o cambia de enfoque.
 - **Aislamiento**: el código de cada agente corre en un iframe `srcdoc` con `sandbox="allow-scripts"` (origen opaco: no ve la app ni su almacenamiento) y una CSP sin red, salvo Google Fonts. El video entra como `Blob` por `postMessage`.
 - **Cortar y mover la animación**: cada lado tiene una pista con los tramos de la capa (al principio, uno por zona). Se pueden arrastrar a otro momento del video, recortar por los bordes, dividir en el cursor, duplicar o quitar. Es un reacomodo en el tiempo de la capa del agente (con dos `<Sequence>` anidadas en el iframe): el video no se toca.
 - **Descargar video**: renderiza en el navegador, con `@remotion/web-renderer`, la composición tal cual se ve (escala, posición y cortes). Si el navegador no puede decodificar el video de base, renderiza solo la capa (WebM transparente) y la compone sobre el original en un canvas con MediaRecorder, como el export de Intuition. Hay que dejar la pestaña visible mientras tanto.
@@ -109,6 +110,38 @@ selector (OpenRouter)       1 · clip + zonas marcadas (hasta 11 s)  selector (O
 - **Dónde se guarda**: en el navegador. `localStorage` guarda los experimentos (configuración, métricas, evaluaciones); IndexedDB, lo pesado por referencia (el video, los cuadros, las referencias y el código de cada agente). Borrar los datos del sitio borra el historial.
 - En modo demo, los agentes devuelven componentes de ejemplo; los modelos "baratos" (flash, mini, luna…) fallan la primera compilación a propósito para mostrar la corrección automática.
 - Remotion tiene su propia licencia: es gratis para personas y empresas chicas, y las empresas más grandes necesitan una licencia de empresa ([remotion.dev/license](https://www.remotion.dev/license)).
+
+## Laboratorio · Motores de animación (Remotion o motor propio)
+
+El agente, las herramientas, las zonas, las capas, los cortes, la revisión y el render son **los mismos**; lo único que cambia es el **motor**: cómo se escribe, se compila, se reproduce y se renderiza la animación. En Motion Design se elige por experimento (los dos modelos compiten sobre el mismo motor); en Context Lab, por variante (se pueden comparar motores con el mismo modelo).
+
+| | Remotion (`remotion`) | Motor propio (`canvas`) |
+|---|---|---|
+| El agente escribe | un componente React/Remotion (```` ```tsx ````) | JavaScript plano que dibuja en un `<canvas>` 2D (```` ```js ````) |
+| Contrato | `export default`, `useCurrentFrame()`, `<Sequence>`… + Remotion Agent Skills | `const SCENES = [{ from, to, draw(t, p) }]` (+ `FONTS`, `AUDIO` opcionales) y helpers globales: `spring`, `rng`, `ease`, `clamp`, `seg`, `font`, `drawFit`… |
+| Antes de mostrarse | esbuild + validación del contrato | esbuild + validación + **prueba de humo en node:vm** con un contexto 2D falso que falla como el real (radios negativos, `addColorStop` fuera de [0, 1], imágenes inexistentes, bucles infinitos) |
+| Iframe | React + Remotion + `<Player>` (~2 MB) | kit + reproductor propio, arranca al instante |
+| Descargar video | `@remotion/web-renderer` | cuadro a cuadro con WebCodecs (mediabunny): determinista y no depende de que la pestaña esté visible; si el navegador no puede, graba en tiempo real |
+
+```
+src/engines/
+  index.js        registro: getEngine(id), engineList(), DEFAULT_ENGINE ('remotion'); id desconocido → Remotion
+  frame-doc.js    documento del iframe aislado (CSP compartida)
+  remotion.js     adaptador del motor de siempre (src/lab/runtime.js + src/lab/frame.js, sin cambios)
+  canvas/
+    kit.js        núcleo: helpers + evaluate() + drawAt(t). Script clásico: corre igual en el iframe, en la página suelta y en node:vm
+    frame.js      reproductor del iframe: MISMO protocolo postMessage que el de Remotion (boot / load / checked / frame / render…)
+    index.js      compile() + prueba de humo, frameDocument(), standaloneDocument() (página con window.seek(t))
+    render.js     render headless de alta calidad: Chromium (Playwright) → PNG por subcuadro → ffmpeg tmix (motion blur) → mp4
+```
+
+Cada motor cumple el mismo contrato (`id`, `version`, `fence`, `words`, `extractCode`, `compile(code, env)`, `frameDocument()`); el iframe de cualquier motor habla el mismo protocolo, así que una página usa cualquiera sin saber cuál es. **Para usarlo en otra parte de la app:** en el servidor, `getEngine(id).compile(code, { width, height, duration, fps, zones, images, sounds })`; en el navegador, `GET /api/lab/frame.html?engine=<id>` en un iframe `sandbox="allow-scripts"` y los mismos mensajes (`load` → `loaded` / `checked`, `seek`, `render` → `rendered`). Para sumar un motor: un módulo con ese contrato y una entrada en `ENGINES`. La firma del harness incluye el motor (`v8 · canvas v1 · …`), así el historial los separa.
+
+Render headless (opcional, fuera de la app; necesita `npm i -D playwright && npx playwright install chromium` y `ffmpeg`):
+
+```bash
+node src/engines/canvas/render.js --code scenes.js --width 1080 --height 1920 --dur 15 --fps 60 --sub 4 --video base.mp4 --out out/final.mp4
+```
 
 ## Laboratorio · Context Lab (pestaña)
 
@@ -123,7 +156,8 @@ Modelo (uno)            1 · clip + zonas (el mismo marcador de ✨ Intuition)
         buscar referencias (SerpAPI) · generar imagen (Nano Banana 2.1) ·
         generar sonido (SFX, WaveSpeed text→audio) · generar video IA (Seedance / Wan, image→video)
     · pedido propio o heredado; referencias del pedido base, propias o ninguna
-    · cuántos cuadros por zona ve (0 a 6) · temperatura · esfuerzo de razonamiento
+    · qué documentos .md adjuntos del pedido base recibe
+    · cuántos cuadros por zona ve (0 a 6) · temperatura · nivel de razonamiento (los niveles que acepta el modelo)
     · qué Remotion Agent Skills entran (con su tamaño en tokens)
     · ejemplos (few-shot)
     · el prompt de sistema completo (plantilla editable con {{herramientas}}, {{ejemplos}} y {{skills}})
@@ -143,6 +177,85 @@ Player por variante, en capas: video original → tomas de IA (cada una en su ca
 - **Dónde se guarda**: en el navegador, con su propio namespace (`lab.context.*` en localStorage e IndexedDB `lab-context`). Las variantes de trabajo se recuerdan entre visitas. Las tomas de video quedan en `runs/media/`.
 - En modo demo, la "toma de IA" es un cuadro quieto del clip y el sonido, un barrido sintético: alcanza para probar las capas sin pagar.
 - Pruebas: `node --test test/context-lab.test.js`. Navegador: `PLAYWRIGHT_MODULE=/ruta/a/playwright/index.mjs node test/browser/context-lab.mjs` (servidor demo; necesita ffmpeg para armar el clip de prueba).
+
+## Laboratorio · Documentos adjuntos (.md)
+
+En Motion Design y en Context Lab podés **adjuntar los archivos Markdown que quieras** (guía de marca, guion, notas de estilo, briefs…). El agente los recibe **enteros** en el primer mensaje, en una sección «Documentos adjuntos» entre las instrucciones y las zonas, cada uno entre etiquetas `<documento nombre="…">`.
+
+- **Cómo se adjunta**: botón «Adjuntar .md» del brief (acepta varios a la vez) o soltando los archivos en la pestaña. Cada archivo muestra su tamaño en tokens (≈ caracteres ÷ 4) y la lista, el total. Se quitan con ×; pasar el cursor por un archivo muestra el comienzo. También se aceptan `.markdown` y `.txt`.
+- **Motion Design**: los adjuntos son del brief compartido: los dos agentes reciben exactamente los mismos. Se guardan con el experimento y se restauran al reabrirlo.
+- **Context Lab**: dos formas, combinables. (1) **Adjuntos propios de una variante**: cada tarjeta tiene su botón «Adjuntar .md» (bloque «Documentos adjuntos»): lo que adjuntás ahí lo recibe *solo esa variante*, así probás un documento en V1 y no en V2. (2) **Adjuntos del pedido base** (se recuerdan entre visitas): cada variante marca con casillas cuáles recibe. Cada variante recibe los base que dejó marcados + sus propios, y el bloque dice cuántos documentos y tokens recibe. Duplicar una variante copia también sus adjuntos propios. La tabla de comparación suma la fila «Adjuntos (.md)» y los tokens entran en el contexto inicial de cada variante.
+- **Límites** ([src/lab/docs.js](src/lab/docs.js)): hasta 10 archivos, 120 mil caracteres por archivo (≈ 30 mil tokens) y 400 mil entre todos (≈ 100 mil tokens). Lo que se pasa se rechaza con un aviso, en vez de recortarse en silencio. No se aceptan archivos vacíos, binarios ni repetidos.
+- **Prioridad**: el prompt le dice al agente que los documentos son material y criterio de diseño, y que si algo choca con el contrato del entorno (archivo único, imports permitidos, determinismo, dibujar solo en las zonas), manda el contrato. Un `</documento>` dentro del texto no corta la etiqueta.
+- Pruebas: `node --test test/docs.test.js`.
+
+## Laboratorio · Clips Automático o Manual
+
+En la tarjeta «1 · Clip y zonas» de Motion Design y de Context Lab, el marcador tiene dos modos (se recuerda el último que usaste):
+
+```
+✨ Automático                                         ✋ Manual
+cuántas animaciones querés (1 a 6)                    el marcador de siempre: "+ Marcar clip acá",
+  ▼                                                   arrastrar el clip o sus bordes
+transcribe el clip con Whisper (si todavía no lo hiciste)
+  ▼
+un agente lee la transcripción por segundo y elige, entre las ideas más útiles, EXACTAMENTE las zonas que pediste
+  + de cada zona, 2 a 4 segundos concretos de los que quiere VER el cuadro  + una frase con qué se dice y qué animación iría
+  ▼
+el navegador recorta del video los cuadros de esos segundos (el mismo mecanismo del marcador; no hace falta ffmpeg)
+  ▼
+las zonas quedan dibujadas en la línea de tiempo, con las miniaturas de lo que va a ver el diseñador
+  ▼  "Ejecutar": el diseñador recibe imágenes (los cuadros elegidos) + la transcripción por segundo con sus cabezales
+```
+
+- **Vos decidís cuántas animaciones**: el número que ponés es lo que se le pide al agente (de 1 a 6). Si en el video de verdad no hay tantos momentos con habla que valgan la pena, devuelve menos y el aviso lo dice («pediste 5; el agente solo encontró 3»).
+- **Quién elige los momentos**: el mismo modelo del experimento (el modelo A en Motion Design; el modelo único de Context Lab), con el contexto y las instrucciones del pedido y la transcripción. Es una llamada de texto (no ve imágenes: pide los segundos y después se los recortan). Su costo se muestra al terminar y queda en el experimento (`planner`), aparte del costo de cada ejecución.
+- **Plan de herramientas por zona**: el agente también dice, para cada zona, qué herramientas del diseñador piensa usar y **en qué segundo exacto** (buscar referencias, generar imagen, generar sonido, generar video IA), solo entre las que existen y no están apagadas (en Context Lab, las que alguna variante tiene encendidas). Se ve de dos formas: **íconos sobre la línea de tiempo**, en su segundo (pasá el cursor para leer la nota), y una **lista en la tarjeta de cada zona** con la hora (clic = ir a ese momento del video) y la nota; cada uso se puede quitar con ×. El plan viaja en el pedido como «Plan del editor para esta zona» (una sugerencia, no una obligación) y cada ejecución solo recibe los usos de las herramientas que tiene encendidas. Las herramientas obligatorias se le piden al agente como «al menos una zona la usa».
+- **Las zonas son tuyas después**: se pueden mover (los cuadros elegidos se mueven con la zona), cambiar de largo, quitar, o pasar a Manual y sumar más. La frase de cada zona queda en su «¿Qué pasa en este clip?» y se puede editar: es el «Pedido» que ve el diseñador para esa zona.
+- **Reglas del planificador** ([src/lab/plan.js](src/lab/plan.js)): zonas de 1.5 a 8 s, dentro del video y sin superponerse; el servidor ordena y corrige lo que se pase (acorta, estira, descarta superposiciones, completa a 2 cuadros mínimo y recorta a 4 máximo); si la respuesta no es un JSON utilizable, se le pide corregirla una vez.
+- **Límite de zonas**: el Laboratorio sube de 3 a **6** zonas por experimento (también en Manual). Cada zona suma sus cuadros al contexto de cada variante/modelo: con 6 zonas × hasta 6 cuadros son más imágenes y más costo.
+- **Sin Whisper** (sin `WAVESPEED_API_KEY`) el modo Automático avisa que no puede y queda el Manual. En modo demo, la elección es una heurística sin modelo (los segundos con más habla).
+- Ruta: `POST /api/lab/plan`. Pruebas: `node --test test/plan.test.js`.
+
+## Laboratorio · Registro de herramientas (qué hizo el agente)
+
+Debajo del reproductor de cada lado (Motion Design) y de cada variante (Context Lab) hay un registro **abierto y en vivo** de todo lo que el agente hace con las herramientas, en orden:
+
+- **🔎 Buscó referencias**: la consulta y las miniaturas que devolvió (con enlace a la fuente).
+- **🖼️ Generó una imagen**: el prompt, de qué imágenes partió y la imagen generada.
+- **🔊 Generó un efecto de sonido**: la descripción, la duración y un **reproductor** para escucharlo.
+- **🎬 Generó una toma de video**: zona, cuadro de partida, prompt, modelo, y la toma.
+- Cada llamada aparece **apenas empieza** («⏳ en curso…») y al terminar muestra ✓ o **✗ falló con el mensaje del error**, cuánto **tardó** y cuánto **costó**. Imagen y sonido dicen si el componente final **los usó en el código**. El encabezado resume cantidades, errores y costo de herramientas.
+- Si el modo Automático dejó un plan, arriba se compara **plan del editor vs. lo que hizo** (✓ lo hizo / pendiente / no lo usó), solo con las herramientas que ese lado o variante tenía encendidas.
+- Se guarda con el experimento y se restaura al reabrirlo. Los eventos `tool` / `tool_done` del servidor (`src/lab/tools.js`) alimentan el registro. Pruebas: `node --test test/tool-events.test.js`.
+
+## Laboratorio · Nivel de razonamiento por modelo
+
+Motion Design (un selector **por lado**, A y B) y Context Lab (uno **por variante**) dejan fijar cuánto razona el modelo. Como cada modelo acepta sus propios niveles, las opciones **no están escritas a mano**: salen del catálogo de OpenRouter (`/models`), que trae por modelo un objeto `reasoning` con `supported_efforts`, `default_effort`, `default_enabled` y `mandatory`.
+
+- **Qué ofrece el selector**: *Por defecto del modelo* (con su nivel entre paréntesis), los niveles que ese modelo acepta (de `minimal`/`low` a `xhigh`/`max`, según el modelo) y *Apagado* solo si el modelo no exige razonar. Ej.: Claude Opus 5.5 → bajo … máximo, siempre razona; Gemini 3.8 Flash → bajo, medio, alto; DeepSeek V4 Flash → bajo, alto, máximo y apagado. Un modelo sin razonamiento ajustable deja el selector deshabilitado, y uno escrito a mano que no está en el catálogo ofrece bajo/medio/alto y se prueba tal cual. Debajo del selector se lee qué acepta el modelo elegido.
+- **Al cambiar de modelo** el selector se rearma; si el nivel que tenías no existe en el nuevo modelo, vuelve a *por defecto*.
+- **Qué pasa en el servidor** ([src/lab/reasoning.js](src/lab/reasoning.js)): antes de llamar al modelo se resuelve el nivel con lo que ese modelo acepta. Si pediste uno que no acepta, se usa el **más cercano** (a igual distancia, el más bajo: gasta menos) y la salida del agente lo avisa; si pediste apagar un modelo que siempre razona, o fijar nivel en uno que no expone niveles, se usa el suyo. Así no hay errores 400 de OpenRouter por un nivel no soportado. Sin catálogo (sin red) el nivel se manda tal cual.
+- **Historial**: el nivel pedido queda en cada ejecución, aparece en la tabla de comparación y el historial por modelo separa el mismo modelo según su nivel (`modelo · razonamiento alto`), para comparar niveles entre sí. Los registros viejos no cambian.
+- Pruebas: `node --test test/reasoning.test.js`.
+
+## Laboratorio · Habla del video (Whisper)
+
+Motion Design y Context Lab pueden recibir **lo que dice el video**, con su momento exacto, para que el agente decida *cuándo* entra cada animación (un título cuando se nombra eso, no antes ni mucho después).
+
+```
+clip → [Transcribir con Whisper] → POST /api/lab/transcribe (el archivo tal cual)
+     → WaveSpeed wavespeed-ai/openai-whisper-with-video (enable_timestamps: true, task: transcribe, language: auto)
+     → palabras con start/end → CABEZALES de 1 segundo → viajan en cada ejecución → sección «Habla del video» del pedido
+```
+
+- **Cabezal** = una línea por segundo del video con las palabras que *empiezan* a decirse en ese segundo. Cada línea trae el cuadro absoluto (30 fps, los mismos de las zonas), las zonas que toca y, si la primera palabra arranca tarde, `habla desde el cuadro N`. Los silencios seguidos se juntan en una línea. Ej.: `0:01 · cuadro 30 (habla desde el cuadro 36) · [C1] · Pixar, Nemo`.
+- **Dónde**: panel «Habla del video» al final del brief de cada laboratorio. Se transcribe una vez por clip (cuesta ≈ US$ 0.002 por segundo con tiempos por palabra; el panel muestra el costo), se puede revisar la lista, desactivar con «Usar en el pedido» o quitar. Si cambiás de clip, se descarta. Se guarda con el experimento y se restaura al reabrirlo.
+- **Context Lab**: la transcripción es del pedido base y **cada variante decide si la recibe** («Recibe el habla del video»), así se compara *con* y *sin* habla como cualquier otra perilla de contexto. Cuenta en los tokens de contexto inicial.
+- **Formato de Whisper** (medido con una llamada real; la documentación de WaveSpeed no lo describe): `outputs[0] = { duration, language, text, srt, text_details: [{ start, end, text, words: [{ word, start, end, probability }] }] }`, tiempos en segundos. El parser, con ese caso real como fixture, está en [src/lab/transcript.js](src/lab/transcript.js).
+- **Límites**: Whisper toma como máximo 10 minutos (lo demás se recorta y el panel lo avisa); el servidor acepta hasta 300 MB por video. Sin `WAVESPEED_API_KEY` el panel se oculta; en modo demo devuelve un guion de ejemplo gratis.
+- **Variables**: `LAB_WHISPER_MODEL` (por defecto `wavespeed-ai/openai-whisper-with-video`) y `LAB_WHISPER_COST_PER_SECOND` (por defecto `0.002`).
+- Pruebas: `node --test test/transcript.test.js`.
 
 ## Laboratorio · Cinematic Videos
 
@@ -374,6 +487,7 @@ Fotos + texto
 | `src/lab/harness.js` | Laboratorio: el harness compartido (contrato + Remotion Agent Skills) y el pedido idéntico para los dos modelos |
 | `src/lab/runtime.js` | Laboratorio: compila y valida el TSX de cada agente (esbuild) y empaqueta React + Remotion para el iframe |
 | `src/lab/pipeline.js` / `src/lab/routes.js` | Laboratorio: una ejecución de un agente con corrección automática; `POST /api/lab/run`, `GET /api/lab/models`, `GET /api/lab/frame.html` |
+| `src/engines/` | Motores de animación (Remotion o el propio en canvas): compilar, reproducir en el iframe y renderizar; `GET /api/lab/frame.html?engine=<id>` |
 | `src/lab/tools.js` | Laboratorio: herramientas de los agentes (búsqueda en SerpAPI, imágenes con nano-banana) |
 | `src/lab/frame.js` | Laboratorio: dentro del iframe aislado, monta el `<Player>` de Remotion y hace la prueba de humo |
 | `src/table/prompts.js` / `src/table/routes.js` | Mesa de agentes: qué ve cada agente, el turno con herramientas, la entrega por tomas, el feedback por parte, RUN y video |
