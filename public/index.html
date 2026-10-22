@@ -7,6 +7,8 @@
   <meta name="theme-color" content="#141311" media="(prefers-color-scheme: dark)">
   <title>221 — Estudio de contenido</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/jev-pixel.css">
+  <link rel="stylesheet" href="/jev-lm.css">
 </head>
 <body>
   <div class="app">
@@ -191,12 +193,18 @@
             <a href="#laboratorio/cinematic-videos" data-lab-folder="cinematic-videos">Cinematic Videos</a>
             <a href="#laboratorio/mesa-de-agentes" data-lab-folder="mesa-de-agentes">Mesa de agentes</a>
             <a href="#laboratorio/context-lab" data-lab-folder="context-lab">Context Lab</a>
+            <a href="#laboratorio/objetos-3d" data-lab-folder="objetos-3d">Objetos 3D</a>
+            <a href="#laboratorio/jev-pixel" data-lab-folder="jev-pixel">JEV a píxel</a>
+            <a href="#laboratorio/jev-habla" data-lab-folder="jev-habla">JEV habla</a>
           </nav>
           <div id="lab-home" class="lab-history-list" hidden>
             <a class="lab-card lab-folder-card" href="#laboratorio/motion-design"><span class="lab-badge">M</span><h1>Motion Design</h1><p class="muted">Comparar animaciones con LLMs sobre el harness del laboratorio (Remotion o el motor propio en canvas).</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/cinematic-videos"><span class="lab-badge">C</span><h1>Cinematic Videos</h1><p class="muted">Un mismo prompt y referencias. Hasta cuatro generadores de OpenRouter y WaveSpeed.</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/mesa-de-agentes"><span class="lab-badge">A</span><h1>Mesa de agentes</h1><p class="muted">Cuatro agentes con su propia misión conversan por turnos, hasta 10 rondas, para cumplir una misión final. Vos intervenís cuando quieras.</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/context-lab"><span class="lab-badge">X</span><h1>Context Lab</h1><p class="muted">Un mismo modelo, varias variantes de contexto: prompt, skills, referencias y herramientas (búsqueda, imagen, sonido, video).</p></a>
+            <a class="lab-card lab-folder-card" href="#laboratorio/objetos-3d"><span class="lab-badge">3D</span><h1>Objetos 3D</h1><p class="muted">Motor de objetos 3D decisional: JEV destripa un cuadro con una cuadrícula y arma el mapa de la escena (dónde está cada cosa, qué se pisa, qué está delante y detrás, dónde hay espacio libre).</p></a>
+            <a class="lab-card lab-folder-card" href="#laboratorio/jev-pixel"><span class="lab-badge">px</span><h1>JEV a píxel</h1><p class="muted">Cuatro experimentos para reconstruir un sujeto solo con respuestas cerradas de JEV: grilla 8×8, box() + grilla densa, super-resolución 10X–25X y segmentación a píxel con superpíxeles SLIC y random walker.</p></a>
+            <a class="lab-card lab-folder-card" href="#laboratorio/jev-habla"><span class="lab-badge">Aa</span><h1>JEV habla</h1><p class="muted">JEV como modelo de lenguaje: elige la próxima palabra entre 30.000 del español con un torneo de bloques de 255 opciones, y repite en bucle para armar la oración.</p></a>
           </div>
           <div id="lab-motion-folder">
           <header class="lab-head">
@@ -213,6 +221,39 @@
           <p id="lab-error" class="error" hidden></p>
           <div id="lab-experiment"></div>
           <div id="lab-history" class="lab-history" hidden></div>
+          </div>
+          <div id="lab-objects-folder" hidden>
+            <header class="lab-head">
+              <div>
+                <p class="lab-crumbs muted small">Laboratorio / objetos-3d</p>
+                <h1 class="raw-title">Objetos 3D</h1>
+                <p class="muted small">Un cuadro del video, una cuadrícula encima y una batería de preguntas cerradas a JEV. Sale un mapa de escena: recuadro de cada objeto (X/Y), qué es para la animación (pisable, obstáculo…), distancia aproximada (Z), qué está delante de qué y qué celdas son espacio libre. Después, las siluetas: la forma real de cada objeto con los Experimentos 3 y 4 de JEV a píxel, y en lo pisable la superficie de arriba con sus bordes.</p>
+              </div>
+            </header>
+            <p id="obj-error" class="error" role="alert" hidden></p>
+            <div id="obj-experiment"></div>
+          </div>
+          <div id="lab-jevpixel-folder" hidden>
+            <header class="lab-head">
+              <div>
+                <p class="lab-crumbs muted small">Laboratorio / jev-pixel</p>
+                <h1 class="raw-title">JEV a píxel</h1>
+                <p class="muted small">JEV no dibuja: solo responde sí o no (noul) y dónde (box). Cuatro experimentos incrementales reconstruyen el sujeto a partir de esas probabilidades, de una grilla 8×8 hasta una máscara a píxel exacto.</p>
+              </div>
+            </header>
+            <p id="jevpixel-error" class="error" role="alert" hidden></p>
+            <div id="jevpixel-experiment"></div>
+          </div>
+          <div id="lab-jevlm-folder" hidden>
+            <header class="lab-head">
+              <div>
+                <p class="lab-crumbs muted small">Laboratorio / jev-habla</p>
+                <h1 class="raw-title">JEV habla</h1>
+                <p class="muted small">JEV no es un LLM: no escribe, elige. Le damos el comienzo de una oración y las palabras más frecuentes del español en bloques de 255; de cada bloque sale una ganadora, las ganadoras compiten en una ronda final y la elegida se suma al texto. Así, palabra por palabra.</p>
+              </div>
+            </header>
+            <p id="jevlm-error" class="error" role="alert" hidden></p>
+            <div id="jevlm-experiment"></div>
           </div>
           <div id="lab-context-folder" hidden>
             <header class="lab-head">
@@ -381,5 +422,8 @@
   <script src="/cinematic.js" type="module"></script>
   <script src="/table.js" type="module"></script>
   <script src="/context-lab.js" type="module"></script>
+  <script src="/objects-lab.js" type="module"></script>
+  <script src="/jev-pixel-lab.js" type="module"></script>
+  <script src="/jev-lm-lab.js" type="module"></script>
 </body>
 </html>

@@ -24,6 +24,9 @@ import { referenceLabels } from './story-references.js';
 import { createLabRoutes } from './lab/routes.js';
 import { createCinematicRoutes } from './cinematic/routes.js';
 import { createTableRoutes } from './table/routes.js';
+import { createObjectsRoutes } from './objects3d/routes.js';
+import { createJevPixelRoutes } from './jev-pixel/routes.js';
+import { createJevLmRoutes } from './jev-lm/routes.js';
 import { createTableMedia } from './table/media.js';
 import { createVideoCatalog } from './cinematic/models.js';
 import { createCinematicJobs } from './cinematic/jobs.js';
@@ -469,12 +472,22 @@ const tableVideo = mock || wavespeedKey || apiKey ? {
     openrouter: createOpenRouterVideo({ apiKey, mediaDir: MEDIA }), wavespeed: mock ? null : wavespeedKey ? createWaveSpeed({ apiKey: wavespeedKey, mediaDir: MEDIA }) : null }),
   ready: { wan: mock || !!wavespeedKey, heygen: mock || (!!apiKey && !!wavespeedKey) },
 } : null;
+// Objetos 3D: un cuadro del video → preguntas cerradas a JEV (API de TypeSafe) → mapa de escena (src/objects3d/).
+const jevKey = process.env.TYPESAFE_API_KEY || '';
+const handleObjects = createObjectsRoutes({ mock, apiKey: jevKey, readBody, sendJson, badRequest });
+// JEV a píxel: los cuatro experimentos de reconstrucción por probabilidades (src/jev-pixel/).
+const handleJevPixel = createJevPixelRoutes({ mock, apiKey: jevKey, readBody, sendJson, badRequest });
+// JEV habla: JEV como modelo de lenguaje, eligiendo la próxima palabra entre 30.000 (src/jev-lm/).
+const handleJevLm = createJevLmRoutes({ mock, apiKey: jevKey, readBody, sendJson, badRequest });
 const handleTable = createTableRoutes({ mock, llm: (opts) => streamChat({ apiKey, ...opts }), readBody, badRequest, sendJson, media: tableMedia, mediaDir: MEDIA, video: tableVideo });
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (handleCinematic(req, res, url)) return;
   if (handleTable(req, res, url)) return;
+  if (handleObjects(req, res, url)) return;
+  if (handleJevPixel(req, res, url)) return;
+  if (handleJevLm(req, res, url)) return;
   if (url.pathname.startsWith('/api/lab/') && handleLab(req, res, url)) return;
   if ((req.method === 'POST' && ['/api/voice/turn', '/api/voice/played'].includes(url.pathname)) || (req.method === 'GET' && url.pathname === '/api/voice/jobs')) return handleVoice(req, res, url);
   if (req.method === 'POST' && url.pathname === '/api/story/turn') return handleStoryTurn(req, res);
@@ -555,5 +568,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Historia · Guionista: ${storyConfig.storyModel} · DP: ${storyConfig.dpModel} · cuadros: ${storyConfig.frameModel} / ${storyConfig.frameEditModel} · video: ${storyWs ? `${storyConfig.videoModel} (${storyConfig.videoResolution}, ${SHOT_SECONDS} s)${storyWs.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
   console.log(`Laboratorio · Motion Design: dos modelos de OpenRouter con el mismo harness de Remotion${mock ? ' (demo: componentes de ejemplo)' : ''} · búsqueda de referencias: ${process.env.SERPAPI_API_KEY || mock ? 'SerpAPI' : 'desactivada (falta SERPAPI_API_KEY)'} · imágenes: ${wavespeedKey || mock ? `${process.env.LAB_IMAGE_MODEL || 'google/nano-banana-2.1/text-to-image'} (WaveSpeed)` : 'desactivadas (falta WAVESPEED_API_KEY)'}`);
   console.log(`Laboratorio · Mesa de agentes: cuatro modelos de OpenRouter, hasta 10 rondas${mock ? ' (demo: respuestas y piezas simuladas)' : ''} · imágenes, voces y sonidos: ${tableMedia.available ? 'WaveSpeed' : 'desactivados (falta WAVESPEED_API_KEY)'} · video: ${tableVideo ? Object.entries(tableVideo.ready).filter(([, ok]) => ok).map(([id]) => id).join(' / ') || 'sin motores' : 'desactivado'}`);
+  console.log(`Laboratorio · Objetos 3D: JEV por la API de TypeSafe${mock ? ' (demo: respuestas simuladas)' : jevKey ? '' : ' — desactivado (falta TYPESAFE_API_KEY)'}`);
+  console.log(`Laboratorio · JEV a píxel: 4 experimentos (8×8, box + grilla, super-resolución, superpíxeles + random walker)${mock ? ' (demo: respuestas simuladas)' : jevKey ? '' : ' — desactivado (falta TYPESAFE_API_KEY)'}`);
   console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${Object.values(REFILM_MODELS).map((m) => m.path()).join(' / ')} (${refilmResolution()})${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });

@@ -27,6 +27,7 @@
     "@remotion/shapes": "4.0.534",
     "@remotion/transitions": "4.0.534",
     "@remotion/web-renderer": "4.0.534",
+    "@typesafe-ai/sdk": "0.7.0",
     "esbuild": "0.28.2",
     "mediabunny": "1.56.1",
     "react": "19.3.0",
