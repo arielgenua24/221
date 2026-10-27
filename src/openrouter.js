@@ -49,7 +49,7 @@ function fail({ status, model, detail, streamed }) {
 // onDelta recibe el texto de la respuesta; onReasoning, el razonamiento si el modelo lo expone.
 // tools (opcional): funciones que el modelo puede llamar (formato OpenAI). Devuelve toolCalls y reasoningDetails
 // (algunos proveedores, como Gemini, exigen que el razonamiento vuelva tal cual en el turno siguiente).
-async function once({ apiKey, model, messages, temperature, maxTokens, plugins, reasoning, tools, toolChoice, onDelta, onReasoning, signal }) {
+async function once({ apiKey, model, messages, temperature, maxTokens, plugins, reasoning, provider, tools, toolChoice, onDelta, onReasoning, signal }) {
   const body = {
     model,
     messages,
@@ -61,6 +61,8 @@ async function once({ apiKey, model, messages, temperature, maxTokens, plugins, 
   if (maxTokens) body.max_tokens = maxTokens;
   if (plugins) body.plugins = plugins;
   if (reasoning) body.reasoning = reasoning;
+  // Preferencias de enrutamiento de OpenRouter (por ejemplo { sort: 'throughput' } para el proveedor más rápido).
+  if (provider) body.provider = provider;
   if (tools?.length) { body.tools = tools; if (toolChoice) body.tool_choice = toolChoice; }
 
   let res;

@@ -285,11 +285,11 @@ function routeFolder() {
   if (!/^#\/?laboratorio(?:\/|$)/.test(location.hash) && document.body.dataset.tab !== 'lab') return;
   const hash = location.hash.replace(/^#\/?/, '');
   const folder = hash.startsWith('laboratorio/') ? hash.split('/')[1] : 'home';
-  const cinematic = folder === 'cinematic-videos', motion = folder === 'motion-design', table = folder === 'mesa-de-agentes', context = folder === 'context-lab', objects = folder === 'objetos-3d', jevpixel = folder === 'jev-pixel', jevlm = folder === 'jev-habla';
-  $('lab-home').hidden = cinematic || motion || table || context || objects || jevpixel || jevlm; $('lab-motion-folder').hidden = !motion; $('lab-cinematic-folder').hidden = !cinematic; $('lab-table-folder').hidden = !table; $('lab-context-folder').hidden = !context; $('lab-objects-folder').hidden = !objects; $('lab-jevpixel-folder').hidden = !jevpixel; $('lab-jevlm-folder').hidden = !jevlm;
+  const cinematic = folder === 'cinematic-videos', motion = folder === 'motion-design', table = folder === 'mesa-de-agentes', context = folder === 'context-lab', objects = folder === 'objetos-3d', jevpixel = folder === 'jev-pixel', jevlm = folder === 'jev-habla', jevbuild = folder === 'jev-construye';
+  $('lab-home').hidden = cinematic || motion || table || context || objects || jevpixel || jevlm || jevbuild; $('lab-motion-folder').hidden = !motion; $('lab-cinematic-folder').hidden = !cinematic; $('lab-table-folder').hidden = !table; $('lab-context-folder').hidden = !context; $('lab-objects-folder').hidden = !objects; $('lab-jevpixel-folder').hidden = !jevpixel; $('lab-jevlm-folder').hidden = !jevlm; $('lab-jevbuild-folder').hidden = !jevbuild;
   document.querySelectorAll('[data-lab-folder]').forEach((a) => { if (a.dataset.labFolder === folder) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   // Motion Design conserva su evento y su superficie. Sus drops solo están activos en su carpeta.
-  const tab = cinematic ? 'cinematic' : table ? 'table' : context ? 'lab-context' : objects ? 'lab-objects' : jevpixel ? 'lab-jevpixel' : jevlm ? 'lab-jevlm' : 'lab-home';
+  const tab = cinematic ? 'cinematic' : table ? 'table' : context ? 'lab-context' : objects ? 'lab-objects' : jevpixel ? 'lab-jevpixel' : jevlm ? 'lab-jevlm' : jevbuild ? 'lab-jevbuild' : 'lab-home';
   document.body.dataset.tab = motion ? 'lab' : tab;
   if (!motion) window.dispatchEvent(new CustomEvent('tab', { detail: tab }));
   if (cinematic) start();

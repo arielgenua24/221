@@ -27,6 +27,7 @@ import { createTableRoutes } from './table/routes.js';
 import { createObjectsRoutes } from './objects3d/routes.js';
 import { createJevPixelRoutes } from './jev-pixel/routes.js';
 import { createJevLmRoutes } from './jev-lm/routes.js';
+import { createJevBuildRoutes, LLM_MODEL as JEV_BUILD_MODEL } from './jev-build/routes.js';
 import { createTableMedia } from './table/media.js';
 import { createVideoCatalog } from './cinematic/models.js';
 import { createCinematicJobs } from './cinematic/jobs.js';
@@ -35,6 +36,7 @@ import { createOpenRouterVideo } from './cinematic/openrouter-video.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const RUNS = path.join(ROOT, 'runs');
+const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
 const MEDIA = path.join(RUNS, 'media'); // storyboards y videos generados (se sirven en /media/…)
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -479,6 +481,8 @@ const handleObjects = createObjectsRoutes({ mock, apiKey: jevKey, readBody, send
 const handleJevPixel = createJevPixelRoutes({ mock, apiKey: jevKey, readBody, sendJson, badRequest });
 // JEV habla: JEV como modelo de lenguaje, eligiendo la próxima palabra entre 30.000 (src/jev-lm/).
 const handleJevLm = createJevLmRoutes({ mock, apiKey: jevKey, readBody, sendJson, badRequest });
+// JEV construye: un LLM planifica pieza por pieza y JEV elige cómo hacerla, mirando cada opción en 3D (src/jev-build/).
+const handleJevBuild = createJevBuildRoutes({ mock, apiKey: jevKey, llm: (opts) => streamChat({ apiKey, ...opts }), readBody, sendJson, badRequest });
 const handleTable = createTableRoutes({ mock, llm: (opts) => streamChat({ apiKey, ...opts }), readBody, badRequest, sendJson, media: tableMedia, mediaDir: MEDIA, video: tableVideo });
 
 const server = http.createServer(async (req, res) => {
@@ -488,6 +492,7 @@ const server = http.createServer(async (req, res) => {
   if (handleObjects(req, res, url)) return;
   if (handleJevPixel(req, res, url)) return;
   if (handleJevLm(req, res, url)) return;
+  if (handleJevBuild(req, res, url)) return;
   if (url.pathname.startsWith('/api/lab/') && handleLab(req, res, url)) return;
   if ((req.method === 'POST' && ['/api/voice/turn', '/api/voice/played'].includes(url.pathname)) || (req.method === 'GET' && url.pathname === '/api/voice/jobs')) return handleVoice(req, res, url);
   if (req.method === 'POST' && url.pathname === '/api/story/turn') return handleStoryTurn(req, res);
@@ -524,8 +529,9 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/intuition') { res.writeHead(302, { Location: '/?modo=intuition' }); return res.end(); }
 
   // Storyboards y videos generados: mismo origen, para que el canvas pueda dibujarlos y exportarlos.
+  // /vendor/three/…: three.js desde node_modules (JEV construye lo importa con un import map).
   // /raw-files/…: las imágenes y audios de los proyectos de Raw.
-  const mount = [['/media/', MEDIA], ['/raw-files/', rawStore.filesDir], ['/story-files/', storyStore.filesDir]].find(([prefix]) => url.pathname.startsWith(prefix));
+  const mount = [['/media/', MEDIA], ['/raw-files/', rawStore.filesDir], ['/story-files/', storyStore.filesDir], ['/vendor/three/', THREE_DIR]].find(([prefix]) => url.pathname.startsWith(prefix));
   const dir = mount ? mount[1] : PUBLIC;
   const rel = mount ? decodeURIComponent(url.pathname.slice(mount[0].length - 1)) : url.pathname === '/' ? 'index.html' : url.pathname;
   const file = path.normalize(path.join(dir, rel));
@@ -569,6 +575,7 @@ server.listen(PORT, HOST, () => {
   console.log(`Laboratorio · Motion Design: dos modelos de OpenRouter con el mismo harness de Remotion${mock ? ' (demo: componentes de ejemplo)' : ''} · búsqueda de referencias: ${process.env.SERPAPI_API_KEY || mock ? 'SerpAPI' : 'desactivada (falta SERPAPI_API_KEY)'} · imágenes: ${wavespeedKey || mock ? `${process.env.LAB_IMAGE_MODEL || 'google/nano-banana-2.1/text-to-image'} (WaveSpeed)` : 'desactivadas (falta WAVESPEED_API_KEY)'}`);
   console.log(`Laboratorio · Mesa de agentes: cuatro modelos de OpenRouter, hasta 10 rondas${mock ? ' (demo: respuestas y piezas simuladas)' : ''} · imágenes, voces y sonidos: ${tableMedia.available ? 'WaveSpeed' : 'desactivados (falta WAVESPEED_API_KEY)'} · video: ${tableVideo ? Object.entries(tableVideo.ready).filter(([, ok]) => ok).map(([id]) => id).join(' / ') || 'sin motores' : 'desactivado'}`);
   console.log(`Laboratorio · Objetos 3D: JEV por la API de TypeSafe${mock ? ' (demo: respuestas simuladas)' : jevKey ? '' : ' — desactivado (falta TYPESAFE_API_KEY)'}`);
+  console.log(`Laboratorio · JEV construye: planifica ${JEV_BUILD_MODEL}, elige JEV${mock ? ' (demo: recetas y respuestas simuladas)' : jevKey ? '' : ' — desactivado (falta TYPESAFE_API_KEY)'}`);
   console.log(`Laboratorio · JEV a píxel: 4 experimentos (8×8, box + grilla, super-resolución, superpíxeles + random walker)${mock ? ' (demo: respuestas simuladas)' : jevKey ? '' : ' — desactivado (falta TYPESAFE_API_KEY)'}`);
   console.log(`Cinematic Pro · Director de Fotografía con agents-film (${FILM_GUIDES.length} guías, ${FILM_RULES.size} reglas) · re-filmar: ${ws ? `${Object.values(REFILM_MODELS).map((m) => m.path()).join(' / ')} (${refilmResolution()})${ws.mock ? ' (demo)' : ''}` : 'desactivado (falta WAVESPEED_API_KEY)'}`);
 });

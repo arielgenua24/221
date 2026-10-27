@@ -12,6 +12,18 @@
         "PORT": "3100"
       },
       "port": 3100
+    },
+    {
+      "name": "real",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--env-file-if-exists=.env",
+        "src/server.js"
+      ],
+      "env": {
+        "PORT": "3101"
+      },
+      "port": 3101
     }
   ]
 }

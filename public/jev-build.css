@@ -1,0 +1,133 @@
+/* Laboratorio · JEV construye. Usa las variables de styles.css. */
+.jb-root {
+  --jb-mono: ui-monospace, "IBM Plex Mono", SFMono-Regular, Menlo, monospace;
+  display: flex; flex-direction: column; gap: 16px; min-width: 0; color: var(--text);
+  padding-bottom: 190px; /* lugar para la caja flotante */
+}
+.jb-root [hidden] { display: none !important; }
+.jb-meta { font-family: var(--jb-mono); font-size: 12px; color: var(--muted); margin: 0; }
+.jb-demo { color: var(--cri); }
+
+.jb-btn { font: inherit; font-weight: 600; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 99px; padding: 8px 18px; cursor: pointer; }
+.jb-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.jb-btn.small { padding: 4px 12px; font-size: 13px; }
+.jb-btn:disabled { opacity: .45; cursor: default; }
+
+.jb-work { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 960px) { .jb-work { grid-template-columns: minmax(0, 1fr); } .jb-view { position: static; } .jb-log { max-height: none; } }
+.jb-view { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.jb-canvas { aspect-ratio: 3 / 2; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); background: #dfe6ea; }
+.jb-canvas canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.jb-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.jb-status { margin: 0; font-size: 14px; color: var(--muted); min-width: 0; }
+
+.jb-log { min-width: 0; max-height: 78vh; overflow-y: auto; }
+.jb-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.jb-step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.jb-step.done { border-color: var(--ok); }
+.jb-step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.jb-n { font-family: var(--jb-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.jb-ms { font-family: var(--jb-mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+.jb-thought { margin: 0; font-size: 13px; color: var(--muted); font-style: italic; }
+.jb-verify { margin: 0; font-family: var(--jb-mono); font-size: 12px; color: var(--inv); }
+.jb-spec { margin: 0; font-family: var(--jb-mono); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+
+.jb-q { display: flex; flex-direction: column; gap: 6px; }
+.jb-q-text { margin: 0; font-size: 14px; }
+.jb-opts { display: flex; flex-direction: column; gap: 4px; }
+.jb-opts.with-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.jb-opt { display: grid; grid-template-columns: minmax(0, 1fr) 60px 38px; align-items: center; gap: 6px; font-size: 13px; padding: 4px 6px; border-radius: 8px; border: 1px solid transparent; }
+.jb-opts.with-images .jb-opt { grid-template-columns: minmax(0, 1fr) 38px; }
+.jb-opts.with-images .jb-opt img { grid-column: 1 / -1; width: 100%; border-radius: 6px; display: block; }
+.jb-opts.with-images .jb-opt-label { grid-column: 1 / -1; }
+.jb-opt.chosen { border-color: var(--accent); background: var(--accent-soft); }
+.jb-opt-label { overflow-wrap: anywhere; }
+.jb-bar { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.jb-fill { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s ease-out; }
+.jb-opt-p { font-family: var(--jb-mono); font-size: 12px; text-align: right; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .jb-fill { transition: none; } }
+.jb-hint { margin: 0; font-size: 13px; color: var(--muted); }
+.jb-times { margin: 0; font-family: var(--jb-mono); font-size: 11px; color: var(--cri); overflow-wrap: anywhere; }
+.jb-keys { margin: 0; font-size: 12px; color: var(--muted); }
+.jb-canvas canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Caja de pedidos flotante: negra, abajo, siempre a mano. Colores propios (no cambian con el tema). */
+.jb-composer {
+  --c-bg: #0b0b0c; --c-field: #17171a; --c-line: #2a2a2e; --c-text: #ffffff; --c-muted: #a1a1aa; --c-neon: #c8ff1a; --c-neon-ink: #0b0b0c;
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 40;
+  width: min(960px, calc(100% - 32px)); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 10px; padding: 12px;
+  background: var(--c-bg); color: var(--c-text); border: 1px solid var(--c-line); border-radius: 20px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .35);
+}
+.jb-composer [hidden] { display: none !important; }
+.jb-composer-main { display: flex; align-items: flex-end; gap: 8px; }
+.jb-composer .jb-prompt {
+  flex: 1; min-width: 0; font: inherit; font-size: 16px; line-height: 1.4; color: var(--c-text); background: transparent;
+  border: 0; padding: 8px 6px; resize: none; max-height: 30vh;
+}
+.jb-composer .jb-prompt::placeholder { color: var(--c-muted); }
+.jb-composer .jb-prompt:focus { outline: none; }
+.jb-send {
+  font: inherit; font-weight: 700; font-size: 15px; letter-spacing: .01em; color: var(--c-neon-ink); background: var(--c-neon);
+  border: 0; border-radius: 12px; padding: 11px 20px; cursor: pointer; white-space: nowrap;
+}
+.jb-send:hover:not(:disabled) { filter: brightness(1.08); }
+.jb-send:disabled { opacity: .5; cursor: default; }
+.jb-ghost {
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--c-text); background: var(--c-field);
+  border: 1px solid var(--c-line); border-radius: 10px; padding: 7px 12px; cursor: pointer; white-space: nowrap;
+}
+.jb-ghost:hover:not(:disabled) { border-color: var(--c-muted); }
+.jb-ghost:disabled { opacity: .4; cursor: default; }
+.jb-composer :is(button, select, input):focus-visible { outline: 2px solid var(--c-neon); outline-offset: 2px; }
+.jb-composer-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--c-line); }
+.jb-composer .jb-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--c-muted); }
+.jb-composer input[type="checkbox"] { accent-color: var(--c-neon); }
+.jb-composer :is(.jb-mode, .jb-model, input[type="number"]) {
+  font: inherit; font-size: 13px; color: var(--c-text); background: var(--c-field); border: 1px solid var(--c-line); border-radius: 10px; padding: 7px 10px;
+}
+.jb-composer .jb-model { width: 250px; max-width: 100%; font-family: var(--jb-mono); }
+.jb-composer input[type="number"] { width: 56px; }
+.jb-composer.running { border-color: var(--c-neon); }
+@media (max-width: 640px) {
+  .jb-composer { bottom: 8px; width: calc(100% - 16px); padding: 10px; }
+  .jb-composer .jb-model { width: 100%; }
+}
+.jb-attach { align-self: flex-end; }
+.jb-sketch { display: flex; align-items: center; gap: 10px; padding: 6px; border: 1px solid var(--c-line); border-radius: 12px; background: var(--c-field); font-size: 12px; color: var(--c-muted); }
+.jb-sketch img { width: 56px; height: 56px; object-fit: contain; background: #fff; border-radius: 8px; }
+.jb-sketch span { flex: 1; min-width: 0; }
+.jb-sketch-x { font: inherit; font-size: 18px; line-height: 1; color: var(--c-text); background: transparent; border: 1px solid var(--c-line); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; }
+.jb-composer.dragging { border-color: var(--c-neon); border-style: dashed; }
+.jb-sketch-card img { width: 100%; max-height: 260px; object-fit: contain; background: #fff; border-radius: 10px; border: 1px solid var(--border); }
+/* Minimizar la caja: queda una pastilla abajo a la derecha. */
+.jb-min {
+  position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; display: grid; place-items: center;
+  font: inherit; font-size: 18px; line-height: 1; color: var(--c-muted); background: transparent; border: 1px solid var(--c-line); border-radius: 8px; cursor: pointer;
+}
+.jb-min:hover { color: var(--c-text); border-color: var(--c-muted); }
+.jb-composer-main { padding-right: 36px; }
+.jb-pill { display: none; }
+.jb-composer.min { left: auto; right: 16px; transform: none; width: auto; padding: 0; border-radius: 99px; gap: 0; }
+.jb-composer.min > :not(.jb-pill) { display: none !important; }
+.jb-composer.min .jb-pill {
+  display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 700; font-size: 14px;
+  color: var(--c-text); background: transparent; border: 0; border-radius: 99px; padding: 10px 16px; cursor: pointer;
+}
+.jb-pill-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c-neon); }
+.jb-composer.min.running .jb-pill-dot { animation: jb-pulse 1s ease-in-out infinite; }
+@keyframes jb-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .jb-composer.min.running .jb-pill-dot { animation: none; } }
+/* Barra de cámara: suavidad, velocidad, tomas y grabación. */
+.jb-cam { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.jb-cam-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 13px; }
+.jb-cam-row > b { font-family: var(--jb-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); min-width: 52px; }
+.jb-cam-range { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.jb-cam-range input[type="range"] { width: 110px; accent-color: var(--accent); }
+.jb-cam-range output { font-family: var(--jb-mono); font-size: 11px; min-width: 34px; }
+.jb-cam-range input[type="number"] { width: 58px; font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px; }
+.jb-cam-count { font-family: var(--jb-mono); font-size: 12px; color: var(--muted); }
+.jb-rec { color: var(--err); }
+.jb-canvas { position: relative; }
+.jb-rec-badge { position: absolute; top: 10px; left: 10px; font-family: var(--jb-mono); font-size: 12px; font-weight: 700; color: #fff; background: #e03131; border-radius: 99px; padding: 4px 10px; pointer-events: none; }

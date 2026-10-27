@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/jev-pixel.css">
   <link rel="stylesheet" href="/jev-lm.css">
+  <link rel="stylesheet" href="/jev-build.css">
+  <script type="importmap">{ "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }</script>
 </head>
 <body>
   <div class="app">
@@ -196,6 +198,7 @@
             <a href="#laboratorio/objetos-3d" data-lab-folder="objetos-3d">Objetos 3D</a>
             <a href="#laboratorio/jev-pixel" data-lab-folder="jev-pixel">JEV a píxel</a>
             <a href="#laboratorio/jev-habla" data-lab-folder="jev-habla">JEV habla</a>
+            <a href="#laboratorio/jev-construye" data-lab-folder="jev-construye">JEV construye</a>
           </nav>
           <div id="lab-home" class="lab-history-list" hidden>
             <a class="lab-card lab-folder-card" href="#laboratorio/motion-design"><span class="lab-badge">M</span><h1>Motion Design</h1><p class="muted">Comparar animaciones con LLMs sobre el harness del laboratorio (Remotion o el motor propio en canvas).</p></a>
@@ -205,6 +208,7 @@
             <a class="lab-card lab-folder-card" href="#laboratorio/objetos-3d"><span class="lab-badge">3D</span><h1>Objetos 3D</h1><p class="muted">Motor de objetos 3D decisional: JEV destripa un cuadro con una cuadrícula y arma el mapa de la escena (dónde está cada cosa, qué se pisa, qué está delante y detrás, dónde hay espacio libre).</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/jev-pixel"><span class="lab-badge">px</span><h1>JEV a píxel</h1><p class="muted">Cuatro experimentos para reconstruir un sujeto solo con respuestas cerradas de JEV: grilla 8×8, box() + grilla densa, super-resolución 10X–25X y segmentación a píxel con superpíxeles SLIC y random walker.</p></a>
             <a class="lab-card lab-folder-card" href="#laboratorio/jev-habla"><span class="lab-badge">Aa</span><h1>JEV habla</h1><p class="muted">JEV como modelo de lenguaje: elige la próxima palabra entre 30.000 del español con un torneo de bloques de 255 opciones, y repite en bucle para armar la oración.</p></a>
+            <a class="lab-card lab-folder-card" href="#laboratorio/jev-construye"><span class="lab-badge">▲</span><h1>JEV construye</h1><p class="muted">Un LLM planifica y JEV decide: pieza por pieza, con esferas, cilindros y cajas en 3D. El LLM pregunta “¿cómo harías el tronco?”, JEV mira cada opción dibujada y elige, y la pieza queda para la pregunta siguiente.</p></a>
           </div>
           <div id="lab-motion-folder">
           <header class="lab-head">
@@ -254,6 +258,17 @@
             </header>
             <p id="jevlm-error" class="error" role="alert" hidden></p>
             <div id="jevlm-experiment"></div>
+          </div>
+          <div id="lab-jevbuild-folder" hidden>
+            <header class="lab-head">
+              <div>
+                <p class="lab-crumbs muted small">Laboratorio / jev-construye</p>
+                <h1 class="raw-title">JEV construye</h1>
+                <p class="muted small">JEV no modela: elige. Un LLM descompone el pedido en piezas y por cada una le pregunta a JEV cómo hacerla (forma, proporción, ubicación, color) con opciones concretas. Cada opción se dibuja en 3D, JEV mira las imágenes y elige; la pieza queda en la escena y la siguiente pregunta parte de ahí.</p>
+              </div>
+            </header>
+            <p id="jevbuild-error" class="error" role="alert" hidden></p>
+            <div id="jevbuild-experiment"></div>
           </div>
           <div id="lab-context-folder" hidden>
             <header class="lab-head">
@@ -425,5 +440,6 @@
   <script src="/objects-lab.js" type="module"></script>
   <script src="/jev-pixel-lab.js" type="module"></script>
   <script src="/jev-lm-lab.js" type="module"></script>
+  <script src="/jev-build-lab.js" type="module"></script>
 </body>
 </html>
