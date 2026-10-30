@@ -1,5 +1,6 @@
 // Laboratorio · modo Automático: el agente elige los momentos del video donde conviene una animación.
-// Recibe la transcripción por segundo (ver transcript.js) y la cantidad de animaciones que pidió el humano, y devuelve:
+// Recibe la transcripción por segundo (ver transcript.js), el storyboard (cuadros repartidos en todo el video, para ver
+// qué hay en pantalla y no elegir a ciegas) y la cantidad de animaciones que pidió el humano, y devuelve:
 //   zonas { start, end, said, frames: [segundos exactos] }
 // El planificador solo elige DÓNDE: no propone qué mostrar (eso lo decide el diseñador, o el humano en el pedido de cada clip).
 // «said» es lo que se dice en la zona, copiado tal cual de la transcripción (no lo escribe el modelo).
@@ -12,6 +13,7 @@ export const MIN_PLAN_SECONDS = 1.5; // zona más corta que pide el planificador
 export const MAX_PLAN_SECONDS = 8; // zona más larga (lo normal: 2 a 6 s)
 export const MIN_PLAN_FRAMES = 2;
 export const MAX_PLAN_FRAMES = 4;
+export const MAX_PLAN_STORYBOARD = 12; // cuadros de todo el video que mira el planificador
 const MAX_SAID = 600;
 
 const num = (x, fallback = NaN) => (x === null || x === '' || !Number.isFinite(Number(x)) ? fallback : Number(x));
@@ -37,9 +39,12 @@ export function saidBetween(heads, start, end) {
   return (heads || []).filter((h) => h.text && h.t < end && h.t + 1 > start).map((h) => h.text.trim()).join(' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SAID);
 }
 
-export function planMessages({ count, video, brief = {}, transcript, minSeconds = MIN_PLAN_SECONDS, maxSeconds = MAX_PLAN_SECONDS }) {
-  const system = `Sos editor de video. Te dan la transcripción de lo que se dice en un video (con el segundo en que arranca cada tramo) y tenés que elegir EN QUÉ MOMENTOS del video va una animación de motion design. Solo recortás: elegís dónde. Qué se anima ahí lo decide después otra persona; vos no proponés ideas, títulos, objetos ni qué mostrar.
-
+export function planMessages({ count, video, brief = {}, transcript, storyboard = [], minSeconds = MIN_PLAN_SECONDS, maxSeconds = MAX_PLAN_SECONDS }) {
+  const seen = storyboard.length > 0;
+  const system = `Sos editor de video. Te dan la transcripción de lo que se dice en un video (con el segundo en que arranca cada tramo)${seen ? ' y un storyboard: cuadros repartidos de principio a fin del video, con su segundo' : ''}, y tenés que elegir EN QUÉ MOMENTOS del video va una animación de motion design. Solo recortás: elegís dónde. Qué se anima ahí lo decide después otra persona; vos no proponés ideas, títulos, objetos ni qué mostrar.
+${seen ? `
+Importante: mirá el storyboard ANTES de elegir. Entendé el video entero de principio a fin —quién aparece, el encuadre, el lugar, qué cambia— y elegí con lo que se ve, no solo con lo que se dice: preferí momentos donde la imagen deja lugar libre o donde algo cambia en pantalla, y evitá los que no suman a la historia completa. El diseñador va a animar mirando los cuadros que elijas, así que elegilos con cuidado.
+` : ''}
 Reglas:
 - Elegí EXACTAMENTE ${count} momento${count > 1 ? 's' : ''}: el humano decidió cuántas animaciones quiere. Solo devolvé menos si de verdad no hay tantos momentos que valgan la pena, y decilo en "nota".
 - Elegí los más útiles: ideas clave, nombres propios, cifras, giros ("y entonces…"), promesas, cierres o llamados a la acción. Evitá muletillas y silencios. Repartilos a lo largo del video; no los amontones.
@@ -49,14 +54,20 @@ Reglas:
 
 Respondé SOLO con un objeto JSON, sin texto antes ni después ni bloques de código:
 {"zones":[{"start":12.4,"end":16,"frames":[12.6,14.2,15.8]}],"nota":""}`;
-  const user = [
+  const text = [
     `# Video\n${video.name || 'video'} · ${r2(video.duration)} s de duración (${Math.ceil(video.duration * FPS)} cuadros a ${FPS} fps).`,
     `# Cuántas animaciones\n${count}`,
     brief.context ? `# Contexto del video\n${brief.context}` : '',
     brief.instructions ? `# Qué busca el humano (para elegir los momentos, no para proponer animaciones)\n${brief.instructions}` : '',
     `# Transcripción (segundo del video · desde qué segundo exacto se dice · lo que se dice)\n${planTranscript(transcript.heads)}`,
+    seen ? `# Storyboard\n${storyboard.length} cuadros del video entero, abajo (ST1…ST${storyboard.length}).` : '',
   ].filter(Boolean).join('\n\n');
-  return [{ role: 'system', content: system }, { role: 'user', content: user }];
+  if (!seen) return [{ role: 'system', content: system }, { role: 'user', content: text }];
+  const parts = [{ type: 'text', text }, ...storyboard.flatMap((f, k) => [
+    { type: 'text', text: `ST${k + 1} — ${mmss(f.t)} (${r2(f.t)} s)` },
+    { type: 'image_url', image_url: { url: f.url } },
+  ])];
+  return [{ role: 'system', content: system }, { role: 'user', content: parts }];
 }
 
 // Ordena y limpia la respuesta del modelo: zonas dentro del video, entre el mínimo y el máximo, sin superponerse, con 2 a 4 cuadros
@@ -102,8 +113,8 @@ export function parsePlan(text, { count, duration, minSeconds = MIN_PLAN_SECONDS
 }
 
 // Una llamada al modelo (con una sola corrección si no devolvió algo usable). llm: la de OpenRouter (streamChat).
-export async function planZones({ llm, model, signal, count, video, brief, transcript, minSeconds, maxSeconds, onRetry }) {
-  const messages = planMessages({ count, video, brief, transcript, minSeconds, maxSeconds });
+export async function planZones({ llm, model, signal, count, video, brief, transcript, storyboard = [], minSeconds, maxSeconds, onRetry }) {
+  const messages = planMessages({ count, video, brief, transcript, storyboard, minSeconds, maxSeconds });
   let cost = 0;
   let tokens = 0;
   let lastError = null;
@@ -113,7 +124,7 @@ export async function planZones({ llm, model, signal, count, video, brief, trans
     tokens += res.usage?.total_tokens || 0;
     try {
       const { zones, note } = parsePlan(res.text, { count, duration: video.duration, minSeconds, maxSeconds });
-      if (zones.length) return { zones: zones.map((z) => ({ ...z, said: saidBetween(transcript.heads, z.start, z.end) })), note, cost, tokens, model, requested: count };
+      if (zones.length) return { zones: zones.map((z) => ({ ...z, said: saidBetween(transcript.heads, z.start, z.end) })), note, cost, tokens, model, requested: count, saw: storyboard.length };
       lastError = new Error('no devolvió ninguna zona utilizable');
     } catch (err) { lastError = err; }
     messages.push({ role: 'assistant', content: res.text?.trim() ? res.text : '(respuesta vacía)' }, { role: 'user', content: `Tu respuesta no sirve: ${lastError.message}. Devolvé SOLO el objeto JSON con ${count} zona${count > 1 ? 's' : ''} válida${count > 1 ? 's' : ''} (start y end en segundos, dentro de 0–${r2(video.duration)}, de ${minSeconds} a ${maxSeconds} s cada una, sin superponerse).` });

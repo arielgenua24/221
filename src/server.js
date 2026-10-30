@@ -37,6 +37,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(ROOT, 'public');
 const RUNS = path.join(ROOT, 'runs');
 const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
+const MEDIABUNNY_DIR = path.join(ROOT, 'node_modules', 'mediabunny', 'dist', 'bundles');
 const MEDIA = path.join(RUNS, 'media'); // storyboards y videos generados (se sirven en /media/…)
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -107,7 +108,7 @@ const llm = mock ? mockLLM : (opts) => streamChat({ apiKey, ...opts });
 const pending = new Map();
 
 const TYPES = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac', '.gif': 'image/gif',
   '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
 };
@@ -530,8 +531,9 @@ const server = http.createServer(async (req, res) => {
 
   // Storyboards y videos generados: mismo origen, para que el canvas pueda dibujarlos y exportarlos.
   // /vendor/three/…: three.js desde node_modules (JEV construye lo importa con un import map).
+  // /vendor/mediabunny/…: el codificador de video de JEV construye (filmar la actuación), también por el import map.
   // /raw-files/…: las imágenes y audios de los proyectos de Raw.
-  const mount = [['/media/', MEDIA], ['/raw-files/', rawStore.filesDir], ['/story-files/', storyStore.filesDir], ['/vendor/three/', THREE_DIR]].find(([prefix]) => url.pathname.startsWith(prefix));
+  const mount = [['/media/', MEDIA], ['/raw-files/', rawStore.filesDir], ['/story-files/', storyStore.filesDir], ['/vendor/three/', THREE_DIR], ['/vendor/mediabunny/', MEDIABUNNY_DIR]].find(([prefix]) => url.pathname.startsWith(prefix));
   const dir = mount ? mount[1] : PUBLIC;
   const rel = mount ? decodeURIComponent(url.pathname.slice(mount[0].length - 1)) : url.pathname === '/' ? 'index.html' : url.pathname;
   const file = path.normalize(path.join(dir, rel));

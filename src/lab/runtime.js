@@ -48,7 +48,7 @@ function entrySource() {
   const lines = [
     "import { createRoot } from 'react-dom/client';",
     "import { Player } from '@remotion/player';",
-    "import { renderMediaOnWeb } from '@remotion/web-renderer';",
+    "import { renderMediaOnWeb, renderStillOnWeb } from '@remotion/web-renderer';",
   ];
   const entries = ALLOWED_IMPORTS.map((spec, i) => {
     lines.push(`import * as m${i} from ${JSON.stringify(spec)};`);
@@ -58,7 +58,7 @@ function entrySource() {
     'const modules = {',
     ...entries,
     '};',
-    'globalThis.LabRuntime = { modules, createRoot, Player, renderMediaOnWeb, React: m0, remotion: m2 };',
+    'globalThis.LabRuntime = { modules, createRoot, Player, renderMediaOnWeb, renderStillOnWeb, React: m0, remotion: m2 };',
   );
   return lines.join('\n');
 }

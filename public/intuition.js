@@ -17,7 +17,9 @@ const FILMSTRIP = 10;
 //   musicAvailable() } — la elección de los momentos (transcripción + agente) la hace el Laboratorio; acá se
 //   dibujan las zonas y se recortan del video los cuadros de esos segundos.
 // onMusic(music): la música de fondo cambió (tramos o volúmenes): la página se la pasa a sus reproductores.
-export function createStudio({ limits, onChange, mount = null, onError = showError, label = '✨ Intuition', auto = null, onMusic = () => {} }) {
+// storyboard: cuántos cuadros repartidos en TODO el video viajan con el pedido (y al planificador del modo Automático),
+// para que los agentes entiendan el video de principio a fin y no solo las zonas. 0 = ninguno (Intuition).
+export function createStudio({ limits, onChange, mount = null, onError = showError, label = '✨ Intuition', auto = null, onMusic = () => {}, storyboard = 0 }) {
   const lim = { maxClips: 3, maxClipSeconds: 5, minClipSeconds: 0.5, minCineSeconds: 1.2, clipFrames: 6, maxRefs: 4, aiVideo: false, videoModels: [], defaultVideoModel: 'seedance', cine: false, refilm: false, refilmModels: ['Wan 3.0 Prime', 'Seedance 2.5'], refilmResolution: '480p', ...limits };
   let video = null; // { file, url, name, duration, width, height, el }
   let loading = false;
@@ -42,6 +44,14 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
   let musicBox = null;
 
   const setLimits = (l) => Object.assign(lim, l);
+  // El storyboard se saca una vez por video (y solo si alguien lo pide).
+  async function storyboardOf() {
+    if (!storyboard || !video) return [];
+    video.storyboard ??= framesAt(video.reader, Array.from({ length: storyboard }, (_, k) => ((k + 0.5) / storyboard) * video.duration), 512, 0.7)
+      .then((frames) => frames.map((f) => ({ t: +f.t.toFixed(2), url: f.url })))
+      .catch((err) => { if (video) video.storyboard = null; throw err; });
+    return video.storyboard;
+  }
   // Cinematic Pro re-filma el clip: el modelo pide al menos 1 s de video de referencia.
   const minLen = (c) => (c.mode === 'cine' ? lim.minCineSeconds : lim.minClipSeconds);
 
@@ -213,7 +223,7 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
     musicCheck.append(musicInput, el('span', 'small', '🎵 Componer también la música de fondo (según lo que se dice y lo que se ve)'));
     if (auto.music) row.append(musicCheck);
     autoBox.append(
-      el('p', 'muted small studio-help', 'El agente lee lo que se dice en el video (transcripción por segundo) y recorta los momentos más útiles para animar: cada clip trae lo que se dice ahí y los cuadros de esos segundos. No propone qué mostrar: eso lo escribís vos en cada clip (o lo decide el diseñador). Vos decidís cuántas animaciones. Podés mover las zonas a mano después.'),
+      el('p', 'muted small studio-help', 'El agente mira el video entero (un storyboard de cuadros de principio a fin), lee lo que se dice (transcripción por segundo) y recorta los momentos más útiles para animar: cada clip trae lo que se dice ahí y los cuadros de esos segundos. No propone qué mostrar: eso lo escribís vos en cada clip (o lo decide el diseñador). Vos decidís cuántas animaciones. Podés mover las zonas a mano después.'),
       row, status,
     );
     musicBox = el('div', 'studio-music');
@@ -230,7 +240,9 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
     if (clips.length && !confirm('Esto reemplaza los clips que ya hay. ¿Seguir?')) return;
     autoBusy = true; goBtn.disabled = true; onError(''); onChange();
     try {
-      const zones = await auto.run({ count, video: { name: video.name, duration: video.duration, width: video.width, height: video.height }, setStatus });
+      if (storyboard) setStatus('Mirando el video entero (storyboard)…');
+      const board = await storyboardOf().catch(() => []);
+      const zones = await auto.run({ count, video: { name: video.name, duration: video.duration, width: video.width, height: video.height }, storyboard: board, setStatus });
       setStatus('Sacando los cuadros de esos segundos del video…');
       const made = [];
       for (const z of zones.slice(0, lim.maxClips)) {
@@ -616,8 +628,9 @@ export function createStudio({ limits, onChange, mount = null, onError = showErr
       });
     }
     const vmeta = { name: video.name, duration: video.duration, width: video.width, height: video.height };
+    const board = await storyboardOf().catch(() => []);
     return {
-      body: JSON.stringify({ text, video: vmeta, clips: snap }),
+      body: JSON.stringify({ text, video: vmeta, clips: snap, ...(board.length ? { storyboard: board } : {}) }),
       ctx: { video: { ...vmeta, url: video.url }, clips: snap, text },
     };
   }

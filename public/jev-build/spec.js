@@ -235,7 +235,7 @@ export function describeScene(scene) {
   const lines = [];
   for (const o of objects) {
     const parts = (scene.parts || []).filter((p) => p.object === o.id);
-    lines.push(`Objeto "${o.id}" (${o.label}) con origen en [${o.position.join(', ')}]:`);
+    lines.push(`Objeto "${o.id}" (${o.label}) con origen en [${o.position.join(', ')}]${o.rotation ? `, girado [${o.rotation.join(', ')}]°` : ''}:`);
     for (const p of parts) {
       const s = p.spec;
       const rep = s.repeat && s.repeat.pattern !== 'single' ? ` · ${s.repeat.count} copias en ${s.repeat.pattern}, spread [${s.repeat.spread.join(', ')}]` : '';
@@ -249,7 +249,7 @@ export function describeScene(scene) {
 export function applyPiece(scene, { object, part, spec }) {
   const objects = { ...(scene.objects || {}) };
   const prev = objects[object.id];
-  objects[object.id] = { id: object.id, label: object.label, position: spec.objectPosition || prev?.position || [0, 0, 0] };
+  objects[object.id] = { id: object.id, label: object.label, position: spec.objectPosition || prev?.position || [0, 0, 0], ...(prev?.rotation ? { rotation: prev.rotation } : {}) };
   const { objectPosition, ...pieceSpec } = spec;
   const nodes = expandPiece(pieceSpec, `${object.id}/${part.id}`);
   const parts = (scene.parts || []).filter((p) => !(p.object === object.id && p.id === part.id));
@@ -257,6 +257,16 @@ export function applyPiece(scene, { object, part, spec }) {
   if (parts.length > LIMITS.parts) throw fail(`La escena ya tiene ${LIMITS.parts} piezas.`);
   if (parts.reduce((n, p) => n + p.nodes.length, 0) > LIMITS.nodes) throw fail(`La escena superaría ${LIMITS.nodes} primitivas.`);
   return { objects, parts };
+}
+
+// Tools · mover un objeto entero (Attach / Detach): cambia su origen y su rotación (grados [X, Y, Z]); las piezas no.
+export function placeObject(scene, id, { position, rotation } = {}) {
+  const o = scene?.objects?.[id];
+  if (!o) throw fail(`El objeto "${id}" no existe.`);
+  const { rotation: _, ...next } = { ...o, position: position === undefined ? o.position : vec(position, -LIMITS.coord, LIMITS.coord, 'position') };
+  const rot = rotation === undefined ? o.rotation : vec(rotation, -360, 360, 'rotation');
+  if (rot?.some((v) => v !== 0)) next.rotation = rot;
+  return { ...scene, objects: { ...scene.objects, [id]: next } };
 }
 
 // ---------- Fase 3 · idioma por relaciones ----------

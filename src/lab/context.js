@@ -22,7 +22,8 @@ import { VIDEO_MODELS, DEFAULT_VIDEO_MODEL } from '../wavespeed.js';
 
 // ctx-v2: add-on y fullscreen a criterio del diseñador en las plantillas de ambos motores.
 // ctx-v3: guía compartida de consultas y timeouts de búsqueda recuperables.
-export const CONTEXT_HARNESS = 'ctx-v3';
+// ctx-v4: storyboard del video entero, bitácora con revisiones al 25/50/75/100 % y revisión visual de su propio render.
+export const CONTEXT_HARNESS = 'ctx-v4';
 export const MAX_VARIANTS = 4;
 export const MAX_FRAMES = 6; // los que saca el navegador por zona
 const MAX_TEMPLATE = 60000;

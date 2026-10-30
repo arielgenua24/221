@@ -11,6 +11,7 @@ import { money, secs, IDENTITY } from './lab-stats.js';
 import { createLabStore } from './lab-store.js';
 import { compositeOverlay } from './lab-composite.js';
 import { keepVideo, forgetVideo, savedLink } from './lab-download.js';
+import { MAX_VISUAL_REVIEWS, reviewFrames, reviewTurn } from './lab-review.js';
 import {
   TOOL_KEYS, TOOL_LABEL, MODE_LABEL, policySignature, approxTokens, newVariantRun, variantMetrics, configSummary, configStats, experimentStatus, differing,
 } from './context-lab-stats.js';
@@ -27,7 +28,8 @@ import {
 const $ = (id) => document.getElementById(id);
 const store = createLabStore({ key: 'lab.context.experiments.v1', prefsKey: 'lab.context.prefs.v1', db: 'lab-context' });
 const MAX_RUNTIME_FIXES = 2;
-const REASON = { initial: 'Primera ejecución', compile: 'Corrección (no compilaba)', runtime: 'Corrección (error al reproducir)', feedback: 'Revisión pedida por vos', tools: 'Usando herramientas' };
+const STORYBOARD = 10; // cuadros de todo el video que ven el planificador y las variantes
+const REASON = { initial: 'Primera ejecución', compile: 'Corrección (no compilaba)', runtime: 'Corrección (error al reproducir)', feedback: 'Revisión pedida por vos', review: 'Revisión visual (mira su propia animación)', tools: 'Usando herramientas' };
 const TOOL_EVENT = { buscar_referencias: 'Buscando referencias en Google…', generar_imagen: 'Generando una imagen…', generar_sonido: 'Generando un efecto de sonido…', generar_video: 'Generando una toma de video con IA (tarda unos minutos)…' };
 const LIMIT_KEY = { search: 'searches', images: 'images', sound: 'sounds', video: 'videos' };
 const LIMIT_LABEL = { searches: 'búsquedas', images: 'imágenes', sounds: 'sonidos', videos: 'tomas' };
@@ -131,7 +133,7 @@ const planner = createAutoPlanner({
   // Las herramientas que tendrá algún diseñador: las que el servidor ofrece y alguna variante no apagó ('required' si alguna la exige).
   getTools: () => Object.fromEntries(TOOL_KEYS.filter((k) => info?.tools?.[k] && drafts.some((d) => d.policy[k] !== 'off')).map((k) => [k, drafts.some((d) => d.policy[k] === 'required') ? 'required' : 'optional'])),
 });
-const studio = createStudio({ mount: studioBox, label: '1 · Clip y zonas', onError: error, onChange: () => refresh(), auto: planner.auto, onMusic: (m) => musicChanged(m) });
+const studio = createStudio({ mount: studioBox, label: '1 · Clip y zonas', onError: error, onChange: () => refresh(), auto: planner.auto, onMusic: (m) => musicChanged(m), storyboard: STORYBOARD });
 // La música de fondo es del video, no de una variante: suena en todos los reproductores y se guarda con el experimento
 // (solo si el marcador sigue con el video de ese experimento).
 function musicChanged(m) {
@@ -476,7 +478,7 @@ function createCard(cfg) {
   node.append(head, summary, config, status, stage, feed.node, actions, layers, feedback, metrics, evalBox, live, codeBox);
 
   const card = {
-    cfg, node, stage, frame: null, controller: null, code: '', js: '', turns: [], runtimeFixes: 0, pending: null,
+    cfg, node, stage, frame: null, controller: null, code: '', js: '', turns: [], runtimeFixes: 0, reviews: 0, reviewPicks: null, pending: null,
     assets: [], found: [], sounds: [], videos: [], queue: [], rendering: null, renderPhase: null, frameNow: 0,
     feed,
     entry: () => exp?.variants.find((v) => v.slot === cfg.id) || null,
@@ -955,7 +957,7 @@ runBtn.onclick = async () => {
         run: newVariantRun(model),
       };
     });
-    frozen = { payload: { video: parsed.video, clips: parsed.clips }, transcript: speech.get(), variants, base: { context: contextInput.value, instructions: instructionsInput.value, refs: readyRefs(baseRefs), docs: docsPanel.get() } };
+    frozen = { payload: { video: parsed.video, clips: parsed.clips, storyboard: parsed.storyboard || [] }, transcript: speech.get(), variants, base: { context: contextInput.value, instructions: instructionsInput.value, refs: readyRefs(baseRefs), docs: docsPanel.get() } };
     exp = {
       id,
       createdAt: new Date().toISOString(),
@@ -1006,6 +1008,8 @@ async function execute(card, reason, feedback) {
   card.controller?.abort();
   const controller = new AbortController();
   card.controller = controller;
+  // Cada versión que pide el humano (o la primera) tiene sus propias vueltas de revisión visual.
+  if (reason === 'initial' || reason === 'feedback') card.reviews = 0;
   run.status = 'running';
   run.error = null;
   run.runtimeError = null;
@@ -1018,9 +1022,10 @@ async function execute(card, reason, feedback) {
   const t0 = performance.now();
   let result = null;
   let failed = null;
+  let approved = null; // revisión visual: miró sus capturas y deja la versión como está
   try {
     const body = JSON.stringify({
-      model: run.model, brief: fz.brief, video: frozen.payload.video, clips: frozen.payload.clips, turns: card.turns,
+      model: run.model, brief: fz.brief, video: frozen.payload.video, clips: frozen.payload.clips, storyboard: frozen.payload.storyboard || [], turns: card.turns,
       transcript: fz.speech === false ? undefined : frozen.transcript || undefined,
       assets: card.assets, sounds: card.sounds.map(({ id, url, prompt, duration }) => ({ id, url, prompt, duration })), videos: card.videos.map(({ id, zone, prompt, source }) => ({ id, zone, prompt, source })),
       variant: fz.variant,
@@ -1044,6 +1049,7 @@ async function execute(card, reason, feedback) {
           if (reason === 'initial' && !attempt.firstPromptTokens && ev.calls === 1) attempt.firstPromptTokens = ev.promptTokens || null;
           Object.assign(attempt, counters(ev)); card.render(); return;
         case 'result': result = ev; return;
+        case 'approved': approved = ev; return;
         case 'done': Object.assign(attempt, counters(ev), { ms: ev.ms, compileErrors: ev.compileErrors ?? attempt.compileErrors }); return;
         case 'error': failed = ev.text; Object.assign(attempt, counters(ev), { ms: ev.ms ?? 0, compileErrors: ev.compileErrors ?? attempt.compileErrors }); return;
         default:
@@ -1056,6 +1062,21 @@ async function execute(card, reason, feedback) {
   if (card.controller === controller) card.controller = null;
   // Una ejecución detenida que termina tarde (se empezó otro experimento) no toca nada del nuevo.
   if (card.run() !== run) return;
+  if (!failed && approved) {
+    attempt.ok = true;
+    attempt.approved = true;
+    // El turno de revisión no dejó código nuevo: no hace falta reenviarlo en las próximas versiones.
+    if (card.turns.at(-1)?.kind === 'review') card.turns.pop();
+    run.notes = approved.notes || run.notes;
+    run.thread = [...(run.thread || []), { role: 'agent', text: approved.notes || '(aprobó su animación)', version: run.attempts.filter((a) => a.ok && !a.approved).length }];
+    card.write('\n[Miró sus capturas y aprobó su animación.]\n');
+    run.status = 'done';
+    card.pending = null;
+    await saveCode(card);
+    persist(); card.render(); refresh(); renderCompare();
+    card.flushQueue();
+    return;
+  }
   if (failed || !result) {
     attempt.ok = false;
     attempt.error = failed || 'el servidor no devolvió un componente';
@@ -1074,7 +1095,7 @@ async function execute(card, reason, feedback) {
   run.palette = result.palette ?? null;
   run.objects = result.objects ?? null;
   run.hasCode = true;
-  run.thread = [...(run.thread || []), { role: 'agent', text: result.notes || '(sin notas)', version: run.attempts.filter((a) => a.ok).length }];
+  run.thread = [...(run.thread || []), { role: 'agent', text: result.notes || '(sin notas)', version: run.attempts.filter((a) => a.ok && !a.approved).length }];
   run.status = 'checking';
   card.pending = null;
   await saveCode(card);
@@ -1177,7 +1198,9 @@ window.addEventListener('message', (e) => {
   }
   if (msg.type === 'render_error') { card.rendering = null; error(`No se pudo renderizar el video de ${card.key()}: ${msg.message}`); card.render(); return; }
   if (!run) return;
+  if (msg.type === 'snapshots') { reviewShots(card, msg); return; }
   if (msg.type === 'checked') {
+    if (msg.ok && startReview(card)) return;
     if (msg.ok) {
       run.status = 'done';
       card.runtimeFixes = 0;
@@ -1187,6 +1210,41 @@ window.addEventListener('message', (e) => {
   }
   if (msg.type === 'error') runtimeFailure(card, msg.message);
 });
+
+// Revisión visual: la versión ya se reproduce; el iframe fotografía cada zona y el agente mira lo que hizo.
+// Devuelve false si ya no quedan vueltas (o la versión no viene de una ejecución recién terminada).
+function startReview(card) {
+  const run = card.run();
+  if (!run || run.status !== 'checking' || card.reviews >= MAX_VISUAL_REVIEWS || !card.frame) return false;
+  card.reviewPicks = reviewFrames(zonesOf(), fps());
+  if (!card.reviewPicks.length) return false;
+  card.runtimeFixes = 0;
+  card.pending = `Sacando capturas de su animación para que la revise (${card.reviews + 1}/${MAX_VISUAL_REVIEWS})…`;
+  card.render();
+  card.frame.contentWindow.postMessage({ type: 'snapshot', frames: card.reviewPicks.map((p) => p.frame), side: 640 }, '*');
+  return true;
+}
+
+function reviewShots(card, msg) {
+  const run = card.run();
+  const picks = card.reviewPicks;
+  card.reviewPicks = null;
+  if (!run || run.status !== 'checking' || !picks) return;
+  const shots = (msg.shots || []).filter((x) => x.url);
+  if (!shots.length) {
+    // Sin capturas no hay qué revisar: la versión queda como está (se reproduce bien).
+    card.write(`\n[No se pudieron sacar capturas para la revisión visual${msg.error ? `: ${msg.error}` : ''}]\n`);
+    run.status = 'done';
+    card.pending = null;
+    persist(); card.render(); refresh(); renderCompare();
+    card.flushQueue();
+    return;
+  }
+  card.reviews += 1;
+  card.write(`\n[Revisión visual ${card.reviews}/${MAX_VISUAL_REVIEWS}: le muestro ${shots.length} captura${shots.length === 1 ? '' : 's'} de su animación]\n`);
+  card.turns.push(reviewTurn(card.turns, card.code, picks, shots, card.reviews));
+  execute(card, 'review');
+}
 
 function runtimeFailure(card, message) {
   const run = card.run();

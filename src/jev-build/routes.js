@@ -1,7 +1,8 @@
 import { decide, mockDecide, JEV_MODEL } from '../objects3d/jev.js';
 import { parseStep, parseIdeas, parseBlueprint, parseRelBlueprint, parsePatch, describeScene, LIMITS, FAST } from '../../public/jev-build/spec.js';
-import { SYSTEM, turnMessage, choiceQuestion, verifyQuestion, LETTERS, IDEAS_SYSTEM, ideasMessage, BLUEPRINT_SYSTEM, blueprintMessage, pickQuestion, MANY_LETTERS, REL_BLUEPRINT_SYSTEM, FIX_SYSTEM, fixMessage, IMAGE_LABELS, SKETCH_HINT, sketchVerifyQuestion } from './prompts.js';
-import { mockPlan, mockIdeas, mockBlueprint, mockRelBlueprint, mockFix } from './mock.js';
+import { parseLooks } from '../../public/jev-build/look.js';
+import { SYSTEM, turnMessage, choiceQuestion, verifyQuestion, LETTERS, IDEAS_SYSTEM, ideasMessage, BLUEPRINT_SYSTEM, blueprintMessage, pickQuestion, MANY_LETTERS, REL_BLUEPRINT_SYSTEM, FIX_SYSTEM, fixMessage, IMAGE_LABELS, SKETCH_HINT, sketchVerifyQuestion, LOOK_SYSTEM, lookMessage, lookPickQuestion } from './prompts.js';
+import { mockPlan, mockIdeas, mockBlueprint, mockRelBlueprint, mockFix, mockLooks } from './mock.js';
 
 // Laboratorio · JEV construye. El bucle lo maneja el navegador, que dibuja la escena y las vistas previas:
 //   GET  /api/lab/jev-build/config
@@ -16,6 +17,10 @@ import { mockPlan, mockIdeas, mockBlueprint, mockRelBlueprint, mockFix } from '.
 //   POST /api/lab/jev-build/pick      { prompt, sceneText, picks: [{ key, context, question, options, images? }], render? }
 //        → { answers: { key: { index, choice, confidence, probabilities } }, verify?, calls, ms }
 //        Varias elecciones de JEV en una sola llamada (se parten si superan ${MAX_IMAGES_PER_CALL} imágenes).
+//        Una elección con topic: 'light' es de iluminación (JEV juzga luz y clima, no construcción).
+// Luces (pestaña Luces):
+//   POST /api/lab/jev-build/looks { prompt, scene, subject, current, render?, see? } → { looks, ms }
+//        El LLM propone de 2 a 4 looks (look.js); el navegador los dibuja y JEV elige con /pick (topic: 'light').
 export const LLM_MODEL = process.env.JEV_BUILD_MODEL || 'deepseek/deepseek-v4.1-flash-1017';
 const MAX_BODY = 16 * 1024 * 1024;
 const IMAGE = /^data:image\/(png|jpeg);base64,/;
@@ -159,7 +164,7 @@ export function parsePickBody(body = {}) {
     if (options.length < 1 || options.length > MANY_LETTERS.length || options.some((o) => !o)) throw fail(`La elección "${key}" necesita de 1 a ${MANY_LETTERS.length} opciones con texto.`);
     const images = Array.isArray(p.images) ? p.images : [];
     if (images.length && (images.length !== options.length || !images.every((img) => IMAGE.test(String(img))))) throw fail(`Las imágenes de "${key}" tienen que ser una por opción, PNG o JPEG.`);
-    return { key, context: String(p.context ?? '').slice(0, 600), question: str(p.question, LIMITS.question, `la pregunta de "${key}"`), options, images };
+    return { key, context: String(p.context ?? '').slice(0, 600), question: str(p.question, LIMITS.question, `la pregunta de "${key}"`), options, images, ...(p.topic === 'light' ? { topic: 'light' } : {}) };
   });
   const render = typeof body.render === 'string' && IMAGE.test(body.render) ? body.render : null;
   if (!parsed.length && !render) throw fail('No hay nada que preguntarle a JEV.');
@@ -199,7 +204,7 @@ export function parseFixes(raw, scene) {
   return { ok: !fixes.length, fixes, note };
 }
 
-export function createJevBuildRoutes({ mock, apiKey, llm, readBody, sendJson, badRequest, decideImpl, planImpl, ideasImpl, blueprintImpl, fixImpl, modalitiesImpl }) {
+export function createJevBuildRoutes({ mock, apiKey, llm, readBody, sendJson, badRequest, decideImpl, planImpl, ideasImpl, blueprintImpl, fixImpl, looksImpl, modalitiesImpl }) {
   const ask = decideImpl || (mock ? mockDecide : (opts) => decide({ apiKey, ...opts }));
   const available = !!(mock || decideImpl || (apiKey && llm));
   const imageInput = modalitiesImpl || (mock ? async () => true : createModalities());
@@ -365,7 +370,7 @@ export function createJevBuildRoutes({ mock, apiKey, llm, readBody, sendJson, ba
       const questions = {};
       for (const p of group) {
         p.images.forEach((img, i) => { state[`${p.key}_${MANY_LETTERS[i]}`] = img; });
-        questions[p.key] = pickQuestion({ ...p, question: p.question + (sketch ? SKETCH_HINT : ''), withImages: p.images.length > 0 });
+        questions[p.key] = (p.topic === 'light' ? lookPickQuestion : pickQuestion)({ ...p, question: p.question + (sketch ? SKETCH_HINT : ''), withImages: p.images.length > 0 });
       }
       return { state, questions };
     });
@@ -402,6 +407,23 @@ export function createJevBuildRoutes({ mock, apiKey, llm, readBody, sendJson, ba
     },
   );
 
+  // Luces: el LLM propone looks (con la foto del plano si la puede ver); JEV elige después con /pick.
+  const looks = endpoint(
+    (body) => {
+      const { prompt, scene, model, render, see } = parsePlanBody(body);
+      const clip = (v, max, fallback) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : fallback);
+      return { prompt, scene, model, render, see, subject: clip(body.subject, 300, 'toda la escena'), current: clip(body.current, 3000, 'Luz base del motor.') };
+    },
+    async ({ prompt, scene, model, render, see, subject, current }, signal) => {
+      // La foto es el plano del director con la luz de ahora (no la vista de construcción).
+      const images = see && render && (await imageInput(model)) ? [{ kind: 'shot', url: render }] : [];
+      const sees = images.length > 0;
+      if (looksImpl || mock) return { looks: parseLooks(await (looksImpl || mockLooks)({ prompt, scene, current })), sees };
+      const r = await llmJson({ system: LOOK_SYSTEM, message: lookMessage({ prompt, sceneText: describeScene(scene), subject, current }), parse: parseLooks, maxTokens: 2500, model, images, signal });
+      return { model, looks: r.value, sees, usage: r.usage, attempts: r.attempts, hedges: r.hedges };
+    },
+  );
+
   return (req, res, url) => {
     if (!url.pathname.startsWith('/api/lab/jev-build/')) return false;
     const route = url.pathname.slice('/api/lab/jev-build/'.length);
@@ -415,6 +437,7 @@ export function createJevBuildRoutes({ mock, apiKey, llm, readBody, sendJson, ba
     if (req.method === 'POST' && route === 'blueprint') { blueprint(req, res); return true; }
     if (req.method === 'POST' && route === 'pick') { pick(req, res); return true; }
     if (req.method === 'POST' && route === 'fix') { fix(req, res); return true; }
+    if (req.method === 'POST' && route === 'looks') { looks(req, res); return true; }
     return false;
   };
 }

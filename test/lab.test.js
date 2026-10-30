@@ -69,7 +69,7 @@ test('el harness incluye las Remotion Agent Skills, el contrato de capa y las he
   assert.match(all, /buscar_referencias/);
   assert.match(all, /generar_imagen/);
   assert.doesNotMatch(none, /buscar_referencias|generar_imagen/);
-  assert.match(harnessVersion({ search: true, images: true }), new RegExp(`^v8 · remotion ${REMOTION_VERSION.replace(/\./g, '\\.')}.*búsqueda obligatoria\\+imagen propia`));
+  assert.match(harnessVersion({ search: true, images: true }), new RegExp(`^v9 · remotion ${REMOTION_VERSION.replace(/\./g, '\\.')}.*búsqueda obligatoria\\+imagen propia`));
   assert.match(all, /REQUIRED/);
   assert.match(all, /COLOR PALETTE/);
   assert.match(all, /REFERENCE OBJECTS/);

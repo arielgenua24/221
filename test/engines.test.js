@@ -140,8 +140,8 @@ test('render headless: tmix promedia los subcuadros; con video de base, la capa 
 test('harness: Remotion sigue igual; con canvas cambian el contrato, el bloque de código y el reproductor', () => {
   const tools = { search: true, images: true };
   assert.equal(labSystem(tools), labSystem(tools, 'remotion'));
-  assert.match(harnessVersion(tools), /^v8 · remotion .* · skills [0-9a-f]{7} · /);
-  assert.match(harnessVersion(tools, 'canvas'), /^v8 · canvas v1 · /);
+  assert.match(harnessVersion(tools), /^v9 · remotion .* · skills [0-9a-f]{7} · /);
+  assert.match(harnessVersion(tools, 'canvas'), /^v9 · canvas v1 · /);
   const sys = labSystem(tools, 'canvas');
   assert.match(sys, /const SCENES/);
   assert.match(sys, /```js/);

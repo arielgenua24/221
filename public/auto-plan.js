@@ -21,17 +21,18 @@ export function createAutoPlanner({ getSpeech, getBrief, getModel, getInfo, getT
       if (info && info.speech && !info.speech.available) return { ok: false, why: 'El modo Automático necesita transcribir el habla con Whisper: falta WAVESPEED_API_KEY en .env.' };
       return { ok: true };
     },
-    async run({ count, video, setStatus }) {
+    // storyboard: cuadros de todo el video ([{ t, url }]): el agente elige mirando lo que hay en pantalla, no solo lo que se dice.
+    async run({ count, video, storyboard = [], setStatus }) {
       const model = getModel();
       if (!MODEL_ID.test(model)) throw new Error('Elegí primero el modelo: el agente que elige los momentos usa el mismo del experimento.');
       const speech = getSpeech();
       setStatus('Transcribiendo lo que se dice en el video…');
       const t = await speech.ensure();
       heads = t.heads;
-      setStatus(`El agente (${model}) está eligiendo ${count} momento${count > 1 ? 's' : ''}…`);
+      setStatus(`El agente (${model}) ${storyboard.length ? `mira ${storyboard.length} cuadros del video y ` : ''}está eligiendo ${count} momento${count > 1 ? 's' : ''}…`);
       const res = await fetch('/api/lab/plan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, count, video, brief: getBrief(), tools: getTools(), transcript: { heads: t.heads.map(({ t: s, text, at }) => ({ t: s, text, at })), language: t.language, duration: t.duration } }),
+        body: JSON.stringify({ model, count, video, brief: getBrief(), tools: getTools(), storyboard, transcript: { heads: t.heads.map(({ t: s, text, at }) => ({ t: s, text, at })), language: t.language, duration: t.duration } }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `error ${res.status}`);

@@ -27,6 +27,8 @@
 //   ← { type: 'checked', ok, message? }                        prueba de humo: se recorrieron las zonas
 //   → { type: 'play' | 'pause' | 'seek', frame? }              controles sincronizados desde afuera
 //   ← { type: 'frame', frame, playing }                        posición actual (para el cursor compartido)
+//   → { type: 'snapshot', frames: [n], side? }                  revisión visual: capturas de esos cuadros (video + capa, como se ve)
+//   ← { type: 'snapshots', shots: [{ frame, url }], error? }    JPEG en data URL
 (() => {
   const post = (msg) => parent.postMessage({ source: 'lab-frame', ...msg }, '*');
   // Con origen opaco, leer localStorage/sessionStorage tira SecurityError (y el renderizador web los consulta):
@@ -205,6 +207,63 @@
     }
   }
 
+  // Revisión visual: capturas de cuadros puntuales tal cual se ven, para que el agente mire lo que hizo.
+  // La capa se renderiza sola (transparente, con el renderizador web) y se compone acá sobre el cuadro del video original.
+  let snapVideo = null;
+  async function videoFrame(t) {
+    if (!snapVideo) { snapVideo = document.createElement('video'); snapVideo.muted = true; snapVideo.playsInline = true; snapVideo.preload = 'auto'; }
+    if (snapVideo.src !== videoUrl) {
+      snapVideo.src = videoUrl;
+      await new Promise((r) => { snapVideo.onloadeddata = r; snapVideo.onerror = r; setTimeout(r, 5000); });
+    }
+    snapVideo.currentTime = Math.max(0, Math.min(t, (snapVideo.duration || t + 1) - 0.05));
+    await new Promise((r) => { snapVideo.onseeked = r; setTimeout(r, 3000); });
+    return snapVideo.readyState >= 2 ? snapVideo : null;
+  }
+  async function snapshot(frames, side = 640) {
+    if (!current || !R.renderStillOnWeb) { post({ type: 'snapshots', shots: [], error: 'este navegador no puede sacar capturas con Remotion' }); return; }
+    const { width: W, height: H } = meta0;
+    const k = Math.min(1, side / Math.max(W, H));
+    const out = document.createElement('canvas');
+    out.width = Math.round(W * k); out.height = Math.round(H * k);
+    const o = out.getContext('2d');
+    const composition = { id: 'laboratorio', component: Root, durationInFrames: current.durationInFrames, fps: current.fps, width: W, height: H };
+    const shots = [];
+    renderingNow = true;
+    // El navegador congela requestAnimationFrame en un iframe fuera de pantalla y el renderizador lo espera:
+    // mientras se sacan las capturas, corre con un temporizador (la revisión no tiene por qué estar a la vista).
+    const raf = [window.requestAnimationFrame, window.cancelAnimationFrame];
+    window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
+    window.cancelAnimationFrame = (id) => clearTimeout(id);
+    // Lo mismo con img.decode(): fuera de pantalla puede no resolverse nunca; alcanza con que la imagen haya cargado.
+    const decode = HTMLImageElement.prototype.decode;
+    HTMLImageElement.prototype.decode = function () {
+      if (this.complete && this.naturalWidth) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        this.addEventListener('load', () => resolve(), { once: true });
+        this.addEventListener('error', () => reject(new Error('no cargó la imagen')), { once: true });
+      });
+    };
+    try {
+      for (const f of frames) {
+        const still = await R.renderStillOnWeb({ composition, frame: Math.max(0, Math.min(current.durationInFrames - 1, f)), inputProps: { ...current.inputProps, noVideo: true }, delayRenderTimeoutInMilliseconds: 15000 });
+        const layer = await still.canvas();
+        o.fillStyle = '#000'; o.fillRect(0, 0, out.width, out.height);
+        const v = await videoFrame(f / current.fps);
+        if (v) o.drawImage(v, 0, 0, out.width, out.height);
+        o.drawImage(layer, 0, 0, out.width, out.height);
+        shots.push({ frame: f, url: out.toDataURL('image/jpeg', 0.8) });
+      }
+      post({ type: 'snapshots', shots });
+    } catch (err) {
+      post({ type: 'snapshots', shots, error: describe(err) });
+    } finally {
+      [window.requestAnimationFrame, window.cancelAnimationFrame] = raf;
+      HTMLImageElement.prototype.decode = decode;
+      setTimeout(() => { renderingNow = false; }, 1000);
+    }
+  }
+
   // La música vive aparte de lo montado: sus blob: se reusan mientras el mismo archivo siga en la mezcla.
   let musicUrls = new Map(); // Blob → blob:
   function musicProp(music) {
@@ -309,6 +368,7 @@
       return;
     }
     if (msg.type === 'render') { renderVideo(); return; }
+    if (msg.type === 'snapshot') { snapshot((msg.frames || []).map(Number).filter(Number.isFinite), msg.side); return; }
     if (!player) return;
     if (msg.type === 'play') player.play();
     if (msg.type === 'pause') player.pause();

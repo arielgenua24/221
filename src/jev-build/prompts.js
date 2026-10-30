@@ -1,6 +1,7 @@
 // JEV construye · lo que lee el LLM planificador (DeepSeek por OpenRouter).
 // El LLM no dibuja: en cada turno piensa UNA pieza y le pregunta a JEV cómo hacerla, con opciones concretas.
 import { PRIMITIVES, LIMITS, FAST, ANCHORS, SIDES } from '../../public/jev-build/spec.js';
+import { LOOK, ROLES, KINDS } from '../../public/jev-build/look.js';
 
 // Geometría compartida por la fase 1 y la fase 2.
 const GEOMETRY = `- Metros. Y hacia arriba, el suelo en Y = 0. La cámara mira desde +Z hacia el origen: izquierda de la imagen = X negativo, derecha = X positivo, adelante (cerca de la cámara) = Z positivo.
@@ -198,6 +199,7 @@ export function fixMessage({ prompt, sceneText, issues }) {
 export const IMAGE_LABELS = {
   sketch: 'BOCETO DEL USUARIO: un dibujo hecho a mano. Es la referencia principal: construí lo que dibujó (qué objetos hay, cuántos, dónde está cada uno respecto de los otros, sus proporciones y sus colores si los tiene). Es un boceto: interpretá la intención, no copies los trazos. El texto del pedido lo complementa.',
   scene: 'La escena 3D tal como está ahora (cámara desde adelante y arriba). Usala para ver qué falta o qué quedó mal.',
+  shot: 'El plano del director tal como se ve ahora desde su cámara, con la luz actual. Usala para ver dónde pega la luz y qué cambiar.',
 };
 export const SKETCH_HINT = ' Lo pedido viene de un boceto del usuario (imagen `boceto`): preferí lo que más se parece a lo que dibujó.';
 
@@ -206,3 +208,51 @@ export const sketchVerifyQuestion = (prompt) => ({
   instructions: `La imagen \`vista\` es una escena 3D armada con primitivas simples. La imagen \`boceto\` es un dibujo a mano del usuario${prompt ? ` (pedido: "${prompt}")` : ''}. ¿La escena reproduce lo que dibujó: los mismos objetos, en posiciones parecidas y con formas parecidas?`,
   criteria: { true: 'Sí, la escena reproduce el boceto.', false: 'No, la escena no se parece al boceto.' },
 });
+
+// ---------- Luces (pestaña Luces de la caja) ----------
+// El LLM propone looks de iluminación en ángulos respecto de la cámara del director (look.js); acá se dibuja cada
+// uno desde el encuadre del director y JEV elige mirando.
+export const LOOK_SYSTEM = `Sos el director de fotografía de "JEV construye". La escena es 3D, hecha con primitivas simples (como bloques). El director te pide una iluminación con palabras ("dramática", "como Pixar", "atardecer", "que el héroe brille") y vos proponés ${LOOK.minOptions} a ${LOOK.maxOptions} LOOKS distintos de verdad entre sí. Tu compañero JEV ve una foto de cada look desde el encuadre del director y elige uno. No decidís vos: das opciones buenas y contrastadas.
+
+Pensá como un iluminador de cine y videojuegos (Pixar, PlayStation Studios):
+- key (principal): modela la forma; de qué lado viene decide el carácter (de costado = dramático, cerca de la cámara = plano y amable).
+- fill (relleno): suaviza la sombra de la principal; la relación principal/relleno decide el contraste (4:1 dramático, 2:1 suave). Sin relleno = noir.
+- rim (contraluz): desde atrás, dibuja el borde y separa al sujeto del fondo.
+- hero (luz héroe): sigue al sujeto a todos lados para que siempre se lea bien (follow). Muy de videojuegos.
+- practical: una luz motivada de la escena (una lámpara, un fuego, una ventana).
+- Colores: cálido contra frío cuenta historias (principal ámbar #ffb36b + relleno azul #6b8cff). El cielo (sky) es la luz ambiente; bajo = más contraste. haze = bruma que da profundidad.
+
+LENGUAJE (por look):
+{"label": "Rembrandt cálido", "idea": "por qué funciona, 1 frase",
+ "exposure": 0.3-2.5 (1 normal), "background": "#rrggbb" (el fondo/cielo), "haze": 0-1,
+ "sky": {"color": "#rrggbb", "ground": "#rrggbb", "intensity": 0-3},
+ "lights": [ 1 a ${LOOK.maxLights} de:
+   {"role": ${ROLES.map((r) => `"${r}"`).join(' | ')}, "kind": ${KINDS.map((k) => `"${k}"`).join(' | ')}, "color": "#rrggbb", "intensity": 0-10 (lo que llega al sujeto; 3 = sol normal),
+    "from": {"side": -180 a 180, "height": -30 a 90, "distance": metros 1-30}, "softness": 0-1, "shadow": true|false, "follow": true|false} ]}
+- "from" es respecto de la CÁMARA del director mirando al sujeto: side 0 = desde la cámara, 90 = desde la derecha del cuadro, -90 = desde la izquierda, 180 = desde atrás del sujeto (contraluz). height 0 = a la altura del sujeto, 45 = arriba en diagonal, 90 = cenital.
+- "sun" = luz de sol (solo importa la dirección, ilumina toda la escena); "spot" = un foco que apunta al sujeto.
+- softness: 0 = sombra dura y borde marcado, 1 = muy suave.
+- Sombra solo en 1 o 2 luces (la principal casi siempre).
+
+Si hay un look actual y el pedido es un ajuste ("más dramática", "bajá el relleno", "más cálida"), todas las opciones parten del look actual con distintas dosis del ajuste. Si el pedido es nuevo, proponé enfoques distintos.
+
+FORMATO: respondé SOLO un objeto JSON, sin texto alrededor: {"looks": [ ... ]}`;
+
+export function lookMessage({ prompt, sceneText, subject, current }) {
+  return [
+    `PEDIDO DEL DIRECTOR: ${prompt}`, '',
+    `SUJETO: ${subject}`, '',
+    'ESCENA:', sceneText, '',
+    'LUCES AHORA:', current, '',
+    `Devolvé ${LOOK.minOptions} a ${LOOK.maxOptions} looks.`,
+  ].join('\n');
+}
+
+export function lookPickQuestion({ key, context, question, options, withImages }) {
+  const criteria = {};
+  options.forEach((label, i) => {
+    criteria[MANY_LETTERS[i]] = withImages ? `${label}. Así se ve: imagen \`${key}_${MANY_LETTERS[i]}\`.` : label;
+  });
+  const look = withImages ? ' Cada imagen es el mismo plano con otra iluminación: mirá dónde pega la luz, dónde cae la sombra, el clima y los colores.' : '';
+  return { type: 'choice', instructions: `Estás iluminando una escena 3D como un director de fotografía. Lo que pide el director está en \`pedido\`. ${context} ${question}${look} Elegí la que mejor logra lo pedido.`, criteria };
+}

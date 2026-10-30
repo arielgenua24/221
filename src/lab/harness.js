@@ -22,12 +22,13 @@ export const SKILLS_COMMIT = '32b241b97f4e0e4ab61fe9a41b05e6e64503f8c5';
 // v6: Nano Banana 2.1 por WaveSpeed, con text-to-image y edit según las referencias.
 // v7: el diseñador decide por escena entre add-on y fullscreen, con cualquiera de los motores.
 // v8: consultas enfocadas con inspiración libre; los timeouts de búsqueda son recuperables.
+// v9: storyboard del video entero, bitácora con revisiones al 25/50/75/100 % y revisión visual de su propio render.
 // El motor (src/engines/) entra en la firma: "remotion 4.x · skills …" o "canvas v1".
 const toolsLabel = (t) => [t?.search && 'búsqueda obligatoria', t?.images && 'imagen propia'].filter(Boolean).join('+') || 'sin herramientas';
 // Las Remotion Agent Skills solo existen para el motor Remotion.
 export const usesSkills = (engine) => getEngine(engine).id === 'remotion';
 export const engineTag = (engine) => (usesSkills(engine) ? `remotion ${REMOTION_VERSION} · skills ${SKILLS_COMMIT.slice(0, 7)}` : getEngine(engine).version);
-export const harnessVersion = (tools, engine) => `v8 · ${engineTag(engine)} · ${toolsLabel(tools)}`;
+export const harnessVersion = (tools, engine) => `v9 · ${engineTag(engine)} · ${toolsLabel(tools)}`;
 
 // Las reglas de las skills que aplican a una capa de motion design sobre un video.
 // (Studio, render por CLI, audio, mapas, 3D y captions quedan afuera: acá no existen.)
@@ -67,7 +68,7 @@ export const remotionIntro = () => `You are a Motion Designer working with Remot
 
 export function remotionContract({ sounds = false } = {}) {
   return `# Environment contract (required)
-- Write one TSX file. Return the component in ONE \`\`\`tsx block at the end of your response. Before the block, write brief notes (at most 8 lines) describing your idea, including these three exact labels:
+- Write one TSX file. Return the component in ONE \`\`\`tsx block at the end of your response. Before the block, write your \`## Work log\` (see "How you work") and then brief notes (at most 8 lines) describing your idea, including these three exact labels:
   - \`References used: S2, S5, R1\` with the image IDs actually used for inspiration (or \`References used: none\`).
   - \`Palette: #1B1B1F, #F4F1EA, #FF5A1F\` with the hex colors taken from the references and used in the code (or \`Palette: none\`).
   - \`Objects: ball, leaves\` with the reference objects or motifs included in the animation (or \`Objects: none\`).
@@ -114,8 +115,14 @@ function planNote(plan, enabled) {
   if (!uses.length) return '';
   return ` Editor’s plan for this zone (a suggestion: change it if your idea calls for it): ${uses.map((u) => `${TOOL_LABEL[u.tool]}${u.note ? ` «${u.note}»` : ''} around ${fmtS(u.at)}`).join(' · ')}.`;
 }
-export function briefContent({ brief, video, clips, transcript = null }, { frames, enabled } = {}) {
+// El storyboard: cuadros repartidos en TODO el video (no solo en las zonas), para que el agente entienda el arco de principio a fin.
+// Se apaga junto con los cuadros de las zonas (Context Lab con 0 cuadros por zona: el agente trabaja a ciegas).
+const storyboardOf = (storyboard, frames) => (frames === 0 ? [] : storyboard || []);
+
+export function briefContent({ brief, video, clips, transcript = null, storyboard = [] }, { frames, enabled } = {}) {
   const zones = zonesFor(clips);
+  const board = storyboardOf(storyboard, frames);
+  const inZone = (t) => clips.find((c) => t >= c.start - 0.01 && t <= c.end + 0.01)?.id;
   const text = [
     `# Video\n${video.name} · ${video.width}×${video.height} · ${fmtS(video.duration)} · ${Math.ceil(video.duration * FPS)} frames at ${FPS} fps.`,
     `# Context\n${brief.context || '(no context provided)'}`,
@@ -123,10 +130,15 @@ export function briefContent({ brief, video, clips, transcript = null }, { frame
     docsBlock(brief.docs),
     `# Marked zones (animate ONLY here)\n${clips.map((c, i) => `- ${c.id}: ${fmtS(c.start)} → ${fmtS(c.end)} = frames ${zones[i].from} → ${zones[i].from + zones[i].durationInFrames} (${zones[i].durationInFrames} frames).${c.prompt ? ` Request: ${c.prompt}` : ''}${c.notes ? ` Style: ${c.notes}` : ''}${planNote(c.toolPlan, enabled)}${c.refs.length ? ` (${c.refs.length} zone reference${c.refs.length > 1 ? 's' : ''} below)` : ''}`).join('\n')}`,
     transcriptBlock(transcript, zones),
+    board.length ? `# Storyboard of the whole video\n${board.length} frames spread from the first second to the last (ST1…ST${board.length}, below): study them FIRST to understand the full arc and where each zone sits in it.\n${board.map((f, k) => `- ST${k + 1} at ${fmtS(f.t)}${inZone(f.t) ? ` (inside ${inZone(f.t)})` : ''}`).join('\n')}` : '',
     brief.refs.length ? `# General visual references\n${brief.refs.length} image${brief.refs.length > 1 ? 's' : ''} below: the user’s desired style.` : '',
-    frames === 0 ? 'No video frames are provided: work from each zone’s description. Write the component.' : 'Below are frames from each zone (with their timestamps) and the references. Write the component.',
+    frames === 0 ? 'No video frames are provided: work from each zone’s description. Write your work log, then the component.' : `Below are ${board.length ? 'the storyboard, then ' : ''}frames from each zone (with their timestamps) and the references. Write your work log, then the component.`,
   ].filter(Boolean).join('\n\n');
   const parts = [{ type: 'text', text }];
+  board.forEach((f, k) => parts.push(
+    { type: 'text', text: `ST${k + 1} — storyboard, ${fmtS(f.t)} into the video (frame ${toFrames(f.t)})${inZone(f.t) ? `, inside ${inZone(f.t)}` : ''}` },
+    { type: 'image_url', image_url: { url: f.url } },
+  ));
   clips.forEach((c) => {
     pickFrames(c.frames, frames).forEach(({ f, k }) => parts.push(
       { type: 'text', text: `${c.id}-${k + 1} — frame from ${c.id} at ${fmtS(c.start + f.t)} in the video (${fmtS(f.t)} into the zone, frame ${toFrames(c.start + f.t)})` },
@@ -145,8 +157,9 @@ export function briefContent({ brief, video, clips, transcript = null }, { frame
 }
 
 // Las imágenes del pedido por id (las herramientas las usan como entrada de generar_imagen).
-export function imageRegistry({ brief, clips }) {
+export function imageRegistry({ brief, clips, storyboard = [] }) {
   const reg = new Map();
+  storyboard.forEach((f, k) => reg.set(`ST${k + 1}`, f.url));
   clips.forEach((c) => {
     c.frames.forEach((f, k) => reg.set(`${c.id}-${k + 1}`, f.url));
     c.refs.forEach((r, k) => r.frames.forEach((url, j) => reg.set(`${c.id}-R${k + 1}${r.frames.length > 1 ? `.${j + 1}` : ''}`, url)));
@@ -168,4 +181,14 @@ export const compileFix = (message, engine) => `The code does not compile or vio
 export const truncatedFix = (engine) => `Your previous answer was cut off by the output token limit before the code block was finished. Write a more compact version (same idea, less repetition) and return the COMPLETE file in one ${fenceOf(engine)} block, with at most two short lines of notes before it.`;
 export const continueCode = (engine) => `Your answer was cut off by the output token limit in the middle of the ${fenceOf(engine)} block. Continue EXACTLY from the last character you wrote: do not repeat anything, do not reopen the block, no notes. Write only the rest of the file and close the block with \`\`\` when it ends.`;
 export const runtimeFix = (message, engine) => `The component compiles but fails during playback in ${wordsOf(engine).player}: ${message}\nFix the cause and return the COMPLETE file in one ${fenceOf(engine)} block.`;
+// Revisión visual: el agente ve capturas de SU animación renderizada sobre el video y la aprueba o la corrige.
+export const REVIEW_APPROVED = 'APPROVED';
+export const reviewFix = (round, rounds, engine) => `Visual review ${round}/${rounds}. Below are screenshots of YOUR current animation rendered over the real video (V1, V2…, each with its zone and time). This is exactly what the viewer will see: look at every one carefully before answering.
+Check, against the storyboard and what is said at each moment:
+- Does anything cover faces, hands, the product, or on-screen information that must stay readable?
+- Is all text legible (size, contrast against the actual picture, line length) and inside the frame with safe margins?
+- Does each piece sit in the free space and relate to what is on screen, or does it ignore the picture?
+- Coherence, consistency (palette, type, motion language, positions across zones), and, above all, good taste: is anything generic, cluttered, misaligned, or cheap?
+Update your \`## Work log\` with a line \`Checkpoint (visual review ${round}): …\` describing what you saw.
+If it is right as it is, answer with the log and a last line that says only ${REVIEW_APPROVED}, with NO code block. Otherwise fix what you saw and return the COMPLETE file in one ${fenceOf(engine)} block.`;
 export const feedbackFix = (feedback, engine) => `User feedback on your animation: ${feedback}\nApply the changes and return the COMPLETE file in one ${fenceOf(engine)} block.`;

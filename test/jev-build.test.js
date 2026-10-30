@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseStep, mergePatches, expandPiece, applyPiece, describeScene, parseIdeas, parseBlueprint, combos, parseRelPatch, parseRelBlueprint, resolveObject, checkScene } from '../public/jev-build/spec.js';
+import { parseStep, mergePatches, expandPiece, applyPiece, describeScene, parseIdeas, parseBlueprint, combos, parseRelPatch, parseRelBlueprint, resolveObject, checkScene, placeObject } from '../public/jev-build/spec.js';
 import { createJevBuildRoutes, extractJson, parseChooseBody, groupPicks, hedged, parseModel, LLM_MODEL, mustReason, parseFixes, createModalities, parseSketch, MAX_IMAGES_PER_CALL } from '../src/jev-build/routes.js';
 import { mockPlan, mockIdeas, mockBlueprint, mockRelBlueprint } from '../src/jev-build/mock.js';
 import { choiceQuestion, REL_BLUEPRINT_SYSTEM } from '../src/jev-build/prompts.js';
@@ -458,4 +458,41 @@ test('parseIdeas: con más objetos que el tope construye los primeros y avisa', 
   assert.equal(ideas.objects.length, 10);
   assert.equal(ideas.dropped, 3);
   assert.equal(parseIdeas({ objects: objects.slice(0, 3) }).dropped, undefined);
+});
+
+test('placeObject mueve y gira el objeto entero (Tools · Attach) y una pieza nueva no lo pierde', () => {
+  const s = parseStep(STEP);
+  const spec = mergePatches(s.base, s.questions[0].options[0].patch);
+  let scene = applyPiece({ objects: {}, parts: [] }, { object: s.object, part: s.part, spec });
+  scene = placeObject(scene, 'pino', { position: [1, 2.5, -3], rotation: [0, 45, 10] });
+  assert.deepEqual(scene.objects.pino.position, [1, 2.5, -3]);
+  assert.deepEqual(scene.objects.pino.rotation, [0, 45, 10]);
+  assert.deepEqual(scene.parts[0].spec.position, spec.position);
+  assert.match(describeScene(scene), /girado \[0, 45, 10\]/);
+  scene = applyPiece(scene, { object: s.object, part: { id: 'copa', label: 'la copa' }, spec: { primitive: 'cone', size: [1, 2, 1], position: [0, 4, 0] } });
+  assert.deepEqual(scene.objects.pino.rotation, [0, 45, 10]);
+  assert.equal(placeObject(scene, 'pino', { rotation: [0, 0, 0] }).objects.pino.rotation, undefined);
+  assert.throws(() => placeObject(scene, 'nada', { position: [0, 0, 0] }), /no existe/);
+});
+
+test('looks: el LLM propone looks con la foto del plano y JEV los elige como iluminación', async () => {
+  const sent = [];
+  const look = (label) => ({ label, lights: [{ role: 'key', from: { side: -45, height: 40, distance: 5 } }] });
+  const call = harness({
+    llm: async ({ messages }) => { sent.push(messages); return { text: JSON.stringify({ looks: [look('cálido'), look('noir')] }), usage: {} }; },
+    modalitiesImpl: async () => true,
+    decideImpl: async ({ questions }) => { sent.push(questions); return { answers: { luz: { choice: 'B', probabilities: { A: 0.3, B: 0.7 } } } }; },
+  });
+  const img = 'data:image/jpeg;base64,AA';
+  const out = await call('looks', { prompt: 'dramática', scene: { objects: {}, parts: [] }, subject: 'un avión de papel', current: 'Luz base.', render: img, see: true });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.looks.map((l) => l.label), ['cálido', 'noir']);
+  assert.equal(out.body.sees, true);
+  const user = sent[0][1].content;
+  assert.match(user[0].text, /SUJETO: un avión de papel/);
+  assert.match(user[0].text, /plano del director/);
+  assert.equal(user[1].image_url.url, img);
+  const pick = await call('pick', { prompt: 'dramática', picks: [{ key: 'luz', topic: 'light', question: '¿Cuál?', options: ['cálido', 'noir'], images: [img, img] }] });
+  assert.equal(pick.body.answers.luz.choice, 'noir');
+  assert.match(sent[1].luz.instructions, /director de fotografía/);
 });

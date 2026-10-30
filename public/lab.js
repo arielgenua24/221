@@ -11,6 +11,7 @@ import { newRun, runMetrics, modelStats, experimentStatus, money, secs, IDENTITY
 import * as store from './lab-store.js';
 import { compositeOverlay } from './lab-composite.js';
 import { keepVideo, forgetVideo, savedLink } from './lab-download.js';
+import { MAX_VISUAL_REVIEWS, reviewFrames, reviewTurn } from './lab-review.js';
 
 // Pestaña Laboratorio · Motion Design.
 // Dos modelos hacen el mismo trabajo (mismo video, zonas, contexto, referencias e instrucciones) con el mismo harness
@@ -20,8 +21,9 @@ import { keepVideo, forgetVideo, savedLink } from './lab-download.js';
 
 const $ = (id) => document.getElementById(id);
 const MAX_RUNTIME_FIXES = 2; // correcciones automáticas seguidas por errores al reproducir
+const STORYBOARD = 10; // cuadros de todo el video que ven el planificador y los agentes
 const SIDES = ['A', 'B'];
-const REASON = { initial: 'Primera ejecución', compile: 'Corrección (no compilaba)', runtime: 'Corrección (error al reproducir)', feedback: 'Revisión pedida por vos', tools: 'Usando herramientas' };
+const REASON = { initial: 'Primera ejecución', compile: 'Corrección (no compilaba)', runtime: 'Corrección (error al reproducir)', feedback: 'Revisión pedida por vos', review: 'Revisión visual (mira su propia animación)', tools: 'Usando herramientas' };
 // El código v1 renderizaba el video él mismo (antes de que el entorno lo pusiera debajo): no se puede escalar aparte.
 const isLegacy = (code) => /\bvideoSrc\b/.test(code || '');
 
@@ -116,6 +118,7 @@ const studio = createStudio({
   onChange: () => refresh(),
   auto: planner.auto,
   onMusic: (m) => musicChanged(m),
+  storyboard: STORYBOARD,
 });
 
 // La música de fondo es del video, no de un agente: suena en los dos reproductores y se guarda con el experimento
@@ -208,7 +211,7 @@ function createSide(key) {
   node.append(head, price, reasoningRow, reasoningHint, resultOf, refsBar, stage, status, feed.node, actions, feedback, adjust, cuts, legacyNote, metrics, evalBox, live, codeBox);
 
   const side = {
-    key, node, model, stage, frame: null, controller: null, code: '', js: '', turns: [], runtimeFixes: 0, pending: null,
+    key, node, model, stage, frame: null, controller: null, code: '', js: '', turns: [], runtimeFixes: 0, reviews: 0, reviewPicks: null, pending: null,
     assets: [], // imágenes que generó: { id, url, prompt }
     found: [], // búsquedas: { query, results: [{ id, title, source, link, thumb }] }
     dragging: false,
@@ -723,7 +726,7 @@ runBtn.onclick = async () => {
     const parsed = JSON.parse(body);
     const v = studio.current();
     const briefData = { context: contextInput.value.trim(), instructions: instructionsInput.value.trim(), refs: briefRefs.filter((r) => r.status === 'ready').map((r) => ({ name: r.name, url: r.url })), docs: docsPanel.get().map(({ name, text }) => ({ name, text })) };
-    frozen = { brief: briefData, payload: { video: parsed.video, clips: parsed.clips }, transcript: speech.get(), engine: engineSel.value || 'remotion' };
+    frozen = { brief: briefData, payload: { video: parsed.video, clips: parsed.clips, storyboard: parsed.storyboard || [] }, transcript: speech.get(), engine: engineSel.value || 'remotion' };
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     const count = store.listExperiments().length + 1;
     exp = {
@@ -781,6 +784,8 @@ async function execute(side, reason, feedback) {
   side.controller?.abort();
   const controller = new AbortController();
   side.controller = controller;
+  // Cada versión que pide el humano (o la primera) tiene sus propias vueltas de revisión visual.
+  if (reason === 'initial' || reason === 'feedback') side.reviews = 0;
   run.status = 'running';
   run.error = null;
   run.runtimeError = null;
@@ -796,8 +801,9 @@ async function execute(side, reason, feedback) {
   const t0 = performance.now();
   let result = null;
   let failed = null;
+  let approved = null; // revisión visual: miró sus capturas y deja la versión como está
   try {
-    const body = JSON.stringify({ model: run.model, brief: frozen.brief, video: frozen.payload.video, clips: frozen.payload.clips, transcript: frozen.transcript || undefined, reasoning: run.reasoning || undefined, turns: side.turns, assets: side.assets, engine: frozen.engine || 'remotion' });
+    const body = JSON.stringify({ model: run.model, brief: frozen.brief, video: frozen.payload.video, clips: frozen.payload.clips, storyboard: frozen.payload.storyboard || [], transcript: frozen.transcript || undefined, reasoning: run.reasoning || undefined, turns: side.turns, assets: side.assets, engine: frozen.engine || 'remotion' });
     await streamEvents('/api/lab/run', body, controller.signal, (ev) => {
       side.feed.handle(ev); // buscar / imagen: el registro de herramientas se arma solo
       switch (ev.type) {
@@ -816,6 +822,7 @@ async function execute(side, reason, feedback) {
         case 'asset': side.assets.push({ id: ev.id, url: ev.url, prompt: ev.prompt }); side.render(); return;
         case 'usage': Object.assign(attempt, counters(ev)); side.render(); return;
         case 'result': result = ev; return;
+        case 'approved': approved = ev; return;
         case 'done': Object.assign(attempt, counters(ev), { ms: ev.ms, compileErrors: ev.compileErrors ?? attempt.compileErrors }); return;
         case 'error': failed = ev.text; Object.assign(attempt, counters(ev), { ms: ev.ms ?? 0, compileErrors: ev.compileErrors ?? attempt.compileErrors }); return;
         default:
@@ -826,6 +833,21 @@ async function execute(side, reason, feedback) {
   }
   if (!attempt.ms) attempt.ms = Math.round(performance.now() - t0);
   if (side.controller === controller) side.controller = null;
+  if (!failed && approved) {
+    attempt.ok = true;
+    attempt.approved = true;
+    // El turno de revisión no dejó código nuevo: no hace falta reenviarlo en las próximas versiones.
+    if (side.turns.at(-1)?.kind === 'review') side.turns.pop();
+    run.notes = approved.notes || run.notes;
+    run.thread = [...(run.thread || []), { role: 'agent', text: approved.notes || '(aprobó su animación)', version: run.attempts.filter((a) => a.ok && !a.approved).length }];
+    side.write('\n[Miró sus capturas y aprobó su animación.]\n');
+    run.status = 'done';
+    side.pending = null;
+    await saveCode(side);
+    persist(); side.render(); refresh(); renderCompare();
+    side.flushQueue();
+    return;
+  }
   if (failed || !result) {
     attempt.ok = false;
     attempt.error = failed || 'el servidor no devolvió un componente';
@@ -845,7 +867,7 @@ async function execute(side, reason, feedback) {
   run.objects = result.objects ?? null;
   run.hasCode = true;
   // Lo que respondió el agente queda en la conversación de feedback, como una versión más.
-  run.thread = [...(run.thread || []), { role: 'agent', text: result.notes || '(sin notas)', version: run.attempts.filter((a) => a.ok).length }];
+  run.thread = [...(run.thread || []), { role: 'agent', text: result.notes || '(sin notas)', version: run.attempts.filter((a) => a.ok && !a.approved).length }];
   run.status = 'checking';
   side.pending = null;
   await saveCode(side);
@@ -943,7 +965,9 @@ window.addEventListener('message', (e) => {
   }
   if (msg.type === 'render_error') { side.rendering = null; error(`No se pudo renderizar el video de ${side.key}: ${msg.message}`); side.render(); return; }
   if (!run) return;
+  if (msg.type === 'snapshots') { reviewShots(side, msg); return; }
   if (msg.type === 'checked') {
+    if (msg.ok && startReview(side)) return;
     if (msg.ok) {
       run.status = 'done';
       side.runtimeFixes = 0;
@@ -962,6 +986,41 @@ function saveVideo(side, blob, ext) {
 }
 
 // Un error al reproducir: se corrige solo (hasta MAX_RUNTIME_FIXES seguidas) y si no, queda el botón.
+// Revisión visual: la versión ya se reproduce; el iframe fotografía cada zona y el agente mira lo que hizo.
+// Devuelve false si ya no quedan vueltas (o la versión no viene de una ejecución recién terminada).
+function startReview(side) {
+  const run = side.run();
+  if (!run || run.status !== 'checking' || side.reviews >= MAX_VISUAL_REVIEWS || !side.frame) return false;
+  side.reviewPicks = reviewFrames(zonesOf(), fps());
+  if (!side.reviewPicks.length) return false;
+  side.runtimeFixes = 0;
+  side.pending = `Sacando capturas de su animación para que la revise (${side.reviews + 1}/${MAX_VISUAL_REVIEWS})…`;
+  side.render();
+  side.frame.contentWindow.postMessage({ type: 'snapshot', frames: side.reviewPicks.map((p) => p.frame), side: 640 }, '*');
+  return true;
+}
+
+function reviewShots(side, msg) {
+  const run = side.run();
+  const picks = side.reviewPicks;
+  side.reviewPicks = null;
+  if (!run || run.status !== 'checking' || !picks) return;
+  const shots = (msg.shots || []).filter((x) => x.url);
+  if (!shots.length) {
+    // Sin capturas no hay qué revisar: la versión queda como está (se reproduce bien).
+    side.write(`\n[No se pudieron sacar capturas para la revisión visual${msg.error ? `: ${msg.error}` : ''}]\n`);
+    run.status = 'done';
+    side.pending = null;
+    persist(); side.render(); refresh(); renderCompare();
+    side.flushQueue();
+    return;
+  }
+  side.reviews += 1;
+  side.write(`\n[Revisión visual ${side.reviews}/${MAX_VISUAL_REVIEWS}: le muestro ${shots.length} captura${shots.length === 1 ? '' : 's'} de su animación]\n`);
+  side.turns.push(reviewTurn(side.turns, side.code, picks, shots, side.reviews));
+  execute(side, 'review');
+}
+
 function runtimeFailure(side, message) {
   const run = side.run();
   if (!run || run.status === 'running') return;

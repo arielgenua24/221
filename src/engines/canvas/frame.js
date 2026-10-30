@@ -1,6 +1,7 @@
 // Motor canvas · dentro del iframe aislado: el reproductor propio (sin React ni Remotion).
 // Habla EXACTAMENTE el mismo protocolo que el iframe de Remotion (src/lab/frame.js), así las páginas no distinguen motores:
 //   ← boot · → load · ← loaded | error { phase } · ← checked · → transform | layers | segments | music · → play | pause | seek
+//   → snapshot { frames, side? } · ← snapshots { shots: [{ frame, url }], error? } (revisión visual: video + capa, como se ve)
 //   ← frame { frame, playing } · → render · ← render_progress | rendered { blob, ext, muted } | render_error
 // Capas: video original → tomas de IA (Context Lab) → <canvas> con la animación del agente (transformación del humano encima).
 // El reloj es el <video> de base; la animación se dibuja con CanvasKit.drawAt(t): función pura del tiempo.
@@ -307,6 +308,46 @@
     smokeTest(zones);
   }
 
+  // ---------- Revisión visual: capturas de cuadros puntuales, tal cual se ven ----------
+  async function snapshot(frames, side = 640) {
+    const { width: W, height: H } = cur.meta;
+    const full = document.createElement('canvas');
+    full.width = W; full.height = H;
+    const o = full.getContext('2d');
+    const k = Math.min(1, side / Math.max(W, H));
+    const out = document.createElement('canvas');
+    out.width = Math.round(W * k); out.height = Math.round(H * k);
+    const back = video.currentTime;
+    const shots = [];
+    video.pause();
+    try {
+      for (const f of frames) {
+        const t = Math.max(0, Math.min(cur.total - 1, f)) / cur.fps;
+        video.currentTime = t;
+        await new Promise((r) => { const done = () => { video.removeEventListener('seeked', done); r(); }; video.addEventListener('seeked', done); setTimeout(done, 3000); });
+        o.fillStyle = '#000'; o.fillRect(0, 0, W, H);
+        o.drawImage(video, 0, 0, W, H);
+        const fr = frameOf(t);
+        for (const l of cur.aiLayers) {
+          if (l.hidden || !l.el || l.kind === 'video' || fr < l.from || fr >= l.from + Math.max(1, l.durationInFrames)) continue;
+          o.save(); applyPlaced(o, l.transform, W, H); K.HELPERS.drawFit(o, l.el, 0, 0, W, H, 'cover'); o.restore();
+        }
+        const T = layerTime(t);
+        if (!cur.motionHidden && T !== null && !broken) {
+          K.drawAt(cur.layer, g, T);
+          o.save(); applyPlaced(o, cur.transform, W, H); o.drawImage(canvas, 0, 0, W, H); o.restore();
+        }
+        out.getContext('2d').drawImage(full, 0, 0, out.width, out.height);
+        shots.push({ frame: f, url: out.toDataURL('image/jpeg', 0.8) });
+      }
+      post({ type: 'snapshots', shots });
+    } catch (err) {
+      post({ type: 'snapshots', shots, error: describe(err) });
+    } finally {
+      video.currentTime = back;
+    }
+  }
+
   // ---------- Renderizar a un archivo ----------
   // 1) Cuadro a cuadro con WebCodecs (mediabunny, window.CanvasMedia): se decodifica cada cuadro del video, se compone
   //    con las tomas de IA y la animación en su t exacto, y se codifica. Determinista, no depende de que la pestaña
@@ -566,6 +607,7 @@
     }
     if (msg.type === 'segments') { cur.segments = msg.segments; paint(); return; }
     if (msg.type === 'render') { renderVideo(); return; }
+    if (msg.type === 'snapshot') { snapshot((msg.frames || []).map(Number).filter(Number.isFinite), msg.side); return; }
     if (msg.type === 'play') play();
     if (msg.type === 'pause') pause();
     if (msg.type === 'seek') seek(Math.round(msg.frame || 0));

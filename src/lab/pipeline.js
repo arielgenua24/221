@@ -4,7 +4,7 @@
 // y las imágenes que el agente ya generó.
 import { parseIntuitionBody } from '../intuition-pipeline.js';
 import { nearestRatio } from '../wavespeed.js';
-import { labSystem, harnessVersion, briefContent, imageRegistry, zonesFor, compileFix, truncatedFix, continueCode, runtimeFix, feedbackFix, searchFirst, generateFirst, useImages, soundFirst, videoFirst, useSounds } from './harness.js';
+import { labSystem, harnessVersion, briefContent, imageRegistry, zonesFor, compileFix, truncatedFix, continueCode, runtimeFix, feedbackFix, reviewFix, REVIEW_APPROVED, searchFirst, generateFirst, useImages, soundFirst, videoFirst, useSounds } from './harness.js';
 import { FPS } from './runtime.js';
 import { getEngine, engineId } from '../engines/index.js';
 import { toolDefs, MAX_GENERATED_IMAGES, LIMIT_CAPS } from './tools.js';
@@ -18,7 +18,10 @@ export const MAX_TOOL_ROUNDS = 4; // vueltas de herramientas por ejecución (des
 export const MAX_BRIEF_REFS = 6;
 export const MAX_ZONE_SECONDS = 11; // el Laboratorio permite zonas más largas que Intuition (5 s)
 export const MAX_LAB_CLIPS = 6; // y más zonas que Intuition (3): en modo Automático el humano elige cuántas animaciones quiere
+export const MAX_STORYBOARD = 12; // cuadros repartidos en todo el video que ve el agente antes de las zonas
+export const MAX_REVIEW_SHOTS = 12; // capturas de su propia animación que ve en cada revisión visual
 const MAX_TURNS = 12;
+const MAX_NOTES = 6000; // la bitácora con sus revisiones + las notas
 const MODEL_ID = /^[\w.-]+\/[\w.:@-]+$/;
 const isImage = (u) => typeof u === 'string' && u.startsWith('data:image/');
 const isAudio = (u) => typeof u === 'string' && u.startsWith('data:audio/');
@@ -38,12 +41,23 @@ export function parseLabBody(body) {
     .slice(0, MAX_BRIEF_REFS)
     .map((r) => ({ name: str(r.name, 120), url: r.url }));
   const brief = { context: str(body?.brief?.context, 6000), instructions: str(body?.brief?.instructions, 6000), refs, docs: parseDocs(body?.brief?.docs) };
-  // Turnos previos de ESTE agente: su código y lo que se le pidió después (error de ejecución o revisión del humano).
-  const turns = (Array.isArray(body?.turns) ? body.turns : []).slice(-MAX_TURNS).map((t) => ({
-    code: str(t?.code, 80000),
-    kind: ['runtime', 'feedback', 'compile'].includes(t?.kind) ? t.kind : 'feedback',
-    message: str(t?.message, 2000),
-  })).filter((t) => t.code && t.message);
+  // Storyboard: cuadros de todo el video (el navegador los saca al armar el pedido), en orden.
+  const duration = video.duration;
+  const storyboard = (Array.isArray(body?.storyboard) ? body.storyboard : [])
+    .filter((f) => isImage(f?.url) && Number.isFinite(Number(f?.t)))
+    .map((f) => ({ t: Math.round(Math.min(Math.max(0, Number(f.t)), duration) * 100) / 100, url: f.url }))
+    .sort((a, b) => a.t - b.t)
+    .slice(0, MAX_STORYBOARD);
+  // Turnos previos de ESTE agente: su código y lo que se le pidió después (error de ejecución, revisión del humano
+  // o revisión visual: capturas de su animación renderizada; solo las del último turno llegan al modelo).
+  const turns = (Array.isArray(body?.turns) ? body.turns : []).slice(-MAX_TURNS).map((t) => {
+    const kind = ['runtime', 'feedback', 'compile', 'review'].includes(t?.kind) ? t.kind : 'feedback';
+    const shots = kind === 'review' ? (Array.isArray(t?.shots) ? t.shots : []).filter((x) => isImage(x?.url)).slice(0, MAX_REVIEW_SHOTS).map((x) => ({ label: str(x.label, 160), url: x.url })) : [];
+    return {
+      code: str(t?.code, 80000), kind, message: str(t?.message, 2000),
+      ...(kind === 'review' ? { round: Math.max(1, Math.round(Number(t?.round)) || 1), rounds: Math.max(1, Math.round(Number(t?.rounds)) || 1), shots } : {}),
+    };
+  }).filter((t) => t.code && t.message);
   // Imágenes que este agente ya generó en ejecuciones anteriores (siguen disponibles y cuentan para el máximo).
   const assets = (Array.isArray(body?.assets) ? body.assets : [])
     .filter((a) => /^gen\d$/.test(a?.id) && isImage(a?.url))
@@ -64,7 +78,7 @@ export function parseLabBody(body) {
   const reasoning = EFFORTS.includes(body?.reasoning) ? body.reasoning : null;
   // El motor de animación (src/engines/): cómo se escribe, compila y reproduce la capa. Sin motor, Remotion (como siempre).
   const engine = engineId(body?.engine);
-  return { model, video, clips, brief, turns, assets, sounds, videos, transcript, reasoning, engine };
+  return { model, video, clips, brief, storyboard, turns, assets, sounds, videos, transcript, reasoning, engine };
 }
 
 // Modos por herramienta: 'off' | 'optional' | 'required'.
@@ -89,6 +103,15 @@ export function stitch(before, after) {
 }
 
 const FIX = { compile: compileFix, runtime: runtimeFix, feedback: feedbackFix };
+// El pedido que sigue a un turno. La revisión visual lleva las capturas (solo en el último turno: las viejas ya no sirven y pesan).
+function turnContent(t, engine, last) {
+  if (t.kind !== 'review') return FIX[t.kind](t.message, engine);
+  const text = reviewFix(t.round, t.rounds, engine);
+  if (!last || !t.shots.length) return `${text}\n(The screenshots of this round are no longer attached.)`;
+  return [{ type: 'text', text }, ...t.shots.flatMap((x, k) => [{ type: 'text', text: `V${k + 1} — ${x.label}` }, { type: 'image_url', image_url: { url: x.url } }])];
+}
+// ¿Aprobó su propia animación en la revisión visual? (la palabra sola en una línea y ningún bloque de código)
+export const approvedReview = (text) => !/```/.test(String(text || '')) && new RegExp(`^\\W*${REVIEW_APPROVED}\\W*$`, 'm').test(String(text || ''));
 const FORCE_SEARCH = { type: 'function', function: { name: 'buscar_referencias' } };
 
 // Las líneas "Paleta: #…" y "Objetos: …" de las notas. hex en mayúsculas, sin repetir; null si no escribió la línea.
@@ -123,7 +146,7 @@ export function usedReferences(notes, registry) {
 // reasoning: nivel pedido (config.reasoning, o input.reasoning en Motion Design). reasoningMeta: lo que acepta el modelo según
 // el catálogo (reasoning.js); con eso se pide el nivel más cercano que soporta.
 export async function runLabAgent({ input, emit, llm, signal, tools = null, config = {} }) {
-  const { model, video, clips, brief, turns, assets, transcript = null } = input;
+  const { model, video, clips, brief, turns, assets, transcript = null, storyboard = [] } = input;
   const sounds = input.sounds || [];
   const videos = input.videos || [];
   const startedAt = Date.now();
@@ -139,7 +162,7 @@ export async function runLabAgent({ input, emit, llm, signal, tools = null, conf
   const totals = { cost: 0, llmCost: 0, toolCost: 0, tokens: 0, promptTokens: 0, completionTokens: 0, calls: 0, searches: 0, images: 0, sounds: 0, videos: 0 };
   const ctx = {
     emit, signal,
-    registry: imageRegistry({ brief, clips }),
+    registry: imageRegistry({ brief, clips, storyboard: config.frames === 0 ? [] : storyboard }),
     sounds: new Map(sounds.map((a) => [a.id, a.url])),
     zones: zonesFor(clips),
     fps: FPS,
@@ -158,7 +181,7 @@ export async function runLabAgent({ input, emit, llm, signal, tools = null, conf
   ];
   const assetNote = previous.length ? [{ role: 'user', content: previous }] : [];
   const system = config.system || labSystem(available, engine.id);
-  const firstUser = briefContent({ brief, video, clips, transcript }, { frames: config.frames, enabled });
+  const firstUser = briefContent({ brief, video, clips, transcript, storyboard }, { frames: config.frames, enabled });
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: firstUser },
@@ -166,7 +189,7 @@ export async function runLabAgent({ input, emit, llm, signal, tools = null, conf
       { role: 'assistant', content: `\`\`\`${engine.fence}\n${t.code}\n\`\`\`` },
       // Las imágenes generadas se recuerdan justo antes del último pedido.
       ...(i === turns.length - 1 ? assetNote : []),
-      { role: 'user', content: FIX[t.kind](t.message, engine.id) },
+      { role: 'user', content: turnContent(t, engine.id, i === turns.length - 1) },
     ]),
   ];
   // Cuánto contexto recibe el agente de entrada (para comparar variantes: tokens ≈ caracteres / 4).
@@ -197,7 +220,9 @@ export async function runLabAgent({ input, emit, llm, signal, tools = null, conf
   let compileErrors = 0;
   let toolRounds = 0;
   let toolsOff = false; // el modelo no soporta tool calling en OpenRouter: sigue sin herramientas
-  const designing = (turns.at(-1)?.kind || 'initial') !== 'runtime';
+  const lastKind = turns.at(-1)?.kind || 'initial';
+  // Corregir un error técnico o revisar sus capturas no es diseñar de nuevo: no se le exigen otra vez las herramientas.
+  const designing = !['runtime', 'review'].includes(lastKind);
   // Una herramienta obligatoria se exige al diseñar (primera ejecución y revisiones del humano);
   // al corregir un error técnico no hace falta volver a usarla. Imagen, sonido y video: solo si todavía no hay ninguno.
   const required = (k) => enabled[k] && policy[k] === 'required' && designing;
@@ -295,6 +320,13 @@ export async function runLabAgent({ input, emit, llm, signal, tools = null, conf
       res = { ...more, text: stitch(res.text, more.text) };
     }
 
+    // Revisión visual: miró sus capturas y le parece bien así. Queda la versión que ya se reproduce (no se recompila).
+    if (lastKind === 'review' && approvedReview(res.text)) {
+      emit({ type: 'approved', notes: res.text.trim().slice(0, MAX_NOTES) });
+      emit({ type: 'done', ...totals, ms: Date.now() - startedAt, compileErrors, toolRounds, toolsOff, harness, engine: engine.id, approved: true });
+      return;
+    }
+
     const canNudge = !toolsOff && toolRounds < maxToolRounds;
     const nudge = (notice, ask) => {
       emit({ type: 'notice', text: notice });
@@ -356,7 +388,7 @@ export async function runLabAgent({ input, emit, llm, signal, tools = null, conf
       const { js } = await engine.compile(code, { width: video.width, height: video.height, duration: video.duration, fps: FPS, zones: ctx.zones, images: genIds, sounds: sfxIds });
       // Las notas son lo que el modelo escribió antes del bloque de código.
       const cut = res.text.search(new RegExp(`\`\`\`[a-z]*[ \\t]*\\r?\\n[\\s\\S]*?${engine.marker.source}`, 'i'));
-      const notes = (cut > 0 ? res.text.slice(0, cut) : '').trim().slice(0, 1500);
+      const notes = (cut > 0 ? res.text.slice(0, cut) : '').trim().slice(0, MAX_NOTES);
       emit({ type: 'result', engine: engine.id, code, js, notes, usedRefs: usedReferences(notes, ctx.registry), ...paletteAndObjects(notes) });
       emit({
         type: 'done', ...totals, ms: Date.now() - startedAt, compileErrors, toolRounds, toolsOff, harness, engine: engine.id,

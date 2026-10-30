@@ -7,7 +7,7 @@ export const canvasIntro = () => 'You are a Motion Designer working with our Can
 
 export function canvasContract() {
   return `# Environment contract (required)
-- Write a single plain JavaScript file: no import/export, React, or external libraries. Return it in ONE \`\`\`js block at the end of your response. Before the block, write brief notes (at most 8 lines) describing your idea, including these three exact labels:
+- Write a single plain JavaScript file: no import/export, React, or external libraries. Return it in ONE \`\`\`js block at the end of your response. Before the block, write your \`## Work log\` (see "How you work") and then brief notes (at most 8 lines) describing your idea, including these three exact labels:
   - \`References used: S2, S5, R1\` with the image IDs you actually used for inspiration (or \`References used: none\`).
   - \`Palette: #1B1B1F, #F4F1EA, #FF5A1F\` with the hex colors used in your code (or \`Palette: none\`).
   - \`Objects: ball, leaves\` with the reference objects or motifs included in the animation (or \`Objects: none\`).

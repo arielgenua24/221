@@ -177,6 +177,17 @@ const toolCall = (name, args) => ({ id: `demo_${name}_${Date.now()}`, type: 'fun
 export async function mockLabLLM({ model, messages, tools, toolChoice, onDelta, onReasoning, signal }) {
   const cheap = /flash|mini|luna|haiku|glm|deepseek|spark/.test(model);
   const usage = (n) => ({ prompt_tokens: n, completion_tokens: 120, total_tokens: n + 120, cost: n * 2e-6 });
+  // Revisión visual: el demo mira sus capturas y aprueba (los baratos corrigen una vez antes de aprobar).
+  const last = messages.at(-1)?.content;
+  const reviewText = Array.isArray(last) ? last[0]?.text || '' : typeof last === 'string' ? last : '';
+  const reviewRound = Number(/^Visual review (\d+)\//.exec(reviewText)?.[1]);
+  if (reviewRound && (!cheap || reviewRound > 1)) {
+    const shots = Array.isArray(last) ? last.filter((p) => p.type === 'image_url').length : 0;
+    const text = `## Work log\n1. [x] (demo) Animación de cada zona\nCheckpoint (visual review ${reviewRound}): (demo · ${model}) miré ${shots} captura${shots === 1 ? '' : 's'}: no tapa caras, se lee bien, mantiene la paleta.\nAPPROVED`;
+    await sleep(200, signal);
+    onDelta?.(text);
+    return { text, usage: usage(15000) };
+  }
   // Herramientas (solo los modelos "caros" del demo, y una sola vez cada una).
   const can = (name) => tools?.some((t) => t.function.name === name);
   const used = (name) => messages.some((m) => m.tool_calls?.some((c) => c.function.name === name));
@@ -216,7 +227,8 @@ export async function mockLabLLM({ model, messages, tools, toolChoice, onDelta, 
   // El modelo barato se equivoca la primera vez (usa Math.random) y lo corrige al recibir el error.
   if (cheap && !corrected) code = canvas ? code.replace('const out = 1', 'const out = Math.random() * 0 + 1') : code.replace('const frame = useCurrentFrame();', 'const frame = useCurrentFrame() + Math.random() * 0;');
   const searched = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => /^S1 — /.test(p.text || '')));
-  const notes = `${isFix
+  const log = `## Work log\n1. [x] (demo) Mirar el storyboard y los cuadros de cada zona\n2. [x] (demo) Una pieza por zona en el espacio libre\nCheckpoint 50%: coherence ok · consistency ok · taste ok\nCheckpoint 100%: coherence ok · consistency ok · taste ok\n\n`;
+  const notes = `${log}${isFix || reviewRound
     ? `(demo · ${model}) Corrijo lo que me marcaron y mantengo la idea.`
     : `(demo · ${model}) Idea: ${code !== LOWER_THIRD ? 'título cinético palabra por palabra con una línea de acento' : 'placa editorial con índice, entra con máscara y sale limpia'} en cada zona, en el espacio negativo.`}
 Referencias usadas: ${searched ? 'S1, S3' : 'ninguna'}

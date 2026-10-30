@@ -7,7 +7,7 @@
 //   POST /api/lab/context/preview → el prompt de sistema final de una variante (con skills y herramientas expandidas)
 //   POST /api/lab/context/run     → NDJSON: una ejecución de una variante
 // Habla del video (los dos laboratorios; ver transcript.js):
-//   POST /api/lab/plan → modo Automático: { model, count, video, brief, transcript } → { zones: [{ start, end, said, frames }], cost, note } (said: lo que se dice, de la transcripción)
+//   POST /api/lab/plan → modo Automático: { model, count, video, brief, transcript, storyboard?: [{ t, url }] } → { zones: [{ start, end, said, frames }], cost, note } (said: lo que se dice, de la transcripción)
 //   POST /api/lab/music → música de fondo: { model, video, brief, transcript, frames: [{ t, url }] } → { cues: [{ id, start, end, mood,
 //        prompt, volume, seconds, loop, url }], tone, note, cost } (ver music.js: el modelo planea, ElevenLabs genera cada tramo)
 //   POST /api/lab/transcribe?duration=<s>&language=<auto|es|en…> → el cuerpo es el archivo de video tal cual (video/*);
@@ -23,7 +23,7 @@ import { getEngine, engineList, DEFAULT_ENGINE } from '../engines/index.js';
 import { frameDocument } from '../engines/frame-doc.js';
 import { reasoningMeta } from './reasoning.js';
 import { MAX_DOCS, MAX_DOC_CHARS, MAX_DOCS_CHARS } from './docs.js';
-import { planZones, heuristicPlan, MIN_PLAN_SECONDS, MAX_PLAN_SECONDS, MAX_PLAN_FRAMES } from './plan.js';
+import { planZones, heuristicPlan, MIN_PLAN_SECONDS, MAX_PLAN_SECONDS, MAX_PLAN_FRAMES, MAX_PLAN_STORYBOARD } from './plan.js';
 import { planMusic, generateMusic, MUSIC_MODEL, MUSIC_COST_PER_SECOND, MUSIC_MAX_SECONDS, MAX_MUSIC_CUES, MAX_MUSIC_FRAMES } from './music.js';
 import { parseTranscript, transcribeVideo, MAX_VIDEO_BYTES, WHISPER_MODEL, WHISPER_COST_PER_SECOND, MAX_TRANSCRIBE_SECONDS } from './transcript.js';
 
@@ -95,7 +95,7 @@ export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, wav
   // Modo Automático: el agente elige los momentos (zonas + segundos de los cuadros) a partir de la transcripción.
   async function plan(req, res) {
     let body;
-    try { body = await readBody(req, 4 * 1024 * 1024); } catch (err) { return badRequest(res, err.message); }
+    try { body = await readBody(req, 12 * 1024 * 1024); } catch (err) { return badRequest(res, err.message); }
     const model = String(body?.model || '').trim().slice(0, 120);
     if (!/^[\w.-]+\/[\w.:@-]+$/.test(model)) return badRequest(res, 'Elegí un modelo válido (ID de OpenRouter) para que elija los momentos.');
     const count = Math.round(Number(body?.count));
@@ -106,12 +106,18 @@ export function createLabRoutes({ mock, llm, readBody, sendJson, badRequest, wav
     if (!transcript) return badRequest(res, 'Falta la transcripción del habla: sin ella no hay de dónde elegir los momentos.');
     const brief = { context: String(body?.brief?.context || '').slice(0, 3000).trim(), instructions: String(body?.brief?.instructions || '').slice(0, 3000).trim() };
     const maxSeconds = Math.min(MAX_PLAN_SECONDS, MAX_ZONE_SECONDS);
+    // El storyboard: lo que se ve en todo el video (sin él, el planificador elige solo con lo que se dice).
+    const storyboard = (Array.isArray(body?.storyboard) ? body.storyboard : [])
+      .filter((f) => typeof f?.url === 'string' && f.url.startsWith('data:image/') && Number.isFinite(Number(f?.t)))
+      .map((f) => ({ t: Math.min(Math.max(0, Number(f.t)), video.duration), url: f.url }))
+      .sort((a, b) => a.t - b.t)
+      .slice(0, MAX_PLAN_STORYBOARD);
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableFinished) controller.abort(); });
     try {
       const out = mock
         ? heuristicPlan({ count, video, transcript, minSeconds: MIN_PLAN_SECONDS, maxSeconds })
-        : await planZones({ llm, model, signal: controller.signal, count, video, brief, transcript, minSeconds: MIN_PLAN_SECONDS, maxSeconds });
+        : await planZones({ llm, model, signal: controller.signal, count, video, brief, transcript, storyboard, minSeconds: MIN_PLAN_SECONDS, maxSeconds });
       sendJson(res, 200, out);
     } catch (err) {
       if (!controller.signal.aborted && !res.headersSent) sendJson(res, 502, { error: err.message });

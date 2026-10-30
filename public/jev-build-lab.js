@@ -10,8 +10,12 @@
 // Fase 2 y 3 terminan con una revisión: el motor busca piezas que flotan o se esconden, el modelo (viendo la foto si
 // puede) propone arreglos, y JEV elige entre la versión de antes y la corregida.
 // Las tres fases muestran un cronómetro por etapa para compararlas.
+// Pestaña Luces de la caja: pedís una iluminación con palabras, el LLM propone looks (look.js), acá se dibuja cada
+// uno desde tu encuadre y JEV elige mirando. Lo único que hacés a mano es mover una luz ("Mover acá").
 import { el } from './shared.js';
-import { applyPiece, describeScene, mergePatches, combos, parsePatch, resolveObject, checkScene } from './jev-build/spec.js';
+import { applyPiece, describeScene, mergePatches, combos, parsePatch, resolveObject, checkScene, placeObject } from './jev-build/spec.js';
+import { parseTake, parseCamB, TAKE } from './jev-build/take.js';
+import { resolveLook, describeRig, parseRig, ROLE_LABELS } from './jev-build/look.js';
 
 const $ = (id) => document.getElementById(id);
 const TAB = 'lab-jevbuild';
@@ -48,6 +52,7 @@ function rebuild(saved) {
     if (!o) throw new Error(`La pieza "${p.id}" apunta a un objeto que no existe.`);
     out = applyPiece(out, { object: { id: o.id, label: o.label }, part: { id: p.id, label: p.label }, spec: { ...parsePatch(p.spec), objectPosition: o.position } });
   }
+  for (const o of Object.values(objects)) if (o.rotation && out.objects[o.id]) out = placeObject(out, o.id, { rotation: o.rotation });
   return { scene: out, history: Array.isArray(saved.history) ? saved.history : [] };
 }
 
@@ -159,6 +164,7 @@ function mount(root) {
     prompt.placeholder = url ? 'Opcional: contá qué dibujaste (Enter construye)' : '¿Qué construimos? (Enter envía · Shift+Enter nueva línea)';
   };
   const takeSketch = async (file) => {
+    if (form.dataset.tab === 'light') return; // en Luces no hay boceto
     try { setSketch(await prepareSketch(file)); error(''); } catch (err) { error(`No se pudo usar el boceto: ${err.message}`); }
   };
   attachBtn.onclick = () => sketchFile.click();
@@ -178,6 +184,38 @@ function mount(root) {
 
   const main = el('div', 'jb-composer-main');
   main.append(attachBtn, sketchFile, prompt, stop, go);
+
+  // Pestañas de la caja: Construir (lo de siempre) y Luces (mismo campo de texto, otro trabajo). Cada una guarda
+  // su borrador.
+  const TABS = { build: { label: 'Construir', send: 'Construir', placeholder: '¿Qué construimos? (Enter envía · Shift+Enter nueva línea)' }, light: { label: 'Luces', send: 'Iluminar', placeholder: '¿Cómo la iluminamos? Ej.: dramática como Pixar, atardecer, que el héroe brille' } };
+  const tabs = el('div', 'jb-tabs');
+  tabs.setAttribute('role', 'tablist');
+  const tabButtons = Object.entries(TABS).map(([key, t]) => {
+    const b = el('button', 'jb-tab', t.label);
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.onclick = () => setTab(key);
+    tabs.append(b);
+    return [key, b];
+  });
+  const drafts = { build: prompt.value, light: pref('light-draft', 'Dramática, como una escena de Pixar') };
+  let tab = pref('tab', 'build') === 'light' ? 'light' : 'build';
+  const lights = lightBar();
+  function setTab(next) {
+    drafts[tab] = prompt.value;
+    tab = next;
+    prompt.value = drafts[tab];
+    for (const [key, b] of tabButtons) { b.setAttribute('aria-selected', String(key === tab)); b.classList.toggle('on', key === tab); }
+    form.dataset.tab = tab;
+    go.textContent = TABS[tab].send;
+    prompt.placeholder = tab === 'light' ? TABS.light.placeholder : sketch ? 'Opcional: contá qué dibujaste (Enter construye)' : TABS.build.placeholder;
+    attachBtn.hidden = tab !== 'build';
+    chip.hidden = tab !== 'build' || !sketch;
+    settings.hidden = tab !== 'build';
+    lights.node.hidden = tab !== 'light';
+    syncMode();
+    setPref('tab', tab);
+  }
 
   const steps = el('input');
   Object.assign(steps, { type: 'number', min: 1, max: 30, value: 14 });
@@ -205,7 +243,11 @@ function mount(root) {
     fast: 'Fase 2 · ideas en palabras → JEV elige el concepto → plano entero por objeto → JEV elige todas las piezas de una vez mirando las combinaciones → revisión.',
     steps: 'Fase 1 · una pieza por turno: el LLM pregunta, JEV elige mirando cada opción, y la pieza siguiente parte de ahí.',
   };
-  const syncMode = () => { stepsField.hidden = mode.value !== 'steps'; modeHint.textContent = HINTS[mode.value]; setPref('mode', mode.value); };
+  const syncMode = () => {
+    stepsField.hidden = mode.value !== 'steps';
+    modeHint.textContent = tab === 'light' ? 'Luces · el LLM propone iluminaciones como un director de fotografía → cada una se dibuja desde tu encuadre → JEV elige mirando. Elegí un objeto en la vista para que sea el sujeto (la luz héroe lo sigue).' : HINTS[mode.value];
+    setPref('mode', mode.value);
+  };
   mode.addEventListener('change', syncMode);
   syncMode();
   const lookField = el('label', 'jb-inline');
@@ -232,6 +274,7 @@ function mount(root) {
   pill.append(el('span', 'jb-pill-dot'), el('span', null, 'Pedir'));
   const setMin = (on, focus = true) => {
     form.classList.toggle('min', on);
+    dock.classList.toggle('min', on);
     minBtn.setAttribute('aria-label', 'Minimizar la caja');
     minBtn.title = 'Minimizar (la caja queda como un botón en la esquina)';
     pill.setAttribute('aria-label', 'Abrir la caja de pedidos');
@@ -241,7 +284,8 @@ function mount(root) {
   };
   minBtn.onclick = () => setMin(true);
   pill.onclick = () => setMin(false);
-  form.append(minBtn, pill, chip, main, settings);
+  form.append(minBtn, pill, tabs, chip, main, settings, lights.node);
+  setTab(tab);
 
   const work = el('div', 'jb-work');
   const view = el('div', 'jb-view');
@@ -260,7 +304,11 @@ function mount(root) {
   side.append(list);
   work.append(view, side);
 
-  page.append(meta, modeHint, work, form);
+  // Abajo, un dock: la caja de generación a la izquierda y Tools a la derecha, con la misma altura.
+  const tools = toolsPanel();
+  const dock = el('div', 'jb-dock');
+  dock.append(form, tools.node);
+  page.append(meta, modeHint, work, dock);
   root.replaceChildren(page);
   setMin(pref('min', '0') === '1', false);
 
@@ -273,11 +321,13 @@ function mount(root) {
     } catch { /* nada guardado o ilegible: escena vacía */ }
     viewport.show(scene, { refit: true });
     cam.attach(viewport);
+    tools.attach(viewport);
+    lights.attach(viewport);
   }).catch((err) => error(`No se pudo cargar three.js: ${err.message}`));
   fitBtn.onclick = () => viewport?.fit();
 
   const setRunning = (on) => {
-    for (const c of [go, reset, upload, prompt, mode, model, attachBtn, removeSketch]) c.disabled = on;
+    for (const c of [go, reset, upload, prompt, mode, model, attachBtn, removeSketch, ...tabButtons.map(([, b]) => b)]) c.disabled = on;
     stop.disabled = !on;
     form.classList.toggle('running', on);
   };
@@ -295,7 +345,9 @@ function mount(root) {
     file.value = '';
     if (!f) return;
     try {
-      ({ scene, history } = rebuild(JSON.parse(await f.text())));
+      const saved = JSON.parse(await f.text());
+      ({ scene, history } = rebuild(saved));
+      if (saved.look !== undefined) viewport?.lighting.set(parseRig(saved.look));
       log = [];
       list.replaceChildren();
       viewport?.show(scene, { refit: true });
@@ -307,7 +359,7 @@ function mount(root) {
     }
   };
   download.onclick = () => {
-    const blob = new Blob([JSON.stringify({ scene, history, log }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ scene, history, log, look: viewport?.lighting.rig || null }, null, 2)], { type: 'application/json' });
     const a = el('a');
     a.href = URL.createObjectURL(blob);
     a.download = `jev-construye-${Date.now()}.json`;
@@ -317,17 +369,20 @@ function mount(root) {
 
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const text = prompt.value.trim() || (sketch ? 'Lo que dibujé en el boceto.' : '');
+    const lighting = tab === 'light';
+    const text = prompt.value.trim() || (sketch && !lighting ? 'Lo que dibujé en el boceto.' : '');
     if (!text || !viewport || controller) return;
+    if (lighting) setPref('light-draft', text);
     error('');
     setRunning(true);
     controller = new AbortController();
-    runSketch = sketch;
+    runSketch = lighting ? null : sketch;
     if (runSketch) list.append(sketchCard(runSketch, text));
     const t0 = performance.now();
     try {
       const args = { prompt: text, model: model.value.trim() || undefined, withImages: look.checked, see: see.checked, signal: controller.signal, status, list };
-      if (mode.value === 'steps') await build({ ...args, max: Math.max(1, Math.min(30, Number(steps.value) || 14)) });
+      if (lighting) await light(args);
+      else if (mode.value === 'steps') await build({ ...args, max: Math.max(1, Math.min(30, Number(steps.value) || 14)) });
       else await buildFast({ ...args, relations: mode.value === 'rel' });
       status.textContent += ` · tiempo total ${secs(performance.now() - t0)}`;
     } catch (err) {
@@ -390,6 +445,7 @@ async function build({ prompt, model, max, withImages, see, signal, status, list
     scene = applyPiece(scene, { object: step.object, part: step.part, spec });
     const key = `${step.object.id}/${step.part.id}`;
     viewport.show(scene, { pop: [key], refit: true });
+    viewport.tools.select(step.object.id); // lo recién construido queda listo para Tools
     history.push({ n, object: step.object.id, part: step.part.id, thought: step.thought, choices: chosen });
     persist();
     log.push({ prompt, step, verify, choices: chosen, spec, times });
@@ -482,6 +538,7 @@ async function buildFast({ prompt, model, withImages, see, relations, signal, st
     keys.push(...placed.map((p) => `${o.id}/${p.part.id}`));
   });
   viewport.show(scene, { pop: keys, refit: true });
+  viewport.tools.select(objects.at(-1).id);
   persist();
 
   await review({ prompt, model, see, signal, status, list, times });
@@ -496,6 +553,36 @@ async function buildFast({ prompt, model, withImages, see, relations, signal, st
   done.append(timing);
   log.push({ prompt, mode: relations ? 'relations' : 'fast', ideas, concepts, verify: check.verify, times });
   status.textContent = `Listo: JEV reconoce el pedido ${pct(check.verify?.noul)}`;
+}
+
+// Luces: el LLM propone looks → cada uno se dibuja desde tu encuadre → JEV elige uno mirando → queda puesto.
+async function light({ prompt, model, see, signal, status, list }) {
+  const times = [];
+  const L = viewport.lighting;
+  const frame = L.frame();
+  const subject = frame.subject.id ? scene.objects[frame.subject.id]?.label || frame.subject.id : 'toda la escena';
+  const current = describeRig(L.rig, { camera: frame.camera, center: frame.subject.center, origin: frame.subject.origin });
+  status.textContent = 'El director de fotografía (LLM) propone iluminaciones…';
+  const render = see ? L.shots([L.rig])[0] : undefined;
+  const r = await timed(times, 'LLM looks', () => post('looks', { prompt, model, scene: lean(scene), subject, current, render, see }, signal));
+  const rigs = r.looks.map((look) => resolveLook(look, frame));
+  const images = await timed(times, 'fotos', async () => L.shots(rigs));
+  const card = stepCard('Luces', { object: { label: subject }, part: { label: prompt } });
+  if (r.sees) card.note('El modelo vio tu plano con la luz de antes.');
+  const labels = r.looks.map((l) => l.label);
+  const row = card.question({ question: '¿Cuál iluminación logra mejor lo pedido?', options: labels.map((label) => ({ label })) }, images);
+  list.append(card.node);
+  card.node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  status.textContent = `JEV mira las ${rigs.length} iluminaciones…`;
+  const pick = await timed(times, 'JEV elige', () => post('pick', { prompt, sceneText: describeScene(scene), picks: [{ key: 'luz', topic: 'light', context: `Sujeto: ${subject}.`, question: '¿Cuál de estas iluminaciones logra mejor lo pedido?', options: labels, images }] }, signal));
+  const a = pick.answers.luz;
+  row.answer(a);
+  const chosen = rigs[a.index];
+  L.set(chosen);
+  card.note(`${chosen.label}${chosen.idea ? `: ${chosen.idea}` : ''}`);
+  card.timing(times);
+  log.push({ prompt, mode: 'light', looks: r.looks, choice: a, times });
+  status.textContent = `Luz: ${chosen.label} · JEV ${pct(a.confidence)}. Mové una luz con "Mover acá" o pedí un ajuste.`;
 }
 
 // Arreglos del revisor sobre la escena (parches absolutos o quitar piezas).
@@ -665,8 +752,13 @@ function cameraBar(canvasBox) {
         tick();
         ticker = setInterval(tick, 500);
       };
+      // Grabar (toma o libre) también graba la actuación de Tools, con el mismo arranque y el mismo final: así después
+      // se puede filmar desde la cámara B. Si ya había una actuación grabándose a mano, se la deja seguir.
+      let ownTake = false;
+      const startTake = () => { ownTake = vp.tools.startTake(); };
       const save = async () => {
         showRec(false);
+        if (ownTake) { vp.tools.stopTake(); ownTake = false; }
         const out = await vp.recording.stop();
         refresh();
         if (!out?.blob.size) return;
@@ -689,6 +781,7 @@ function cameraBar(canvasBox) {
       };
       recTake.onclick = async () => {
         try { vp.recording.start(); } catch (err) { return error(err.message); }
+        startTake();
         showRec(true);
         const run = vp.rig.play(seconds());
         refresh();
@@ -698,10 +791,211 @@ function cameraBar(canvasBox) {
       recFree.onclick = async () => {
         if (vp.recording.on) return save();
         try { vp.recording.start(); } catch (err) { return error(err.message); }
+        startTake();
         showRec(true);
         refresh();
         vp.canvas.focus({ preventScroll: true });
       };
+    },
+  };
+}
+
+// Panel Tools (a la derecha de la caja de generación): herramientas de director sobre la vista.
+// Attach · POV: elegís un objeto (clic en la vista o lo último construido), te acercás con la cámara y lo pegás;
+// desde ahí el objeto se mueve y gira con la cámara. Detach lo deja donde quedó y se guarda en la escena.
+// Cámara B + Actuación: ponés una segunda cámara (fija o que persigue), grabás la actuación (tu vuelo, como datos),
+// la mirás desde tu POV o desde B y exportás los dos videos, filmados cuadro a cuadro (film.js).
+const CAMB_KEY = 'jev-build:camB', TAKE_KEY = 'jev-build:actuacion';
+const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+function toolsPanel() {
+  const node = el('section', 'jb-tools');
+  node.setAttribute('aria-label', 'Tools');
+  const head = el('div', 'jb-tools-head');
+  head.append(el('b', null, 'Tools'));
+  const button = (cls, text) => { const b = el('button', cls, text); b.type = 'button'; b.disabled = true; return b; };
+
+  // Attach · POV
+  const tool = el('div', 'jb-tool');
+  const top = el('div', 'jb-tool-top');
+  const btn = button('jb-send jb-tool-btn', 'Attach');
+  top.append(el('span', 'jb-tool-name', 'Attach · POV'), btn);
+  const info = el('p', 'jb-tool-info', 'Cargando la vista…');
+  info.setAttribute('aria-live', 'polite');
+  const meter = el('div', 'jb-reach');
+  const fill = el('span');
+  meter.append(fill);
+  meter.setAttribute('aria-hidden', 'true');
+  tool.append(top, info, meter);
+
+  // Cámara B
+  const camRow = el('div', 'jb-tool-row');
+  const camMode = el('select', 'jb-tool-select');
+  for (const [v, label] of [['fixed', 'Fija'], ['follow', 'Seguidora']]) { const o = el('option', null, label); o.value = v; camMode.append(o); }
+  camMode.setAttribute('aria-label', 'Qué hace la cámara B');
+  camMode.title = 'Fija: queda clavada con el encuadre con que la pusiste; el objeto pasa por el cuadro. Seguidora: lo persigue a la misma distancia y lo mira, como un dron.';
+  const camPlace = button('jb-ghost', 'Poner acá');
+  camPlace.title = 'La cámara B queda donde está tu cámara ahora, mirando hacia donde mirás.';
+  camRow.append(el('span', 'jb-tool-name', 'Cámara B'), camMode, camPlace);
+
+  // Actuación
+  const takeRow = el('div', 'jb-tool-row');
+  const rec = button('jb-ghost jb-rec-take', '● Grabar');
+  rec.title = 'Graba tu vuelo como datos (tu cámara y el objeto pegado), no como video.';
+  const seePov = button('jb-ghost', '▶ POV');
+  const seeB = button('jb-ghost', '▶ B');
+  const exportBtn = button('jb-ghost', '⬇ Videos');
+  exportBtn.title = `Filma la actuación cuadro a cuadro: un video desde tu POV y otro desde la cámara B (${TAKE.width}×${TAKE.height}, ${TAKE.fps} fps).`;
+  takeRow.append(el('span', 'jb-tool-name', 'Actuación'), rec, seePov, seeB, exportBtn);
+  const takeInfo = el('p', 'jb-tool-info', 'Sin actuación grabada.');
+  takeInfo.setAttribute('aria-live', 'polite');
+
+  node.append(head, tool, camRow, takeRow, takeInfo);
+
+  return {
+    node,
+    attach(vp) {
+      let filming = null; // AbortController mientras se filman los videos
+      let notice = ''; // el resultado de la última filmación: queda a la vista hasta la próxima acción
+      let savedTake = null, savedCam = '';
+      try { const c = parseCamB(JSON.parse(localStorage.getItem(CAMB_KEY) || 'null')); if (c) vp.tools.setCamB(c); } catch { /* sin cámara B guardada */ }
+      try { const t = localStorage.getItem(TAKE_KEY); if (t) vp.tools.setTake(savedTake = parseTake(JSON.parse(t))); } catch { /* sin actuación guardada o ilegible */ }
+
+      const render = (s) => {
+        const attached = s.attached, busy = s.recording !== null || !!s.previewing || !!filming;
+        btn.textContent = attached ? 'Detach' : 'Attach';
+        btn.classList.toggle('on', attached);
+        btn.disabled = (!attached && !s.near) || !!s.previewing;
+        meter.hidden = attached || !s.selected;
+        node.classList.toggle('active', attached || s.recording !== null);
+        if (attached) info.textContent = `${s.selected?.label || 'El objeto'} va pegado a la cámara: moverte y girar lo llevan.`;
+        else if (!s.selected) info.textContent = 'Hacé clic en un objeto de la vista para elegirlo.';
+        else if (s.near) info.textContent = `${s.selected.label} · cerca: ya podés pegarlo.`;
+        else info.textContent = `${s.selected.label} · a ${s.distance.toFixed(1)} m: acercate a ${s.limit.toFixed(1)} m.`;
+        if (!meter.hidden) {
+          fill.style.width = `${Math.min(100, Math.max(4, (s.limit / Math.max(s.distance, 0.001)) * 100))}%`;
+          meter.classList.toggle('near', s.near);
+        }
+
+        if (s.camB) camMode.value = s.camB.mode;
+        camPlace.textContent = s.camB ? 'Moverla acá' : 'Poner acá';
+        camPlace.disabled = busy;
+        camMode.disabled = !s.camB || busy;
+
+        rec.textContent = s.recording !== null ? `■ Parar ${clock(s.recording)}` : '● Grabar';
+        rec.disabled = !!s.previewing || !!filming;
+        seePov.textContent = s.previewing === 'pov' ? '■ Parar' : '▶ POV';
+        seeB.textContent = s.previewing === 'b' ? '■ Parar' : '▶ B';
+        seePov.disabled = !s.take || s.recording !== null || !!filming || s.previewing === 'b';
+        seeB.disabled = !s.take || !s.camB || s.recording !== null || !!filming || s.previewing === 'pov';
+        exportBtn.textContent = filming ? 'Cancelar' : '⬇ Videos';
+        exportBtn.disabled = !filming && (!s.take || s.recording !== null || !!s.previewing);
+        if (!filming) {
+          if (notice && s.recording === null && !s.previewing) takeInfo.textContent = notice;
+          else if (s.recording !== null) takeInfo.textContent = `Grabando la actuación${s.selected ? ` con ${s.selected.label}` : ''}… volá y pará cuando termines.`;
+          else if (s.take) takeInfo.textContent = `Actuación de ${s.take.duration.toFixed(1)} s${s.take.label ? ` con ${s.take.label}` : ''}.${s.camB ? '' : ' Poné la cámara B para filmarla desde afuera.'}`;
+          else takeInfo.textContent = s.camB ? 'Pegá un objeto y grabá la actuación.' : 'Poné la cámara B, pegá un objeto y grabá la actuación.';
+        }
+
+        // Guardar en este navegador lo que cambió.
+        const cam = JSON.stringify(vp.tools.camB || null);
+        if (cam !== savedCam) { savedCam = cam; try { localStorage.setItem(CAMB_KEY, cam); } catch { /* sin almacenamiento */ } }
+        if (vp.tools.take !== savedTake) { savedTake = vp.tools.take; try { localStorage.setItem(TAKE_KEY, JSON.stringify(savedTake)); } catch { /* actuación muy larga o sin almacenamiento */ } }
+      };
+      vp.tools.onChange(render);
+      const back = () => vp.canvas.focus({ preventScroll: true }); // seguir manejando la cámara con el teclado
+
+      btn.onclick = () => {
+        if (vp.tools.state.attached) {
+          const placed = vp.tools.detach();
+          if (placed) {
+            scene = placeObject(scene, placed.id, placed);
+            vp.show(scene);
+            persist();
+          }
+        } else vp.tools.attach();
+        back();
+      };
+      camPlace.onclick = () => { notice = ''; vp.tools.placeCamB(camMode.value); back(); };
+      camMode.onchange = () => { if (vp.tools.camB) vp.tools.setCamB({ ...vp.tools.camB, mode: camMode.value }); };
+      rec.onclick = () => { notice = ''; if (vp.tools.state.recording !== null) vp.tools.stopTake(); else vp.tools.startTake(); back(); };
+      seePov.onclick = () => (vp.tools.state.previewing ? vp.tools.stopPreview() : vp.tools.previewTake('pov'));
+      seeB.onclick = () => (vp.tools.state.previewing ? vp.tools.stopPreview() : vp.tools.previewTake('b'));
+      exportBtn.onclick = async () => {
+        if (filming) return filming.abort();
+        filming = new AbortController();
+        notice = '';
+        const take = vp.tools.take, camB = vp.tools.camB, stamp = Date.now();
+        const views = [['pov', 'POV'], ...(camB ? [['b', 'cámara B']] : [])];
+        render(vp.tools.state);
+        try {
+          const { filmTake } = await import('./jev-build/film.js');
+          for (const [view, label] of views) {
+            const out = await filmTake({ take, data: scene, view, camB, rig: vp.lighting.rig, signal: filming.signal, onProgress: (p) => { takeInfo.textContent = `Filmando ${label}… ${Math.round(p * 100)}%`; } });
+            const a = el('a');
+            a.href = URL.createObjectURL(out.blob);
+            a.download = `jev-construye-${view === 'b' ? 'camara-b' : 'pov'}-${stamp}.${out.ext}`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+          }
+          filming = null;
+          notice = `Listo: ${views.length === 2 ? 'dos videos descargados (POV y cámara B)' : 'solo el POV: poné la cámara B para el otro video'}.`;
+          render(vp.tools.state);
+        } catch (err) {
+          const cancelled = err.name === 'AbortError';
+          filming = null;
+          notice = cancelled ? 'Filmación cancelada.' : `No se pudo filmar: ${err.message}`;
+          render(vp.tools.state);
+          if (!cancelled) console.error(err);
+        }
+      };
+    },
+  };
+}
+
+// Barra de la pestaña Luces: qué look hay, sus luces (elegí una y "Mover acá"), el mapa de luces y volver a la base.
+const LOOK_KEY = 'jev-build:look';
+function lightBar() {
+  const node = el('div', 'jb-light-bar');
+  const info = el('p', 'jb-light-info', 'Cargando la vista…');
+  const chips = el('div', 'jb-light-chips');
+  const button = (text, title) => { const b = el('button', 'jb-ghost', text); b.type = 'button'; b.title = title; b.disabled = true; return b; };
+  const move = button('Mover acá', 'La luz elegida va a donde está tu cámara ahora y sigue apuntando al sujeto.');
+  const map = button('Mapa de luces', 'Todo en blanco sobre negro y cada luz de un color: principal roja, relleno verde, contraluz azul, héroe amarilla. Lo negro es donde no llega luz.');
+  map.setAttribute('aria-pressed', 'false');
+  const base = button('Luz base', 'Saca el look y vuelve a la luz de siempre.');
+  const row = el('div', 'jb-light-row');
+  row.append(chips, move, map, base);
+  node.append(info, row);
+  return {
+    node,
+    attach(vp) {
+      const L = vp.lighting;
+      try { const saved = parseRig(JSON.parse(localStorage.getItem(LOOK_KEY) || 'null')); if (saved) L.set(saved); } catch { /* sin look guardado */ }
+      const render = (rig) => {
+        try { localStorage.setItem(LOOK_KEY, JSON.stringify(rig)); } catch { /* sin almacenamiento */ }
+        info.textContent = rig ? `${rig.label}${rig.idea ? ` · ${rig.idea}` : ''}` : 'Luz base. Pedí una iluminación arriba y JEV elige entre las que proponga el modelo.';
+        chips.replaceChildren(...(rig?.lights || []).map((l) => {
+          const c = el('button', 'jb-light-chip');
+          c.type = 'button';
+          const dot = el('span', 'jb-light-dot');
+          dot.style.background = l.color;
+          c.append(dot, `${ROLE_LABELS[l.role]}${l.anchor ? ' · sigue' : ''}`);
+          c.classList.toggle('on', l.id === L.picked);
+          c.setAttribute('aria-pressed', String(l.id === L.picked));
+          c.title = `${ROLE_LABELS[l.role]}: intensidad ${l.intensity}${l.shadow ? ', con sombra' : ''}. Elegila y usá "Mover acá".`;
+          c.onclick = () => L.pick(l.id);
+          return c;
+        }));
+        move.disabled = !rig || !L.picked;
+        base.disabled = !rig;
+        map.disabled = false;
+      };
+      L.onChange(render);
+      const back = () => vp.canvas.focus({ preventScroll: true });
+      move.onclick = () => { if (!L.move()) info.textContent = 'Alejate un poco del sujeto: la luz necesita una dirección desde la que pegarle.'; back(); };
+      map.onclick = () => { L.setMap(!L.map); map.setAttribute('aria-pressed', String(L.map)); map.classList.toggle('on', L.map); back(); };
+      base.onclick = () => { L.set(null); back(); };
     },
   };
 }

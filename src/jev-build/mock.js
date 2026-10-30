@@ -190,3 +190,15 @@ export async function mockRelBlueprint({ prompt, object }) {
 export async function mockFix({ issues }) {
   return issues.length ? { fixes: [], note: `Demo: el motor marcó ${issues.length} problema${issues.length > 1 ? 's' : ''}; en demo no se corrige nada.` } : { ok: true, note: 'Demo: todo en orden.' };
 }
+
+// Luces de demo: tres looks fijos y contrastados (cálido de costado, noir con contraluz, hora dorada con héroe).
+export async function mockLooks() {
+  return { looks: [
+    { label: 'Rembrandt cálido', idea: 'Principal ámbar de costado y arriba, relleno azul suave: volumen y calidez.', exposure: 1, background: '#2a2f3a', haze: 0.15, sky: { color: '#9fb4ff', ground: '#2b2420', intensity: 0.35 },
+      lights: [{ role: 'key', color: '#ffc58a', intensity: 4, from: { side: -55, height: 40, distance: 5 }, softness: 0.4 }, { role: 'fill', color: '#7f9cff', intensity: 1, from: { side: 60, height: 10, distance: 6 }, softness: 0.9, shadow: false }, { role: 'rim', color: '#ffffff', intensity: 3, from: { side: 160, height: 35, distance: 5 }, softness: 0.3, shadow: false }] },
+    { label: 'Noir con contraluz', idea: 'Sin relleno: una principal dura desde arriba y un contraluz frío que dibuja el borde.', exposure: 0.8, background: '#07080b', haze: 0.35, sky: { color: '#3b4a66', ground: '#000000', intensity: 0.08 },
+      lights: [{ role: 'key', color: '#f2f4ff', intensity: 5, from: { side: 80, height: 60, distance: 4 }, softness: 0.1 }, { role: 'rim', color: '#4da3ff', intensity: 6, from: { side: -170, height: 20, distance: 4 }, softness: 0.2, shadow: false }] },
+    { label: 'Hora dorada con héroe', idea: 'Sol bajo y anaranjado, cielo violeta y una luz héroe que acompaña al sujeto.', exposure: 1.1, background: '#f3a26b', haze: 0.25, sky: { color: '#b48cff', ground: '#5a3b2a', intensity: 0.6 },
+      lights: [{ role: 'key', kind: 'sun', color: '#ff9a4d', intensity: 3.5, from: { side: -120, height: 12 }, softness: 0.5 }, { role: 'hero', color: '#ffe3b8', intensity: 1.5, from: { side: 25, height: 20, distance: 3 }, softness: 0.8, shadow: false }] },
+  ] };
+}

@@ -92,7 +92,7 @@ test('una variante con todas las herramientas obligatorias: busca, genera imagen
   const tools = createLabTools({ mock: true });
   await runLabAgent({ input, emit: (e) => events.push(e), llm: async (o) => { seen.push(o); return mockLabLLM(o); }, tools, config: contextConfig(variant, tools.available) });
   const run = events.find((e) => e.type === 'run');
-  assert.match(run.harness, /^ctx-v3 .* S·obl I·obl A·obl V·obl$/);
+  assert.match(run.harness, /^ctx-v4 .* S·obl I·obl A·obl V·obl$/);
   assert.equal(run.context.images, 3 + 1); // 3 cuadros + 1 referencia
   assert.deepEqual(run.context.tools, ['buscar_referencias', 'generar_imagen', 'generar_sonido', 'generar_video']);
   assert.equal(seen[0].temperature, 0.3);
